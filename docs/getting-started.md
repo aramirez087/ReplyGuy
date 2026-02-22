@@ -33,6 +33,48 @@ cargo install --path crates/tuitbot-cli --locked
 
 Download the Windows asset from GitHub Releases and add `tuitbot.exe` to `PATH`.
 
+### OS-specific quickstart
+
+#### Linux
+
+```bash
+cargo install tuitbot-cli --locked
+tuitbot init
+tuitbot auth
+tuitbot test
+```
+
+Recommended runtime: `tuitbot run` under systemd, or `tuitbot tick` via cron/systemd timer.
+
+#### macOS
+
+```bash
+cargo install tuitbot-cli --locked
+tuitbot init
+tuitbot auth
+tuitbot test
+```
+
+Recommended runtime: `tuitbot run` in launchd/tmux, or `tuitbot tick` via launchd.
+
+#### Windows (PowerShell)
+
+```powershell
+# Option A: use release asset and add tuitbot.exe to PATH
+# Option B: install from crates.io if Rust is installed
+cargo install tuitbot-cli --locked
+tuitbot init
+tuitbot auth
+tuitbot test
+```
+
+Recommended runtime: `tuitbot tick` via Task Scheduler.
+
+If `tuitbot` is not found after install, add Cargo bin to PATH:
+
+- Linux/macOS: `$HOME/.cargo/bin`
+- Windows: `%USERPROFILE%\\.cargo\\bin`
+
 ## First-Time Setup
 
 1. Create an app in the X Developer Portal.

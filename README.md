@@ -146,6 +146,19 @@ cargo install --path crates/tuitbot-cli --locked
 
 **Windows:** download `tuitbot-x86_64-pc-windows-msvc.zip` from [Releases](https://github.com/aramirez087/TuitBot/releases), unzip, and add `tuitbot.exe` to your `PATH`.
 
+### OS-specific quickstart
+
+| OS | Install path | First run | Recommended mode |
+|---|---|---|---|
+| **Linux** | `cargo install tuitbot-cli --locked` or install script | `tuitbot init && tuitbot auth && tuitbot test` | `tuitbot run` under systemd, or `tuitbot tick` via cron/systemd timer |
+| **macOS** | `cargo install tuitbot-cli --locked` or install script | `tuitbot init && tuitbot auth && tuitbot test` | `tuitbot run` in launchd/tmux, or `tuitbot tick` via launchd |
+| **Windows** | Release zip + add `tuitbot.exe` to `PATH` (or `cargo install tuitbot-cli --locked`) | `tuitbot init`, then `tuitbot auth`, then `tuitbot test` in PowerShell | `tuitbot tick` via Task Scheduler (or run `tuitbot run` in a persistent terminal) |
+
+If `tuitbot` is not found after `cargo install`, add the cargo bin directory to `PATH`:
+
+- Linux/macOS: `$HOME/.cargo/bin`
+- Windows: `%USERPROFILE%\\.cargo\\bin`
+
 ### Setup (both modes)
 
 Steps 1-3 are identical regardless of which mode you choose.
