@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${TUITBOT_REPO:-aramirez087/ReplyGuy}"
+REPO="${TUITBOT_REPO:-aramirez087/TuitBot}"
 INSTALL_DIR="${TUITBOT_INSTALL_DIR:-}"
 
 OS="$(uname -s)"
