@@ -285,7 +285,7 @@
 - [x] T046 Integrate both loops with safety (rate checks, action logging)
 - [x] T047 [P] Implement dry-run support for both loops
 - [x] T048 [P] Implement CLI `replyguy post` command in `crates/replyguy-cli/src/commands/post.rs`
-- [ ] T049 [P] Implement CLI `replyguy thread` command in `crates/replyguy-cli/src/commands/thread.rs`
+- [x] T049 [P] Implement CLI `replyguy thread` command in `crates/replyguy-cli/src/commands/thread.rs`
 
 ### Implementation Notes
 - Content loop: check last original tweet timestamp; if window elapsed, pick random topic from `industry_topics`, generate tweet, post, record
