@@ -129,12 +129,17 @@ Tuitbot is engineered to keep your account totally safe and maintain your pristi
 
 ### Install
 
-**Fastest (recommended):**
+**From crates.io (recommended):**
+```bash
+cargo install tuitbot-cli --locked
+```
+
+**Prebuilt binary (no Rust toolchain):**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aramirez087/TuitBot/main/scripts/install.sh | bash
 ```
 
-**From source (Rust 1.75+):**
+**From source (contributors, Rust 1.75+):**
 ```bash
 cargo install --path crates/tuitbot-cli --locked
 ```

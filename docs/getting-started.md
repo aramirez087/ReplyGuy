@@ -11,13 +11,19 @@
 
 ## Install
 
-### Recommended (install script)
+### Recommended (crates.io)
+
+```bash
+cargo install tuitbot-cli --locked
+```
+
+### Prebuilt binary (no Rust toolchain)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aramirez087/TuitBot/main/scripts/install.sh | bash
 ```
 
-### From source
+### From source (contributors)
 
 ```bash
 cargo install --path crates/tuitbot-cli --locked
