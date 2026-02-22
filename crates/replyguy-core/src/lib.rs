@@ -7,6 +7,7 @@ pub mod content;
 pub mod error;
 pub mod llm;
 pub mod safety;
+pub mod scoring;
 pub mod storage;
 pub mod x_api;
 
