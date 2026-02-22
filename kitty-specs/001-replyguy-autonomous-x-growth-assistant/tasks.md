@@ -248,7 +248,7 @@
 ### Included Subtasks
 - [x] T038 Implement mentions loop in `crates/replyguy-core/src/automation/mentions_loop.rs`
 - [x] T039 Implement discovery loop in `crates/replyguy-core/src/automation/discovery_loop.rs`
-- [ ] T040 Integrate both loops with safety module (rate checks, dedup, action logging)
+- [x] T040 Integrate both loops with safety module (rate checks, dedup, action logging)
 - [ ] T041 [P] Implement dry-run support for both loops
 - [ ] T042 [P] Implement CLI `replyguy mentions` command in `crates/replyguy-cli/src/commands/mentions.rs`
 - [ ] T043 [P] Implement CLI `replyguy discover` command in `crates/replyguy-cli/src/commands/discover.rs`
