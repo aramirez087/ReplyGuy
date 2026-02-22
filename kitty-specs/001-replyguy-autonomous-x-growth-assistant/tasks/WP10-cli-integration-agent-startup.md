@@ -1,7 +1,7 @@
 ---
 work_package_id: WP10
 title: CLI Integration + Agent Startup
-lane: "doing"
+lane: "for_review"
 dependencies:
 - WP04
 base_branch: 001-replyguy-autonomous-x-growth-assistant-WP01
@@ -389,3 +389,4 @@ The CLI command updates both frontmatter and activity log automatically.
 
 For large features, organize prompts under `tasks/` to keep bundles grouped while maintaining lexical ordering.
 - 2026-02-22T01:41:04Z – claude-opus – shell_pid=94521 – lane=doing – Assigned agent via workflow command
+- 2026-02-22T01:54:50Z – claude-opus – shell_pid=94521 – lane=for_review – Ready for review: CLI run/auth/test commands, tracing setup, config.example.toml, CI workflow, README. 61 tests pass, clippy clean, fmt clean.
