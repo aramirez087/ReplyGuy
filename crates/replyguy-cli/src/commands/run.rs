@@ -8,13 +8,15 @@ use replyguy_core::config::Config;
 use replyguy_core::startup::{
     expand_tilde, format_startup_banner, load_tokens_from_file, ApiTier, TierCapabilities,
 };
+use replyguy_core::x_api::tier::{self, detect_tier};
+use replyguy_core::x_api::XApiHttpClient;
 
 /// Execute the `replyguy run` command.
 ///
 /// Startup sequence:
 /// 1. Validate database path
 /// 2. Load and verify OAuth tokens
-/// 3. Detect API tier (defaults to Free in this integration layer)
+/// 3. Detect API tier by probing the search endpoint
 /// 4. Print startup banner
 /// 5. Wait for shutdown signal
 pub async fn execute(config: &Config, status_interval: u64) -> anyhow::Result<()> {
@@ -33,11 +35,16 @@ pub async fn execute(config: &Config, status_interval: u64) -> anyhow::Result<()
         "OAuth tokens loaded"
     );
 
-    // 3. Determine API tier.
-    // Full tier detection requires X API calls (implemented in WP04).
-    // At the integration layer, we default to Free tier. When the full
-    // application is assembled, this will call XApiClient::detect_tier().
-    let tier = ApiTier::Free;
+    // 3. Determine API tier by probing the search endpoint.
+    let x_client = XApiHttpClient::new(tokens.access_token.clone());
+    let detected = detect_tier(&x_client)
+        .await
+        .map_err(|e| anyhow::anyhow!("Tier detection failed: {e}"))?;
+    let tier = match detected {
+        tier::ApiTier::Free => ApiTier::Free,
+        tier::ApiTier::Basic => ApiTier::Basic,
+        tier::ApiTier::Pro => ApiTier::Pro,
+    };
     let capabilities = TierCapabilities::for_tier(tier);
     tracing::info!(tier = %tier, "{}", capabilities.format_status());
 

@@ -67,7 +67,7 @@ impl std::fmt::Display for ApiTier {
 /// Falls back to `Free` tier on network errors as the safe default.
 /// Propagates auth errors (do not infer tier from auth failure).
 pub async fn detect_tier(client: &dyn XApiClient) -> Result<ApiTier, XApiError> {
-    match client.search_tweets("test", 1, None).await {
+    match client.search_tweets("test", 10, None).await {
         Ok(_) => {
             let tier = ApiTier::Basic;
             log_tier_detection(&tier);
