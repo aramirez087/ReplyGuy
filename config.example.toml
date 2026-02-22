@@ -86,34 +86,51 @@ industry_topics = [
 # learned' framing over lecturing. End threads with actionable takeaways."
 # content_style = "your content style guidelines here"
 
+# Optional: Opinions the persona holds (adds variety to content).
+# persona_opinions = ["Native apps beat web wrappers for performance", "Keyboard shortcuts are underrated"]
+
+# Optional: Experiences the persona can reference (keeps content authentic).
+# persona_experiences = ["Built a macOS menu bar app from scratch", "Switched from Electron to SwiftUI"]
+
+# Optional: Core content pillars (broad themes the account focuses on).
+# content_pillars = ["macOS productivity", "indie development", "Swift programming"]
+
 # --- Scoring Engine ---
 # Controls how tweets are scored for reply-worthiness (0-100 scale).
-# Weights must sum to 100.
+# Six signals: keyword(25) + follower(15) + recency(10) + engagement(15) + reply_count(15) + content_type(10) = 90 max.
 [scoring]
 # Minimum score to trigger a reply (0-100).
-threshold = 70
+threshold = 60
 
 # Maximum points for keyword relevance.
-keyword_relevance_max = 40.0
+keyword_relevance_max = 25.0
 
-# Maximum points for author follower count.
-follower_count_max = 20.0
+# Maximum points for author follower count (bell curve, peaks ~1K followers).
+follower_count_max = 15.0
 
 # Maximum points for tweet recency.
-recency_max = 15.0
+recency_max = 10.0
 
 # Maximum points for engagement rate (likes + retweets + replies).
-engagement_rate_max = 25.0
+engagement_rate_max = 15.0
+
+# Maximum points for reply count signal (fewer replies = higher score).
+# Targets underserved conversations where your reply is more visible.
+reply_count_max = 15.0
+
+# Maximum points for content type signal.
+# Text-only original tweets score max; media/quote tweets score 0.
+content_type_max = 10.0
 
 # --- Safety Limits ---
 # Prevent aggressive posting that could trigger account restrictions.
 # Conservative defaults — better to under-post than get flagged.
 [limits]
-# Maximum replies per day.
-max_replies_per_day = 15
+# Maximum replies per day (keep low to avoid looking like a bot).
+max_replies_per_day = 5
 
 # Maximum original tweets per day.
-max_tweets_per_day = 3
+max_tweets_per_day = 6
 
 # Maximum threads per week.
 max_threads_per_week = 1
@@ -123,6 +140,17 @@ min_action_delay_seconds = 45
 
 # Maximum delay between any two actions (seconds).
 max_action_delay_seconds = 180
+
+# Maximum replies to the same author per day (prevents harassment patterns).
+max_replies_per_author_per_day = 1
+
+# Phrases that should never appear in generated replies.
+# If the LLM outputs any of these, the reply is discarded.
+banned_phrases = ["check out", "you should try", "I recommend", "link in bio"]
+
+# Fraction of replies that may mention your product (0.0 - 1.0).
+# 0.2 means ~20% of replies reference the product; 80% are purely helpful.
+product_mention_ratio = 0.2
 
 # --- Automation Intervals ---
 # How often each loop runs. Shorter intervals use more API quota.
@@ -134,7 +162,7 @@ mentions_check_seconds = 300
 discovery_search_seconds = 900
 
 # Minimum seconds between content tweets.
-content_post_window_seconds = 18000
+content_post_window_seconds = 10800
 
 # Minimum seconds between thread posts.
 thread_interval_seconds = 604800
@@ -154,6 +182,23 @@ model = "gpt-4o-mini"
 
 # Optional: Override the API base URL (useful for proxies or Ollama).
 # base_url = "http://localhost:11434/v1"
+
+# --- Target Account Monitoring ---
+# Monitor specific accounts for relationship-based engagement.
+# Instead of keyword-spray, engage meaningfully with people you follow.
+[targets]
+# Usernames to monitor (without @). Their tweets are fetched and scored
+# independently of the keyword discovery loop.
+# accounts = ["pmarca", "naval", "paulg"]
+
+# Maximum replies to target account tweets per day (separate from general limit).
+max_target_replies_per_day = 3
+
+# Automatically follow target accounts (if not already following).
+auto_follow = false
+
+# Days to wait after following before first engagement (avoids looking robotic).
+follow_warmup_days = 3
 
 # --- Data Storage ---
 [storage]

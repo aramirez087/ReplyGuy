@@ -8,7 +8,7 @@ pub mod dedup;
 
 use crate::error::StorageError;
 use crate::storage::rate_limits;
-use crate::storage::DbPool;
+use crate::storage::{author_interactions, DbPool};
 
 pub use dedup::DedupChecker;
 
@@ -92,6 +92,15 @@ pub enum DenialReason {
     },
     /// Proposed reply is too similar to a recent reply.
     SimilarPhrasing,
+    /// Reply contains a banned phrase.
+    BannedPhrase {
+        /// The banned phrase that was found.
+        phrase: String,
+    },
+    /// Already reached the per-author daily reply limit.
+    AuthorLimitReached,
+    /// Replying to own tweet.
+    SelfReply,
 }
 
 impl std::fmt::Display for DenialReason {
@@ -108,8 +117,35 @@ impl std::fmt::Display for DenialReason {
             Self::SimilarPhrasing => {
                 write!(f, "Reply phrasing too similar to recent replies")
             }
+            Self::BannedPhrase { phrase } => {
+                write!(f, "Reply contains banned phrase: \"{phrase}\"")
+            }
+            Self::AuthorLimitReached => {
+                write!(f, "Already reached daily reply limit for this author")
+            }
+            Self::SelfReply => {
+                write!(f, "Cannot reply to own tweets")
+            }
         }
     }
+}
+
+/// Check if any banned phrase appears in the text (case-insensitive).
+///
+/// Returns the first matching banned phrase, or `None` if clean.
+pub fn contains_banned_phrase(text: &str, banned: &[String]) -> Option<String> {
+    let text_lower = text.to_lowercase();
+    for phrase in banned {
+        if text_lower.contains(&phrase.to_lowercase()) {
+            return Some(phrase.clone());
+        }
+    }
+    None
+}
+
+/// Check if the tweet author is the bot's own user ID.
+pub fn is_self_reply(tweet_author_id: &str, own_user_id: &str) -> bool {
+    !tweet_author_id.is_empty() && !own_user_id.is_empty() && tweet_author_id == own_user_id
 }
 
 /// Combined safety guard for all automation loops.
@@ -119,6 +155,7 @@ impl std::fmt::Display for DenialReason {
 pub struct SafetyGuard {
     rate_limiter: RateLimiter,
     dedup_checker: DedupChecker,
+    pool: DbPool,
 }
 
 impl SafetyGuard {
@@ -126,7 +163,8 @@ impl SafetyGuard {
     pub fn new(pool: DbPool) -> Self {
         Self {
             rate_limiter: RateLimiter::new(pool.clone()),
-            dedup_checker: DedupChecker::new(pool),
+            dedup_checker: DedupChecker::new(pool.clone()),
+            pool,
         }
     }
 
@@ -241,6 +279,48 @@ impl SafetyGuard {
         Ok(Ok(()))
     }
 
+    /// Check if replying to this author is permitted (per-author daily limit).
+    pub async fn check_author_limit(
+        &self,
+        author_id: &str,
+        max_per_day: u32,
+    ) -> Result<Result<(), DenialReason>, StorageError> {
+        let count =
+            author_interactions::get_author_reply_count_today(&self.pool, author_id).await?;
+        if count >= max_per_day as i64 {
+            tracing::debug!(
+                author_id,
+                count,
+                max = max_per_day,
+                "Action denied: author daily limit reached"
+            );
+            return Ok(Err(DenialReason::AuthorLimitReached));
+        }
+        Ok(Ok(()))
+    }
+
+    /// Check if a generated reply contains a banned phrase.
+    pub fn check_banned_phrases(
+        reply_text: &str,
+        banned: &[String],
+    ) -> Result<(), DenialReason> {
+        if let Some(phrase) = contains_banned_phrase(reply_text, banned) {
+            tracing::debug!(phrase = %phrase, "Action denied: banned phrase");
+            return Err(DenialReason::BannedPhrase { phrase });
+        }
+        Ok(())
+    }
+
+    /// Record a reply for an author interaction.
+    pub async fn record_author_interaction(
+        &self,
+        author_id: &str,
+        author_username: &str,
+    ) -> Result<(), StorageError> {
+        author_interactions::increment_author_interaction(&self.pool, author_id, author_username)
+            .await
+    }
+
     /// Record a successful reply action.
     pub async fn record_reply(&self) -> Result<(), StorageError> {
         self.rate_limiter.record_reply().await
@@ -281,6 +361,12 @@ mod tests {
             max_threads_per_week: 1,
             min_action_delay_seconds: 30,
             max_action_delay_seconds: 120,
+            max_replies_per_author_per_day: 1,
+            banned_phrases: vec![
+                "check out".to_string(),
+                "you should try".to_string(),
+            ],
+            product_mention_ratio: 0.2,
         }
     }
 
@@ -494,6 +580,105 @@ mod tests {
             similar.to_string(),
             "Reply phrasing too similar to recent replies"
         );
+
+        let banned = DenialReason::BannedPhrase {
+            phrase: "check out".to_string(),
+        };
+        assert_eq!(
+            banned.to_string(),
+            "Reply contains banned phrase: \"check out\""
+        );
+
+        let author = DenialReason::AuthorLimitReached;
+        assert_eq!(
+            author.to_string(),
+            "Already reached daily reply limit for this author"
+        );
+
+        let self_reply = DenialReason::SelfReply;
+        assert_eq!(self_reply.to_string(), "Cannot reply to own tweets");
+    }
+
+    #[test]
+    fn contains_banned_phrase_detects_match() {
+        let banned = vec!["check out".to_string(), "link in bio".to_string()];
+        assert_eq!(
+            contains_banned_phrase("You should check out this tool!", &banned),
+            Some("check out".to_string())
+        );
+    }
+
+    #[test]
+    fn contains_banned_phrase_case_insensitive() {
+        let banned = vec!["Check Out".to_string()];
+        assert_eq!(
+            contains_banned_phrase("check out this thing", &banned),
+            Some("Check Out".to_string())
+        );
+    }
+
+    #[test]
+    fn contains_banned_phrase_no_match() {
+        let banned = vec!["check out".to_string()];
+        assert_eq!(
+            contains_banned_phrase("This is a helpful reply", &banned),
+            None
+        );
+    }
+
+    #[test]
+    fn is_self_reply_detects_self() {
+        assert!(is_self_reply("user_123", "user_123"));
+    }
+
+    #[test]
+    fn is_self_reply_different_users() {
+        assert!(!is_self_reply("user_123", "user_456"));
+    }
+
+    #[test]
+    fn is_self_reply_empty_ids() {
+        assert!(!is_self_reply("", "user_123"));
+        assert!(!is_self_reply("user_123", ""));
+        assert!(!is_self_reply("", ""));
+    }
+
+    #[tokio::test]
+    async fn safety_guard_check_author_limit_allows_first() {
+        let (_pool, guard) = setup_guard().await;
+        let result = guard.check_author_limit("author_1", 1).await.expect("check");
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn safety_guard_check_author_limit_blocks_over_limit() {
+        let (_pool, guard) = setup_guard().await;
+        guard
+            .record_author_interaction("author_1", "alice")
+            .await
+            .expect("record");
+
+        let result = guard.check_author_limit("author_1", 1).await.expect("check");
+        assert_eq!(result, Err(DenialReason::AuthorLimitReached));
+    }
+
+    #[test]
+    fn check_banned_phrases_blocks_banned() {
+        let banned = vec!["check out".to_string(), "I recommend".to_string()];
+        let result = SafetyGuard::check_banned_phrases("You should check out this tool!", &banned);
+        assert_eq!(
+            result,
+            Err(DenialReason::BannedPhrase {
+                phrase: "check out".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn check_banned_phrases_allows_clean() {
+        let banned = vec!["check out".to_string()];
+        let result = SafetyGuard::check_banned_phrases("Great insight on testing!", &banned);
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

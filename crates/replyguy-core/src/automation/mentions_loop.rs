@@ -242,10 +242,10 @@ impl MentionsLoop {
             };
         }
 
-        // Generate reply
+        // Generate reply (always mention product for direct mentions)
         let reply_text = match self
             .generator
-            .generate_reply(&mention.text, &mention.author_username)
+            .generate_reply(&mention.text, &mention.author_username, true)
             .await
         {
             Ok(text) => text,
@@ -373,6 +373,7 @@ mod tests {
             &self,
             _tweet_text: &str,
             author: &str,
+            _mention_product: bool,
         ) -> Result<String, LoopError> {
             Ok(format!("{} reply to @{author}", self.reply_prefix))
         }
@@ -386,6 +387,7 @@ mod tests {
             &self,
             _tweet_text: &str,
             _author: &str,
+            _mention_product: bool,
         ) -> Result<String, LoopError> {
             Err(LoopError::LlmFailure("timeout".to_string()))
         }
@@ -514,6 +516,7 @@ mod tests {
         LoopTweet {
             id: id.to_string(),
             text: format!("Test tweet from @{author}"),
+            author_id: format!("uid_{author}"),
             author_username: author.to_string(),
             author_followers: 1000,
             created_at: "2026-01-01T00:00:00Z".to_string(),

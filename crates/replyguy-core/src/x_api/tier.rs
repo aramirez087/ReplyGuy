@@ -231,6 +231,26 @@ mod tests {
         async fn get_me(&self) -> Result<User, XApiError> {
             unimplemented!()
         }
+
+        async fn get_user_tweets(
+            &self,
+            _user_id: &str,
+            _max_results: u32,
+        ) -> Result<SearchResponse, XApiError> {
+            unimplemented!()
+        }
+
+        async fn follow_user(
+            &self,
+            _source_user_id: &str,
+            _target_user_id: &str,
+        ) -> Result<(), XApiError> {
+            unimplemented!()
+        }
+
+        async fn get_user_by_username(&self, _username: &str) -> Result<User, XApiError> {
+            unimplemented!()
+        }
     }
 
     #[tokio::test]

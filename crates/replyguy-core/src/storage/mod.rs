@@ -4,9 +4,12 @@
 //! for all persistent entities. Uses SQLx with WAL mode for concurrent access.
 
 pub mod action_log;
+pub mod analytics;
+pub mod author_interactions;
 pub mod cleanup;
 pub mod rate_limits;
 pub mod replies;
+pub mod target_accounts;
 pub mod threads;
 pub mod tweets;
 
@@ -122,6 +125,12 @@ mod tests {
         assert!(table_names.contains(&"thread_tweets"));
         assert!(table_names.contains(&"rate_limits"));
         assert!(table_names.contains(&"action_log"));
+        assert!(table_names.contains(&"target_accounts"));
+        assert!(table_names.contains(&"target_tweets"));
+        assert!(table_names.contains(&"follower_snapshots"));
+        assert!(table_names.contains(&"reply_performance"));
+        assert!(table_names.contains(&"tweet_performance"));
+        assert!(table_names.contains(&"content_scores"));
     }
 
     #[tokio::test]

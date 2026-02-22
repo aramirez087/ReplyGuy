@@ -227,6 +227,9 @@ mod tests {
             max_threads_per_week: 1,
             min_action_delay_seconds: 30,
             max_action_delay_seconds: 120,
+            max_replies_per_author_per_day: 1,
+            banned_phrases: vec![],
+            product_mention_ratio: 0.2,
         }
     }
 

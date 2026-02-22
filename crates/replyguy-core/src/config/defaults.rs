@@ -18,11 +18,13 @@ impl Default for AuthConfig {
 impl Default for ScoringConfig {
     fn default() -> Self {
         Self {
-            threshold: 70,
-            keyword_relevance_max: 40.0,
-            follower_count_max: 20.0,
-            recency_max: 15.0,
-            engagement_rate_max: 25.0,
+            threshold: 60,
+            keyword_relevance_max: 25.0,
+            follower_count_max: 15.0,
+            recency_max: 10.0,
+            engagement_rate_max: 15.0,
+            reply_count_max: 15.0,
+            content_type_max: 10.0,
         }
     }
 }
@@ -30,11 +32,19 @@ impl Default for ScoringConfig {
 impl Default for LimitsConfig {
     fn default() -> Self {
         Self {
-            max_replies_per_day: 15,
-            max_tweets_per_day: 3,
+            max_replies_per_day: 5,
+            max_tweets_per_day: 6,
             max_threads_per_week: 1,
             min_action_delay_seconds: 45,
             max_action_delay_seconds: 180,
+            max_replies_per_author_per_day: 1,
+            banned_phrases: vec![
+                "check out".to_string(),
+                "you should try".to_string(),
+                "I recommend".to_string(),
+                "link in bio".to_string(),
+            ],
+            product_mention_ratio: 0.2,
         }
     }
 }
@@ -44,7 +54,7 @@ impl Default for IntervalsConfig {
         Self {
             mentions_check_seconds: 300,
             discovery_search_seconds: 900,
-            content_post_window_seconds: 18000,
+            content_post_window_seconds: 10800,
             thread_interval_seconds: 604800,
         }
     }

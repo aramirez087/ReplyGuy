@@ -22,6 +22,8 @@ pub struct LoopTweet {
     pub id: String,
     /// Tweet text content.
     pub text: String,
+    /// Author's user ID.
+    pub author_id: String,
     /// Author's username (without @).
     pub author_username: String,
     /// Author's follower count.
@@ -141,7 +143,15 @@ pub trait TweetSearcher: Send + Sync {
 #[async_trait::async_trait]
 pub trait ReplyGenerator: Send + Sync {
     /// Generate a reply to the given tweet.
-    async fn generate_reply(&self, tweet_text: &str, author: &str) -> Result<String, LoopError>;
+    ///
+    /// When `mention_product` is true, the reply may reference the product.
+    /// When false, the reply must be purely helpful with no product mention.
+    async fn generate_reply(
+        &self,
+        tweet_text: &str,
+        author: &str,
+        mention_product: bool,
+    ) -> Result<String, LoopError>;
 }
 
 /// Port for safety checks (rate limits and dedup).
@@ -202,6 +212,13 @@ pub trait PostSender: Send + Sync {
 // ============================================================================
 // WP09 port traits: Content + Thread loops
 // ============================================================================
+
+/// Queries top-performing topics for epsilon-greedy topic selection.
+#[async_trait::async_trait]
+pub trait TopicScorer: Send + Sync {
+    /// Get the top-performing topics, ordered by score descending.
+    async fn get_top_topics(&self, limit: u32) -> Result<Vec<String>, ContentLoopError>;
+}
 
 /// Generates individual tweets on a given topic.
 #[async_trait::async_trait]
@@ -430,6 +447,7 @@ mod tests {
         let tweet = LoopTweet {
             id: "123".to_string(),
             text: "hello".to_string(),
+            author_id: "uid_123".to_string(),
             author_username: "user".to_string(),
             author_followers: 1000,
             created_at: "2026-01-01T00:00:00Z".to_string(),

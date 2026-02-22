@@ -313,10 +313,10 @@ impl DiscoveryLoop {
             };
         }
 
-        // Generate reply
+        // Generate reply (product mention decided by caller or random)
         let reply_text = match self
             .generator
-            .generate_reply(&tweet.text, &tweet.author_username)
+            .generate_reply(&tweet.text, &tweet.author_username, true)
             .await
         {
             Ok(text) => text,
@@ -456,6 +456,7 @@ mod tests {
             &self,
             _tweet_text: &str,
             _author: &str,
+            _mention_product: bool,
         ) -> Result<String, LoopError> {
             Ok(self.reply.clone())
         }
@@ -580,6 +581,7 @@ mod tests {
         LoopTweet {
             id: id.to_string(),
             text: format!("Test tweet about rust from @{author}"),
+            author_id: format!("uid_{author}"),
             author_username: author.to_string(),
             author_followers: 5000,
             created_at: "2026-01-01T00:00:00Z".to_string(),

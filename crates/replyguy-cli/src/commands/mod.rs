@@ -5,6 +5,7 @@
 pub mod auth;
 pub mod init;
 pub mod run;
+pub mod stats;
 pub mod test;
 
 use clap::Args;
@@ -99,3 +100,7 @@ pub struct ScoreArgs {
     /// The X tweet ID to score
     pub tweet_id: String,
 }
+
+/// Arguments for the `stats` subcommand.
+#[derive(Debug, Args)]
+pub struct StatsArgs;

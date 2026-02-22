@@ -4,6 +4,7 @@
 //! (280 characters per tweet, 5-8 tweets per thread) with retry logic.
 
 use crate::config::BusinessProfile;
+use crate::content::frameworks::{ReplyArchetype, ThreadStructure, TweetFormat};
 use crate::error::LlmError;
 use crate::llm::{GenerationParams, LlmProvider};
 
@@ -28,15 +29,30 @@ impl ContentGenerator {
     /// Generate a reply to a tweet.
     ///
     /// The reply will be conversational, helpful, and under 280 characters.
+    /// When `mention_product` is false, the system prompt explicitly forbids
+    /// mentioning the product name.
+    /// When `archetype` is provided, the prompt includes archetype-specific
+    /// guidance for varied output (e.g., ask a question, share experience).
     /// Retries once with a stricter prompt if the first attempt is too long,
     /// then truncates at a sentence boundary as a last resort.
     pub async fn generate_reply(
         &self,
         tweet_text: &str,
         tweet_author: &str,
+        mention_product: bool,
     ) -> Result<String, LlmError> {
-        let product_url = self.business.product_url.as_deref().unwrap_or("");
+        self.generate_reply_with_archetype(tweet_text, tweet_author, mention_product, None)
+            .await
+    }
 
+    /// Generate a reply using a specific archetype for varied output.
+    pub async fn generate_reply_with_archetype(
+        &self,
+        tweet_text: &str,
+        tweet_author: &str,
+        mention_product: bool,
+        archetype: Option<ReplyArchetype>,
+    ) -> Result<String, LlmError> {
         let voice_section = match &self.business.brand_voice {
             Some(v) if !v.is_empty() => format!("\nVoice & personality: {v}"),
             _ => String::new(),
@@ -46,30 +62,60 @@ impl ContentGenerator {
             _ => "\nReply style: Be conversational and helpful, not salesy. Sound like a real person, not a bot.".to_string(),
         };
 
-        let system = format!(
-            "You are a helpful community member who uses {} ({}).\n\
-             Your target audience is: {}.\n\
-             Product URL: {}\
-             {voice_section}\
-             {reply_section}\n\n\
-             Rules:\n\
-             - Write a reply to the tweet below.\n\
-             - Maximum 3 sentences.\n\
-             - Only mention {} if it is genuinely relevant to the tweet's topic.\n\
-             - Do not use hashtags.\n\
-             - Do not use emojis excessively.",
-            self.business.product_name,
-            self.business.product_description,
-            self.business.target_audience,
-            product_url,
-            self.business.product_name,
-        );
+        let archetype_section = match archetype {
+            Some(a) => format!("\n{}", a.prompt_fragment()),
+            None => String::new(),
+        };
 
+        let persona_section = self.format_persona_context();
+
+        let product_rule = if mention_product {
+            let product_url = self.business.product_url.as_deref().unwrap_or("");
+            format!(
+                "You are a helpful community member who uses {} ({}).\n\
+                 Your target audience is: {}.\n\
+                 Product URL: {}\
+                 {voice_section}\
+                 {reply_section}\
+                 {archetype_section}\
+                 {persona_section}\n\n\
+                 Rules:\n\
+                 - Write a reply to the tweet below.\n\
+                 - Maximum 3 sentences.\n\
+                 - Only mention {} if it is genuinely relevant to the tweet's topic.\n\
+                 - Do not use hashtags.\n\
+                 - Do not use emojis excessively.",
+                self.business.product_name,
+                self.business.product_description,
+                self.business.target_audience,
+                product_url,
+                self.business.product_name,
+            )
+        } else {
+            format!(
+                "You are a helpful community member.\n\
+                 Your target audience is: {}.\
+                 {voice_section}\
+                 {reply_section}\
+                 {archetype_section}\
+                 {persona_section}\n\n\
+                 Rules:\n\
+                 - Write a reply to the tweet below.\n\
+                 - Maximum 3 sentences.\n\
+                 - Do NOT mention {} or any product. Just be genuinely helpful.\n\
+                 - Do not use hashtags.\n\
+                 - Do not use emojis excessively.",
+                self.business.target_audience,
+                self.business.product_name,
+            )
+        };
+
+        let system = product_rule;
         let user_message = format!("Tweet by @{tweet_author}: {tweet_text}");
 
         let params = GenerationParams {
             max_tokens: 200,
-            temperature: 0.8,
+            temperature: 0.7,
             ..Default::default()
         };
 
@@ -102,6 +148,15 @@ impl ContentGenerator {
     ///
     /// The tweet will be informative, engaging, and under 280 characters.
     pub async fn generate_tweet(&self, topic: &str) -> Result<String, LlmError> {
+        self.generate_tweet_with_format(topic, None).await
+    }
+
+    /// Generate a tweet using a specific format for varied structure.
+    pub async fn generate_tweet_with_format(
+        &self,
+        topic: &str,
+        format: Option<TweetFormat>,
+    ) -> Result<String, LlmError> {
         let voice_section = match &self.business.brand_voice {
             Some(v) if !v.is_empty() => format!("\nVoice & personality: {v}"),
             _ => String::new(),
@@ -111,11 +166,20 @@ impl ContentGenerator {
             _ => "\nContent style: Be informative and engaging.".to_string(),
         };
 
+        let format_section = match format {
+            Some(f) => format!("\n{}", f.prompt_fragment()),
+            None => String::new(),
+        };
+
+        let persona_section = self.format_persona_context();
+
         let system = format!(
             "You are {}'s social media voice. {}.\n\
              Your audience: {}.\
              {voice_section}\
-             {content_section}\n\n\
+             {content_section}\
+             {format_section}\
+             {persona_section}\n\n\
              Rules:\n\
              - Write a single educational tweet about the topic below.\n\
              - Maximum 280 characters.\n\
@@ -164,6 +228,15 @@ impl ContentGenerator {
     /// Each tweet in the thread will be under 280 characters.
     /// Retries up to 2 times if the LLM produces malformed output.
     pub async fn generate_thread(&self, topic: &str) -> Result<Vec<String>, LlmError> {
+        self.generate_thread_with_structure(topic, None).await
+    }
+
+    /// Generate a thread using a specific structure for varied content.
+    pub async fn generate_thread_with_structure(
+        &self,
+        topic: &str,
+        structure: Option<ThreadStructure>,
+    ) -> Result<Vec<String>, LlmError> {
         let voice_section = match &self.business.brand_voice {
             Some(v) if !v.is_empty() => format!("\nVoice & personality: {v}"),
             _ => String::new(),
@@ -173,11 +246,20 @@ impl ContentGenerator {
             _ => "\nContent style: Be informative, not promotional.".to_string(),
         };
 
+        let structure_section = match structure {
+            Some(s) => format!("\n{}", s.prompt_fragment()),
+            None => String::new(),
+        };
+
+        let persona_section = self.format_persona_context();
+
         let system = format!(
             "You are {}'s social media voice. {}.\n\
              Your audience: {}.\
              {voice_section}\
-             {content_section}\n\n\
+             {content_section}\
+             {structure_section}\
+             {persona_section}\n\n\
              Rules:\n\
              - Write an educational thread of 5 to 8 tweets about the topic below.\n\
              - Separate each tweet with a line containing only \"---\".\n\
@@ -221,6 +303,32 @@ impl ContentGenerator {
         Err(LlmError::GenerationFailed(
             "Failed to generate valid thread after retries".to_string(),
         ))
+    }
+
+    /// Build a persona context section from opinions and experiences.
+    fn format_persona_context(&self) -> String {
+        let mut parts = Vec::new();
+
+        if !self.business.persona_opinions.is_empty() {
+            let opinions = self.business.persona_opinions.join("; ");
+            parts.push(format!("Opinions you hold: {opinions}"));
+        }
+
+        if !self.business.persona_experiences.is_empty() {
+            let experiences = self.business.persona_experiences.join("; ");
+            parts.push(format!("Experiences you can reference: {experiences}"));
+        }
+
+        if !self.business.content_pillars.is_empty() {
+            let pillars = self.business.content_pillars.join(", ");
+            parts.push(format!("Content pillars: {pillars}"));
+        }
+
+        if parts.is_empty() {
+            String::new()
+        } else {
+            format!("\n{}", parts.join("\n"))
+        }
     }
 }
 
@@ -384,6 +492,9 @@ mod tests {
             brand_voice: None,
             reply_style: None,
             content_style: None,
+            persona_opinions: vec![],
+            persona_experiences: vec![],
+            content_pillars: vec![],
         }
     }
 
@@ -490,7 +601,7 @@ mod tests {
         let gen = ContentGenerator::new(Box::new(provider), test_business());
 
         let reply = gen
-            .generate_reply("Testing is important", "devuser")
+            .generate_reply("Testing is important", "devuser", true)
             .await
             .expect("reply");
         assert!(reply.len() <= MAX_TWEET_CHARS);
@@ -503,8 +614,24 @@ mod tests {
         let provider = MockProvider::new(vec![long_text.clone(), long_text]);
         let gen = ContentGenerator::new(Box::new(provider), test_business());
 
-        let reply = gen.generate_reply("test", "user").await.expect("reply");
+        let reply = gen
+            .generate_reply("test", "user", true)
+            .await
+            .expect("reply");
         assert!(reply.len() <= MAX_TWEET_CHARS);
+    }
+
+    #[tokio::test]
+    async fn generate_reply_no_product_mention() {
+        let provider = MockProvider::single("That's a great approach for productivity!");
+        let gen = ContentGenerator::new(Box::new(provider), test_business());
+
+        let reply = gen
+            .generate_reply("How do you stay productive?", "devuser", false)
+            .await
+            .expect("reply");
+        assert!(reply.len() <= MAX_TWEET_CHARS);
+        assert!(!reply.is_empty());
     }
 
     // --- generate_tweet tests ---

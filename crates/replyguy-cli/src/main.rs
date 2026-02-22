@@ -56,6 +56,8 @@ enum Commands {
     Thread(commands::ThreadArgs),
     /// Score a specific tweet
     Score(commands::ScoreArgs),
+    /// Show analytics dashboard
+    Stats(commands::StatsArgs),
 }
 
 #[tokio::main]
@@ -122,6 +124,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Score(_args) => {
             eprintln!("score: not yet available (requires WP06 merge)");
+        }
+        Commands::Stats(_args) => {
+            commands::stats::execute(&config).await?;
         }
     }
 

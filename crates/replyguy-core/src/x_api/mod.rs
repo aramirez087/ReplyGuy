@@ -55,4 +55,21 @@ pub trait XApiClient: Send + Sync {
 
     /// Get the authenticated user's profile.
     async fn get_me(&self) -> Result<User, XApiError>;
+
+    /// Get recent tweets from a specific user.
+    async fn get_user_tweets(
+        &self,
+        user_id: &str,
+        max_results: u32,
+    ) -> Result<SearchResponse, XApiError>;
+
+    /// Follow a user by their user ID.
+    async fn follow_user(
+        &self,
+        source_user_id: &str,
+        target_user_id: &str,
+    ) -> Result<(), XApiError>;
+
+    /// Look up a user by their username.
+    async fn get_user_by_username(&self, username: &str) -> Result<User, XApiError>;
 }

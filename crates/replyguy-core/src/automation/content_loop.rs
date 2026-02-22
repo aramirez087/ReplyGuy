@@ -4,17 +4,22 @@
 //! schedule, keeping the user's X account active with thought-leadership
 //! content. Rotates through configured topics to avoid repetition.
 
-use super::loop_helpers::{ContentSafety, ContentStorage, TweetGenerator};
+use super::loop_helpers::{ContentSafety, ContentStorage, TopicScorer, TweetGenerator};
 use rand::seq::SliceRandom;
+use rand::Rng;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
+
+/// Fraction of the time to exploit top-performing topics (vs. explore random ones).
+const EXPLOIT_RATIO: f64 = 0.8;
 
 /// Content loop that generates and posts original educational tweets.
 pub struct ContentLoop {
     generator: Arc<dyn TweetGenerator>,
     safety: Arc<dyn ContentSafety>,
     storage: Arc<dyn ContentStorage>,
+    topic_scorer: Option<Arc<dyn TopicScorer>>,
     topics: Vec<String>,
     post_window_secs: u64,
     dry_run: bool,
@@ -49,10 +54,20 @@ impl ContentLoop {
             generator,
             safety,
             storage,
+            topic_scorer: None,
             topics,
             post_window_secs,
             dry_run,
         }
+    }
+
+    /// Set a topic scorer for epsilon-greedy topic selection.
+    ///
+    /// When set, 80% of the time the loop picks from top-performing topics
+    /// (exploit), and 20% of the time it picks a random topic (explore).
+    pub fn with_topic_scorer(mut self, scorer: Arc<dyn TopicScorer>) -> Self {
+        self.topic_scorer = Some(scorer);
+        self
     }
 
     /// Run the continuous content loop until cancellation.
@@ -187,8 +202,10 @@ impl ContentLoop {
             return ContentResult::RateLimited;
         }
 
-        // Pick a topic that's not in recent_topics
-        let topic = pick_topic(&self.topics, recent_topics, rng);
+        // Pick a topic using epsilon-greedy if scorer is available
+        let topic = self
+            .pick_topic_epsilon_greedy(recent_topics, rng)
+            .await;
 
         let result = self.generate_and_post(&topic).await;
 
@@ -201,6 +218,46 @@ impl ContentLoop {
         }
 
         result
+    }
+
+    /// Pick a topic using epsilon-greedy selection.
+    ///
+    /// If a topic scorer is available:
+    /// - 80% of the time: pick from top-performing topics (exploit)
+    /// - 20% of the time: pick a random topic (explore)
+    ///
+    /// Falls back to uniform random selection if no scorer is set or
+    /// if the scorer returns no data.
+    async fn pick_topic_epsilon_greedy(
+        &self,
+        recent_topics: &mut Vec<String>,
+        rng: &mut impl rand::Rng,
+    ) -> String {
+        if let Some(scorer) = &self.topic_scorer {
+            let roll: f64 = rng.gen();
+            if roll < EXPLOIT_RATIO {
+                // Exploit: try to pick from top-performing topics
+                if let Ok(top_topics) = scorer.get_top_topics(10).await {
+                    // Filter to topics that are in our configured list and not recent
+                    let candidates: Vec<&String> = top_topics
+                        .iter()
+                        .filter(|t| self.topics.contains(t) && !recent_topics.contains(t))
+                        .collect();
+
+                    if !candidates.is_empty() {
+                        let topic = candidates[0].clone();
+                        tracing::debug!(topic = %topic, "Epsilon-greedy: exploiting top topic");
+                        return topic;
+                    }
+                }
+                // Fall through to random if no top topics match
+                tracing::debug!("Epsilon-greedy: no top topics available, falling back to random");
+            } else {
+                tracing::debug!("Epsilon-greedy: exploring random topic");
+            }
+        }
+
+        pick_topic(&self.topics, recent_topics, rng)
     }
 
     /// Generate a tweet and post it (or print in dry-run mode).
@@ -728,5 +785,174 @@ mod tests {
     fn truncate_display_long() {
         let result = truncate_display("hello world this is long", 10);
         assert_eq!(result, "hello worl...");
+    }
+
+    // --- Epsilon-greedy tests ---
+
+    struct MockTopicScorer {
+        top_topics: Vec<String>,
+    }
+
+    #[async_trait::async_trait]
+    impl TopicScorer for MockTopicScorer {
+        async fn get_top_topics(&self, _limit: u32) -> Result<Vec<String>, ContentLoopError> {
+            Ok(self.top_topics.clone())
+        }
+    }
+
+    struct FailingTopicScorer;
+
+    #[async_trait::async_trait]
+    impl TopicScorer for FailingTopicScorer {
+        async fn get_top_topics(&self, _limit: u32) -> Result<Vec<String>, ContentLoopError> {
+            Err(ContentLoopError::StorageError("db error".to_string()))
+        }
+    }
+
+    #[tokio::test]
+    async fn epsilon_greedy_exploits_top_topic() {
+        let storage = Arc::new(MockStorage::new(None));
+        let scorer = Arc::new(MockTopicScorer {
+            top_topics: vec!["Rust".to_string()],
+        });
+
+        let content = ContentLoop::new(
+            Arc::new(MockGenerator {
+                response: "tweet".to_string(),
+            }),
+            Arc::new(MockSafety {
+                can_tweet: true,
+                can_thread: true,
+            }),
+            storage,
+            make_topics(),
+            14400,
+            false,
+        )
+        .with_topic_scorer(scorer);
+
+        // Use a seeded RNG that always returns 0.0 (< 0.8 = exploit)
+        let mut recent = Vec::new();
+        let mut rng = StubRng(0.0);
+
+        let topic = content
+            .pick_topic_epsilon_greedy(&mut recent, &mut rng)
+            .await;
+        assert_eq!(topic, "Rust");
+    }
+
+    #[tokio::test]
+    async fn epsilon_greedy_explores_when_roll_high() {
+        let storage = Arc::new(MockStorage::new(None));
+        let scorer = Arc::new(MockTopicScorer {
+            top_topics: vec!["Rust".to_string()],
+        });
+
+        let content = ContentLoop::new(
+            Arc::new(MockGenerator {
+                response: "tweet".to_string(),
+            }),
+            Arc::new(MockSafety {
+                can_tweet: true,
+                can_thread: true,
+            }),
+            storage,
+            make_topics(),
+            14400,
+            false,
+        )
+        .with_topic_scorer(scorer);
+
+        // Use a seeded RNG that returns 0.9 (>= 0.8 = explore)
+        let mut recent = Vec::new();
+        let mut rng = StubRng(0.9);
+
+        let topic = content
+            .pick_topic_epsilon_greedy(&mut recent, &mut rng)
+            .await;
+        // Should pick from the full topic list (random)
+        assert!(make_topics().contains(&topic));
+    }
+
+    #[tokio::test]
+    async fn epsilon_greedy_falls_back_on_scorer_error() {
+        let storage = Arc::new(MockStorage::new(None));
+        let scorer = Arc::new(FailingTopicScorer);
+
+        let content = ContentLoop::new(
+            Arc::new(MockGenerator {
+                response: "tweet".to_string(),
+            }),
+            Arc::new(MockSafety {
+                can_tweet: true,
+                can_thread: true,
+            }),
+            storage,
+            make_topics(),
+            14400,
+            false,
+        )
+        .with_topic_scorer(scorer);
+
+        let mut recent = Vec::new();
+        let mut rng = StubRng(0.0); // exploit
+
+        let topic = content
+            .pick_topic_epsilon_greedy(&mut recent, &mut rng)
+            .await;
+        // Falls back to random from all topics
+        assert!(make_topics().contains(&topic));
+    }
+
+    #[tokio::test]
+    async fn epsilon_greedy_without_scorer_picks_random() {
+        let storage = Arc::new(MockStorage::new(None));
+
+        let content = ContentLoop::new(
+            Arc::new(MockGenerator {
+                response: "tweet".to_string(),
+            }),
+            Arc::new(MockSafety {
+                can_tweet: true,
+                can_thread: true,
+            }),
+            storage,
+            make_topics(),
+            14400,
+            false,
+        );
+
+        let mut recent = Vec::new();
+        let mut rng = rand::thread_rng();
+
+        let topic = content
+            .pick_topic_epsilon_greedy(&mut recent, &mut rng)
+            .await;
+        assert!(make_topics().contains(&topic));
+    }
+
+    /// Stub RNG that always returns a fixed f64 value for gen().
+    struct StubRng(f64);
+
+    impl rand::RngCore for StubRng {
+        fn next_u32(&mut self) -> u32 {
+            // Map our f64 to a u32 range
+            (self.0 * u32::MAX as f64) as u32
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            (self.0 * u64::MAX as f64) as u64
+        }
+
+        fn fill_bytes(&mut self, dest: &mut [u8]) {
+            for byte in dest.iter_mut() {
+                *byte = (self.0 * 255.0) as u8;
+            }
+        }
+
+        fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+            self.fill_bytes(dest);
+            Ok(())
+        }
     }
 }

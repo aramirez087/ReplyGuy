@@ -295,6 +295,51 @@ impl XApiClient for XApiHttpClient {
             .map_err(|e| XApiError::Network { source: e })?;
         Ok(resp.data)
     }
+
+    async fn get_user_tweets(
+        &self,
+        user_id: &str,
+        max_results: u32,
+    ) -> Result<SearchResponse, XApiError> {
+        let path = format!("/users/{user_id}/tweets");
+        let max_str = max_results.to_string();
+        let params = [
+            ("max_results", max_str.as_str()),
+            ("tweet.fields", TWEET_FIELDS),
+            ("expansions", EXPANSIONS),
+            ("user.fields", USER_FIELDS),
+        ];
+
+        let response = self.get(&path, &params).await?;
+        response
+            .json::<SearchResponse>()
+            .await
+            .map_err(|e| XApiError::Network { source: e })
+    }
+
+    async fn follow_user(
+        &self,
+        source_user_id: &str,
+        target_user_id: &str,
+    ) -> Result<(), XApiError> {
+        let path = format!("/users/{source_user_id}/following");
+        let body = serde_json::json!({ "target_user_id": target_user_id });
+
+        self.post_json(&path, &body).await?;
+        Ok(())
+    }
+
+    async fn get_user_by_username(&self, username: &str) -> Result<User, XApiError> {
+        let path = format!("/users/by/username/{username}");
+        let params = [("user.fields", USER_FIELDS)];
+
+        let response = self.get(&path, &params).await?;
+        let resp: UserResponse = response
+            .json()
+            .await
+            .map_err(|e| XApiError::Network { source: e })?;
+        Ok(resp.data)
+    }
 }
 
 #[cfg(test)]

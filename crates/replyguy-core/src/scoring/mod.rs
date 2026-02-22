@@ -31,6 +31,12 @@ pub struct TweetData {
     pub author_username: String,
     /// Author's follower count.
     pub author_followers: u64,
+    /// Whether the tweet has attached media (images, video, etc.).
+    #[allow(dead_code)]
+    pub has_media: bool,
+    /// Whether the tweet is a quote tweet.
+    #[allow(dead_code)]
+    pub is_quote_tweet: bool,
 }
 
 /// Per-signal score breakdown for a tweet.
@@ -46,6 +52,10 @@ pub struct TweetScore {
     pub recency: f32,
     /// Engagement rate signal score.
     pub engagement: f32,
+    /// Reply count signal score (fewer replies = higher).
+    pub reply_count: f32,
+    /// Content type signal score (text-only = max).
+    pub content_type: f32,
     /// Whether the total score meets the configured threshold.
     pub meets_threshold: bool,
 }
@@ -72,7 +82,7 @@ impl ScoringEngine {
         self.score_tweet_at(tweet, Utc::now())
     }
 
-    /// Score a tweet using all four signals with a specific time reference.
+    /// Score a tweet using all six signals with a specific time reference.
     ///
     /// Accepts `now` for deterministic testing.
     pub fn score_tweet_at(&self, tweet: &TweetData, now: DateTime<Utc>) -> TweetScore {
@@ -82,8 +92,10 @@ impl ScoringEngine {
             self.config.keyword_relevance_max,
         );
 
-        let follower =
-            signals::follower_score(tweet.author_followers, self.config.follower_count_max);
+        let follower = signals::targeted_follower_score(
+            tweet.author_followers,
+            self.config.follower_count_max,
+        );
 
         let recency = signals::recency_score_at(&tweet.created_at, self.config.recency_max, now);
 
@@ -95,7 +107,22 @@ impl ScoringEngine {
             self.config.engagement_rate_max,
         );
 
-        let total = (keyword_relevance + follower + recency + engagement).clamp(0.0, 100.0);
+        let reply_count =
+            signals::reply_count_score(tweet.replies, self.config.reply_count_max);
+
+        let content_type = signals::content_type_score(
+            tweet.has_media,
+            tweet.is_quote_tweet,
+            self.config.content_type_max,
+        );
+
+        let total = (keyword_relevance
+            + follower
+            + recency
+            + engagement
+            + reply_count
+            + content_type)
+            .clamp(0.0, 100.0);
         let meets_threshold = total >= self.config.threshold as f32;
 
         TweetScore {
@@ -104,6 +131,8 @@ impl ScoringEngine {
             follower,
             recency,
             engagement,
+            reply_count,
+            content_type,
             meets_threshold,
         }
     }
@@ -216,13 +245,17 @@ impl TweetScore {
             "SKIP"
         };
 
+        let reply_count_display = tweet.replies;
+
         format!(
             "Tweet: \"{}\" by @{} ({} followers)\n\
              Score: {:.0}/100\n\
              \x20 Keyword relevance:  {:.0}/{}  (matched: {})\n\
-             \x20 Author reach:       {:.0}/{}  ({} followers, log scale)\n\
+             \x20 Author reach:       {:.0}/{}  ({} followers, bell curve)\n\
              \x20 Recency:            {:.0}/{}  (posted {} ago)\n\
              \x20 Engagement rate:    {:.0}/{}  ({:.1}% engagement vs 1.5% baseline)\n\
+             \x20 Reply count:        {:.0}/{}  ({} existing replies)\n\
+             \x20 Content type:       {:.0}/{}  ({})\n\
              Verdict: {} (threshold: {})",
             truncated,
             tweet.author_username,
@@ -240,6 +273,16 @@ impl TweetScore {
             self.engagement,
             config.engagement_rate_max as u32,
             rate_pct,
+            self.reply_count,
+            config.reply_count_max as u32,
+            reply_count_display,
+            self.content_type,
+            config.content_type_max as u32,
+            if tweet.has_media || tweet.is_quote_tweet {
+                "media/quote"
+            } else {
+                "text-only"
+            },
             verdict,
             config.threshold,
         )
@@ -250,12 +293,14 @@ impl std::fmt::Display for TweetScore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Score: {:.0}/100 [kw:{:.0} fol:{:.0} rec:{:.0} eng:{:.0}] {}",
+            "Score: {:.0}/100 [kw:{:.0} fol:{:.0} rec:{:.0} eng:{:.0} rep:{:.0} ct:{:.0}] {}",
             self.total,
             self.keyword_relevance,
             self.follower,
             self.recency,
             self.engagement,
+            self.reply_count,
+            self.content_type,
             if self.meets_threshold {
                 "REPLY"
             } else {
@@ -273,11 +318,13 @@ mod tests {
 
     fn default_scoring_config() -> ScoringConfig {
         ScoringConfig {
-            threshold: 70,
-            keyword_relevance_max: 40.0,
-            follower_count_max: 20.0,
-            recency_max: 15.0,
-            engagement_rate_max: 25.0,
+            threshold: 60,
+            keyword_relevance_max: 25.0,
+            follower_count_max: 15.0,
+            recency_max: 10.0,
+            engagement_rate_max: 15.0,
+            reply_count_max: 15.0,
+            content_type_max: 10.0,
         }
     }
 
@@ -290,6 +337,8 @@ mod tests {
             replies: 3,
             author_username: "devuser".to_string(),
             author_followers: 5000,
+            has_media: false,
+            is_quote_tweet: false,
         }
     }
 
@@ -304,8 +353,12 @@ mod tests {
         let tweet = test_tweet(now);
 
         let score = engine.score_tweet_at(&tweet, now);
-        let expected_total =
-            score.keyword_relevance + score.follower + score.recency + score.engagement;
+        let expected_total = score.keyword_relevance
+            + score.follower
+            + score.recency
+            + score.engagement
+            + score.reply_count
+            + score.content_type;
         assert!((score.total - expected_total).abs() < 0.01);
     }
 
@@ -318,6 +371,8 @@ mod tests {
             follower_count_max: 80.0,
             recency_max: 80.0,
             engagement_rate_max: 80.0,
+            reply_count_max: 80.0,
+            content_type_max: 80.0,
         };
         let keywords = vec!["rust".to_string()];
         let engine = ScoringEngine::new(config, keywords);
@@ -326,6 +381,74 @@ mod tests {
 
         let score = engine.score_tweet_at(&tweet, now);
         assert!(score.total <= 100.0);
+    }
+
+    #[test]
+    fn score_total_includes_new_signals() {
+        let config = default_scoring_config();
+        let keywords = vec!["rust".to_string()];
+        let engine = ScoringEngine::new(config, keywords);
+        let now = Utc::now();
+        let tweet = test_tweet(now);
+        let score = engine.score_tweet_at(&tweet, now);
+        // reply_count and content_type should contribute
+        assert!(score.reply_count > 0.0);
+        assert!(score.content_type > 0.0);
+    }
+
+    #[test]
+    fn score_zero_reply_higher_than_many_replies() {
+        let config = default_scoring_config();
+        let keywords = vec!["rust".to_string()];
+        let engine = ScoringEngine::new(config, keywords);
+        let now = Utc::now();
+
+        let mut tweet_few = test_tweet(now);
+        tweet_few.replies = 0;
+
+        let mut tweet_many = test_tweet(now);
+        tweet_many.replies = 50;
+
+        let score_few = engine.score_tweet_at(&tweet_few, now);
+        let score_many = engine.score_tweet_at(&tweet_many, now);
+        assert!(score_few.total > score_many.total);
+    }
+
+    #[test]
+    fn score_1k_follower_higher_than_100k() {
+        let config = default_scoring_config();
+        let keywords = vec!["rust".to_string()];
+        let engine = ScoringEngine::new(config, keywords);
+        let now = Utc::now();
+
+        let mut tweet_1k = test_tweet(now);
+        tweet_1k.author_followers = 1_000;
+
+        let mut tweet_100k = test_tweet(now);
+        tweet_100k.author_followers = 100_000;
+
+        let score_1k = engine.score_tweet_at(&tweet_1k, now);
+        let score_100k = engine.score_tweet_at(&tweet_100k, now);
+        assert!(
+            score_1k.follower > score_100k.follower,
+            "1K ({:.1}) should beat 100K ({:.1})",
+            score_1k.follower,
+            score_100k.follower
+        );
+    }
+
+    #[test]
+    fn score_quote_tweet_zero_content_type() {
+        let config = default_scoring_config();
+        let keywords = vec!["rust".to_string()];
+        let engine = ScoringEngine::new(config, keywords);
+        let now = Utc::now();
+
+        let mut tweet = test_tweet(now);
+        tweet.is_quote_tweet = true;
+
+        let score = engine.score_tweet_at(&tweet, now);
+        assert!((score.content_type - 0.0).abs() < 0.01);
     }
 
     #[test]
@@ -473,10 +596,12 @@ mod tests {
         let tweet = test_tweet(now);
         let score = TweetScore {
             total: 75.0,
-            keyword_relevance: 30.0,
-            follower: 15.0,
-            recency: 12.0,
-            engagement: 18.0,
+            keyword_relevance: 20.0,
+            follower: 12.0,
+            recency: 8.0,
+            engagement: 10.0,
+            reply_count: 15.0,
+            content_type: 10.0,
             meets_threshold: true,
         };
 
@@ -484,6 +609,8 @@ mod tests {
         assert!(output.contains("REPLY"));
         assert!(output.contains("75/100"));
         assert!(output.contains("@devuser"));
+        assert!(output.contains("Reply count"));
+        assert!(output.contains("Content type"));
     }
 
     #[test]
@@ -494,9 +621,11 @@ mod tests {
         let score = TweetScore {
             total: 40.0,
             keyword_relevance: 10.0,
-            follower: 10.0,
-            recency: 10.0,
-            engagement: 10.0,
+            follower: 8.0,
+            recency: 5.0,
+            engagement: 7.0,
+            reply_count: 5.0,
+            content_type: 5.0,
             meets_threshold: false,
         };
 
@@ -511,14 +640,18 @@ mod tests {
     fn display_impl() {
         let score = TweetScore {
             total: 75.0,
-            keyword_relevance: 30.0,
-            follower: 15.0,
-            recency: 12.0,
-            engagement: 18.0,
+            keyword_relevance: 20.0,
+            follower: 12.0,
+            recency: 8.0,
+            engagement: 10.0,
+            reply_count: 15.0,
+            content_type: 10.0,
             meets_threshold: true,
         };
         let display = format!("{score}");
         assert!(display.contains("75/100"));
         assert!(display.contains("REPLY"));
+        assert!(display.contains("rep:"));
+        assert!(display.contains("ct:"));
     }
 }

@@ -14,6 +14,7 @@
 //! - [`content_loop`]: Generates and posts educational tweets.
 //! - [`thread_loop`]: Generates and posts multi-tweet threads.
 
+pub mod analytics_loop;
 pub mod content_loop;
 pub mod discovery_loop;
 pub mod loop_helpers;
@@ -21,19 +22,28 @@ pub mod mentions_loop;
 pub mod posting_queue;
 pub mod scheduler;
 pub mod status_reporter;
+pub mod target_loop;
 pub mod thread_loop;
 
+pub use analytics_loop::{
+    AnalyticsError, AnalyticsLoop, AnalyticsStorage, AnalyticsSummary, EngagementFetcher,
+    ProfileFetcher, ProfileMetrics, TweetMetrics,
+};
 pub use content_loop::{ContentLoop, ContentResult};
 pub use discovery_loop::{DiscoveryLoop, DiscoveryResult, DiscoverySummary};
 pub use loop_helpers::{
     ConsecutiveErrorTracker, ContentLoopError, ContentSafety, ContentStorage, LoopError,
     LoopStorage, LoopTweet, MentionsFetcher, PostSender, ReplyGenerator, SafetyChecker,
-    ScoreResult, ThreadPoster, TweetGenerator, TweetScorer, TweetSearcher,
+    ScoreResult, ThreadPoster, TopicScorer, TweetGenerator, TweetScorer, TweetSearcher,
 };
 pub use mentions_loop::{MentionResult, MentionsLoop};
 pub use posting_queue::{create_posting_queue, PostAction, PostExecutor, QUEUE_CAPACITY};
 pub use scheduler::{scheduler_from_config, LoopScheduler};
 pub use status_reporter::{ActionCounts, StatusQuerier};
+pub use target_loop::{
+    TargetLoop, TargetLoopConfig, TargetResult, TargetStorage, TargetTweetFetcher,
+    TargetUserManager,
+};
 pub use thread_loop::{ThreadGenerator, ThreadLoop, ThreadResult};
 
 use std::future::Future;

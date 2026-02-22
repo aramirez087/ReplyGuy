@@ -111,6 +111,73 @@ pub fn recency_score(tweet_created_at: &str, max_score: f32) -> f32 {
     recency_score_at(tweet_created_at, max_score, Utc::now())
 }
 
+/// Compute reply count score — fewer existing replies = higher score.
+///
+/// Targets underserved conversations where a reply is more likely to be seen.
+/// - 0 replies = max_score (100%)
+/// - 5 replies = 50% of max_score
+/// - 20+ replies = 0% (conversation already crowded)
+pub fn reply_count_score(reply_count: u64, max_score: f32) -> f32 {
+    if reply_count >= 20 {
+        return 0.0;
+    }
+    // Linear decay: score = max_score * (1 - count/20)
+    let fraction = 1.0 - (reply_count as f64 / 20.0);
+    (fraction as f32 * max_score).clamp(0.0, max_score)
+}
+
+/// Compute targeted follower score using a bell curve.
+///
+/// Peaks at ~1K followers, drops off for very small (<100) and
+/// very large (>10K) accounts. This targets the mid-range "emerging
+/// voices" who are most likely to engage back.
+///
+/// - <100 followers: ramp up from 0 to 50%
+/// - 100-1K: ramp up from 50% to 100%
+/// - 1K-10K: 100% (sweet spot)
+/// - 10K-100K: decay from 100% to 25%
+/// - 100K+: 25% (still some value for visibility)
+pub fn targeted_follower_score(follower_count: u64, max_score: f32) -> f32 {
+    if follower_count == 0 {
+        return 0.0;
+    }
+
+    let fraction = if follower_count < 100 {
+        // Ramp from 0% to 50%
+        follower_count as f64 / 200.0
+    } else if follower_count < 1_000 {
+        // Ramp from 50% to 100%
+        0.5 + (follower_count as f64 - 100.0) / 1_800.0
+    } else if follower_count <= 10_000 {
+        // Sweet spot: 100%
+        1.0
+    } else if follower_count <= 100_000 {
+        // Decay from 100% to 25%
+        let t = (follower_count as f64 - 10_000.0) / 90_000.0;
+        1.0 - t * 0.75
+    } else {
+        // Floor at 25%
+        0.25
+    };
+
+    (fraction as f32 * max_score).clamp(0.0, max_score)
+}
+
+/// Compute content type score.
+///
+/// Text-only original tweets score highest. Media, quotes, and retweets
+/// score 0 because they are harder to reply to meaningfully.
+///
+/// - `has_media` = false, `is_quote_tweet` = false → max_score
+/// - otherwise → 0
+pub fn content_type_score(has_media: bool, is_quote_tweet: bool, max_score: f32) -> f32 {
+    if has_media || is_quote_tweet {
+        0.0
+    } else {
+        max_score
+    }
+}
+
 /// Compute engagement rate score.
 ///
 /// Calculates `(likes + retweets + replies) / max(followers, 1)` and
@@ -330,5 +397,94 @@ mod tests {
         let score = engagement_rate(10, 5, 3, 1000, 25.0);
         // rate=0.018, score = (0.018/0.05)*25 = 9.0
         assert!((score - 9.0).abs() < 0.1);
+    }
+
+    // --- reply_count_score tests ---
+
+    #[test]
+    fn reply_count_zero_replies_max_score() {
+        let score = reply_count_score(0, 15.0);
+        assert!((score - 15.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn reply_count_5_replies_half() {
+        let score = reply_count_score(5, 15.0);
+        // (1 - 5/20) * 15 = 0.75 * 15 = 11.25
+        assert!((score - 11.25).abs() < 0.01);
+    }
+
+    #[test]
+    fn reply_count_20_replies_zero() {
+        let score = reply_count_score(20, 15.0);
+        assert!((score - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn reply_count_50_replies_still_zero() {
+        let score = reply_count_score(50, 15.0);
+        assert!((score - 0.0).abs() < 0.01);
+    }
+
+    // --- targeted_follower_score tests ---
+
+    #[test]
+    fn targeted_follower_zero() {
+        assert_eq!(targeted_follower_score(0, 15.0), 0.0);
+    }
+
+    #[test]
+    fn targeted_follower_50_low() {
+        let score = targeted_follower_score(50, 15.0);
+        // 50/200 * 15 = 3.75
+        assert!(score > 0.0 && score < 7.5);
+    }
+
+    #[test]
+    fn targeted_follower_1000_sweet_spot() {
+        let score = targeted_follower_score(1000, 15.0);
+        assert!((score - 15.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn targeted_follower_5000_still_sweet_spot() {
+        let score = targeted_follower_score(5000, 15.0);
+        assert!((score - 15.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn targeted_follower_100k_drops() {
+        let score_1k = targeted_follower_score(1000, 15.0);
+        let score_100k = targeted_follower_score(100_000, 15.0);
+        assert!(score_1k > score_100k);
+    }
+
+    #[test]
+    fn targeted_follower_500k_floor() {
+        let score = targeted_follower_score(500_000, 15.0);
+        // Floor at 25% = 3.75
+        assert!((score - 3.75).abs() < 0.01);
+    }
+
+    // --- content_type_score tests ---
+
+    #[test]
+    fn content_type_text_only_max() {
+        assert!((content_type_score(false, false, 10.0) - 10.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn content_type_with_media_zero() {
+        assert!((content_type_score(true, false, 10.0) - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn content_type_quote_tweet_zero() {
+        assert!((content_type_score(false, true, 10.0) - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn content_type_media_and_quote_zero() {
+        assert!((content_type_score(true, true, 10.0) - 0.0).abs() < 0.01);
     }
 }

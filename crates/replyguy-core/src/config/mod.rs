@@ -45,6 +45,10 @@ pub struct Config {
     #[serde(default)]
     pub llm: LlmConfig,
 
+    /// Target account monitoring configuration.
+    #[serde(default)]
+    pub targets: TargetsConfig,
+
     /// Data storage configuration.
     #[serde(default)]
     pub storage: StorageConfig,
@@ -124,6 +128,18 @@ pub struct BusinessProfile {
     /// Style guidelines specific to original tweets and threads.
     #[serde(default)]
     pub content_style: Option<String>,
+
+    /// Opinions the persona holds (used to add variety to generated content).
+    #[serde(default)]
+    pub persona_opinions: Vec<String>,
+
+    /// Experiences the persona can reference (keeps content authentic).
+    #[serde(default)]
+    pub persona_experiences: Vec<String>,
+
+    /// Core content pillars (broad themes the account focuses on).
+    #[serde(default)]
+    pub content_pillars: Vec<String>,
 }
 
 /// Scoring engine weights and threshold.
@@ -148,6 +164,14 @@ pub struct ScoringConfig {
     /// Maximum points for engagement rate.
     #[serde(default = "default_engagement_rate_max")]
     pub engagement_rate_max: f32,
+
+    /// Maximum points for reply count signal (fewer replies = higher score).
+    #[serde(default = "default_reply_count_max")]
+    pub reply_count_max: f32,
+
+    /// Maximum points for content type signal (text-only originals score highest).
+    #[serde(default = "default_content_type_max")]
+    pub content_type_max: f32,
 }
 
 /// Safety limits for API actions.
@@ -172,6 +196,18 @@ pub struct LimitsConfig {
     /// Maximum delay between actions in seconds.
     #[serde(default = "default_max_action_delay_seconds")]
     pub max_action_delay_seconds: u64,
+
+    /// Maximum replies to the same author per day.
+    #[serde(default = "default_max_replies_per_author_per_day")]
+    pub max_replies_per_author_per_day: u32,
+
+    /// Phrases that should never appear in generated replies.
+    #[serde(default = "default_banned_phrases")]
+    pub banned_phrases: Vec<String>,
+
+    /// Fraction of replies that may mention the product (0.0 - 1.0).
+    #[serde(default = "default_product_mention_ratio")]
+    pub product_mention_ratio: f32,
 }
 
 /// Automation interval settings.
@@ -192,6 +228,33 @@ pub struct IntervalsConfig {
     /// Seconds between thread posts.
     #[serde(default = "default_thread_interval_seconds")]
     pub thread_interval_seconds: u64,
+}
+
+/// Target account monitoring configuration.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct TargetsConfig {
+    /// Target account usernames to monitor (without @).
+    #[serde(default)]
+    pub accounts: Vec<String>,
+
+    /// Maximum target account replies per day (separate from general limit).
+    #[serde(default = "default_max_target_replies_per_day")]
+    pub max_target_replies_per_day: u32,
+
+    /// Whether to auto-follow target accounts.
+    #[serde(default)]
+    pub auto_follow: bool,
+
+    /// Number of days to wait after following before engaging.
+    #[serde(default = "default_follow_warmup_days")]
+    pub follow_warmup_days: u32,
+}
+
+fn default_max_target_replies_per_day() -> u32 {
+    3
+}
+fn default_follow_warmup_days() -> u32 {
+    3
 }
 
 /// LLM provider configuration.
@@ -246,25 +309,31 @@ fn default_callback_port() -> u16 {
     8080
 }
 fn default_threshold() -> u32 {
-    70
+    60
 }
 fn default_keyword_relevance_max() -> f32 {
-    40.0
-}
-fn default_follower_count_max() -> f32 {
-    20.0
-}
-fn default_recency_max() -> f32 {
-    15.0
-}
-fn default_engagement_rate_max() -> f32 {
     25.0
 }
+fn default_follower_count_max() -> f32 {
+    15.0
+}
+fn default_recency_max() -> f32 {
+    10.0
+}
+fn default_engagement_rate_max() -> f32 {
+    15.0
+}
+fn default_reply_count_max() -> f32 {
+    15.0
+}
+fn default_content_type_max() -> f32 {
+    10.0
+}
 fn default_max_replies_per_day() -> u32 {
-    15
+    5
 }
 fn default_max_tweets_per_day() -> u32 {
-    3
+    6
 }
 fn default_max_threads_per_week() -> u32 {
     1
@@ -282,10 +351,24 @@ fn default_discovery_search_seconds() -> u64 {
     900
 }
 fn default_content_post_window_seconds() -> u64 {
-    18000
+    10800
 }
 fn default_thread_interval_seconds() -> u64 {
     604800
+}
+fn default_max_replies_per_author_per_day() -> u32 {
+    1
+}
+fn default_banned_phrases() -> Vec<String> {
+    vec![
+        "check out".to_string(),
+        "you should try".to_string(),
+        "I recommend".to_string(),
+        "link in bio".to_string(),
+    ]
+}
+fn default_product_mention_ratio() -> f32 {
+    0.2
 }
 fn default_db_path() -> String {
     "~/.replyguy/replyguy.db".to_string()
@@ -513,6 +596,15 @@ impl Config {
             self.scoring.threshold = parse_env_u32("REPLYGUY_SCORING__THRESHOLD", &val)?;
         }
 
+        if let Ok(val) = env::var("REPLYGUY_SCORING__REPLY_COUNT_MAX") {
+            self.scoring.reply_count_max =
+                parse_env_f32("REPLYGUY_SCORING__REPLY_COUNT_MAX", &val)?;
+        }
+        if let Ok(val) = env::var("REPLYGUY_SCORING__CONTENT_TYPE_MAX") {
+            self.scoring.content_type_max =
+                parse_env_f32("REPLYGUY_SCORING__CONTENT_TYPE_MAX", &val)?;
+        }
+
         // Limits
         if let Ok(val) = env::var("REPLYGUY_LIMITS__MAX_REPLIES_PER_DAY") {
             self.limits.max_replies_per_day =
@@ -534,6 +626,17 @@ impl Config {
             self.limits.max_action_delay_seconds =
                 parse_env_u64("REPLYGUY_LIMITS__MAX_ACTION_DELAY_SECONDS", &val)?;
         }
+        if let Ok(val) = env::var("REPLYGUY_LIMITS__MAX_REPLIES_PER_AUTHOR_PER_DAY") {
+            self.limits.max_replies_per_author_per_day =
+                parse_env_u32("REPLYGUY_LIMITS__MAX_REPLIES_PER_AUTHOR_PER_DAY", &val)?;
+        }
+        if let Ok(val) = env::var("REPLYGUY_LIMITS__BANNED_PHRASES") {
+            self.limits.banned_phrases = split_csv(&val);
+        }
+        if let Ok(val) = env::var("REPLYGUY_LIMITS__PRODUCT_MENTION_RATIO") {
+            self.limits.product_mention_ratio =
+                parse_env_f32("REPLYGUY_LIMITS__PRODUCT_MENTION_RATIO", &val)?;
+        }
 
         // Intervals
         if let Ok(val) = env::var("REPLYGUY_INTERVALS__MENTIONS_CHECK_SECONDS") {
@@ -551,6 +654,15 @@ impl Config {
         if let Ok(val) = env::var("REPLYGUY_INTERVALS__THREAD_INTERVAL_SECONDS") {
             self.intervals.thread_interval_seconds =
                 parse_env_u64("REPLYGUY_INTERVALS__THREAD_INTERVAL_SECONDS", &val)?;
+        }
+
+        // Targets
+        if let Ok(val) = env::var("REPLYGUY_TARGETS__ACCOUNTS") {
+            self.targets.accounts = split_csv(&val);
+        }
+        if let Ok(val) = env::var("REPLYGUY_TARGETS__MAX_TARGET_REPLIES_PER_DAY") {
+            self.targets.max_target_replies_per_day =
+                parse_env_u32("REPLYGUY_TARGETS__MAX_TARGET_REPLIES_PER_DAY", &val)?;
         }
 
         // LLM
@@ -623,6 +735,14 @@ fn parse_env_u32(var_name: &str, val: &str) -> Result<u32, ConfigError> {
     })
 }
 
+/// Parse an environment variable value as `f32`.
+fn parse_env_f32(var_name: &str, val: &str) -> Result<f32, ConfigError> {
+    val.parse::<f32>().map_err(|_| ConfigError::InvalidValue {
+        field: var_name.to_string(),
+        message: format!("'{val}' is not a valid f32"),
+    })
+}
+
 /// Parse an environment variable value as `u64`.
 fn parse_env_u64(var_name: &str, val: &str) -> Result<u64, ConfigError> {
     val.parse::<u64>().map_err(|_| ConfigError::InvalidValue {
@@ -672,8 +792,8 @@ client_id = "test"
         let config: Config = toml::from_str(toml_str).expect("valid TOML");
         assert_eq!(config.auth.mode, "local_callback");
         assert_eq!(config.auth.callback_port, 8080);
-        assert_eq!(config.scoring.threshold, 70);
-        assert_eq!(config.limits.max_replies_per_day, 15);
+        assert_eq!(config.scoring.threshold, 60);
+        assert_eq!(config.limits.max_replies_per_day, 5);
         assert_eq!(config.intervals.mentions_check_seconds, 300);
         assert_eq!(config.storage.db_path, "~/.replyguy/replyguy.db");
         assert_eq!(config.storage.retention_days, 90);
