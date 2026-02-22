@@ -16,7 +16,7 @@ Tuitbot grows your X account on autopilot — finding relevant conversations, re
 
 Built for **founders**, **indie hackers**, and **solo makers** who'd rather build their product than spend hours on X.
 
-[Two Modes](#-two-operating-modes) · [Features](#-features) · [Getting Started](#-getting-started) · [Configuration](#-configuration-reference) · [Deployment](#-deployment)
+[Two Modes](#two-operating-modes) · [Features](#features) · [Getting Started](#getting-started) · [Configuration](#configuration-reference) · [Deployment](#deployment)
 
 </div>
 
