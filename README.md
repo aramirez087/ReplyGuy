@@ -20,7 +20,7 @@ Built for **founders**, **indie hackers**, and **solo makers** who'd rather buil
 
 ## ✨ Features
 
-Tuitbot runs up to six automated loops while you focus on building. It respects configurable **active hours** so it only posts during times that look and feel natural.
+Tuitbot runs up to six automated loops while you focus on building. It respects configurable **active hours** and supports precise **slot-based scheduling** so you can target peak engagement windows or fall back to a natural, interval-based cadence.
 
 ### 🔍 1. Finds Conversations That Matter
 Searches X for tweets matching your product's keywords. Tuitbot uses a **6-signal scoring engine** to find the perfect interactions:
@@ -30,10 +30,10 @@ Searches X for tweets matching your product's keywords. Tuitbot uses a **6-signa
 When it finds a high-scoring tweet, Tuitbot uses AI to write a natural, helpful reply using varied **reply archetypes** (agree and expand, ask a question, share an experience). It mentions your product sparingly (configurable) and never uses banned phrases like *"check out"* or *"link in bio"*.
 
 ### 📝 3. Posts Educational Tweets
-Every few hours, Tuitbot posts original tweets using varied formats (lists, contrarian takes, tips, questions). It uses **epsilon-greedy topic selection** to continuously explore new topics while doubling down on what performs best.
+Tuitbot posts original tweets at your preferred precise times (e.g., peak engagement windows) or automatically every few hours using varied formats (lists, contrarian takes, tips, questions). It uses **epsilon-greedy topic selection** to continuously explore new topics while doubling down on what performs best.
 
 ### 🧵 4. Publishes Weekly Threads
-Once a week, Tuitbot crafts a multi-tweet thread using proven structures: transformation stories, frameworks, common mistakes, or deep analysis.
+Once a week, Tuitbot crafts a multi-tweet thread using proven structures: transformation stories, frameworks, common mistakes, or deep analysis. You can target specific high-traction days and times for your threads to maximize reach.
 
 ### 🔔 5. Monitors Mentions & Tracks Targets
 * Automatically generates thoughtful replies when someone @-mentions you.
@@ -173,6 +173,14 @@ banned_phrases = ["check out", "you should try", "I recommend", "link in bio"]
 timezone = "America/New_York"
 active_hours_start = 8
 active_hours_end = 22
+
+# Target peak engagement windows for tweets (HH:MM, 24h)
+# Use "auto" for research-backed defaults: ["09:15", "12:30", "17:00"]
+preferred_times = ["auto"]
+
+# Schedule weekly threads for maximum reach
+thread_preferred_day = "Tue"
+thread_preferred_time = "10:00"
 ```
 
 > **💡 Pro Tip:** Need ultimate peace of mind? Set `approval_mode = true` in your config. Tuitbot will queue all outgoing posts for your manual seal of approval via `tuitbot approve` before they ever go live!

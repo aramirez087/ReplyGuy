@@ -249,6 +249,11 @@ pub trait ContentStorage: Send + Sync {
         &self,
     ) -> Result<Option<chrono::DateTime<chrono::Utc>>, ContentLoopError>;
 
+    /// Get the timestamps of all tweets posted today (for slot-based scheduling).
+    async fn todays_tweet_times(
+        &self,
+    ) -> Result<Vec<chrono::DateTime<chrono::Utc>>, ContentLoopError>;
+
     /// Post a tweet (sends to posting queue and records in DB).
     async fn post_tweet(&self, topic: &str, content: &str) -> Result<(), ContentLoopError>;
 

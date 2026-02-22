@@ -236,3 +236,20 @@ active_hours_end = 22
 
 # Days of the week the bot is active. Use 3-letter abbreviations.
 active_days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+# Preferred posting times for tweets (HH:MM in 24h format, in timezone above).
+# When set, the content loop posts at these specific times instead of every N hours.
+# Use "auto" for research-backed defaults: 09:15 (morning), 12:30 (lunch), 17:00 (end-of-day).
+# preferred_times = ["auto"]
+# preferred_times = ["09:15", "12:30", "17:00"]
+
+# Per-day overrides for preferred posting times.
+# Days not listed use the default preferred_times above.
+# Use an empty list to skip posting on a specific day.
+# [schedule.preferred_times_override]
+# Sat = ["11:00"]
+# Sun = []
+
+# Preferred day and time for weekly thread posting (overrides thread_interval_seconds).
+# thread_preferred_day = "Tue"
+# thread_preferred_time = "10:00"

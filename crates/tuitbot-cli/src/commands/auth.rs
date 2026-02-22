@@ -41,14 +41,19 @@ pub async fn execute(config: &Config, mode_override: Option<&str>) -> anyhow::Re
     // 4. Run the auth flow based on mode.
     let code = match mode {
         "local_callback" => {
-            run_callback_mode(
-                &auth_url,
-                &config.auth.callback_host,
-                config.auth.callback_port,
-            )
-            .await?
+            if is_headless_environment() {
+                eprintln!("SSH session detected — switching to manual authentication.\n");
+                run_manual_mode(&auth_url, true)?
+            } else {
+                run_callback_mode(
+                    &auth_url,
+                    &config.auth.callback_host,
+                    config.auth.callback_port,
+                )
+                .await?
+            }
         }
-        _ => run_manual_mode(&auth_url)?,
+        _ => run_manual_mode(&auth_url, false)?,
     };
 
     // 5. Exchange the authorization code for tokens.
@@ -79,13 +84,29 @@ pub async fn execute(config: &Config, mode_override: Option<&str>) -> anyhow::Re
 }
 
 /// Manual mode: print the authorization URL and prompt for the code.
-fn run_manual_mode(auth_url: &str) -> anyhow::Result<String> {
-    eprintln!("Open this URL in your browser:\n");
-    eprintln!("  {auth_url}\n");
-    eprintln!(
-        "After authorizing, your browser will redirect to a URL containing the code.\n\
-         Paste the authorization code (or the full callback URL) here:"
-    );
+///
+/// When `remote_redirect` is true (headless/SSH fallback), the instructions
+/// explain that the redirect page won't load and the user should copy the
+/// full URL from the browser's address bar.
+fn run_manual_mode(auth_url: &str, remote_redirect: bool) -> anyhow::Result<String> {
+    eprintln!("=== X API Authentication ===\n");
+    eprintln!("1. Open this URL in a browser on any device:\n");
+    eprintln!("   {auth_url}\n");
+    eprintln!("2. Authorize the application.");
+
+    if remote_redirect {
+        eprintln!(
+            "3. Your browser will redirect to a page that won't load — this is expected.\n   \
+             Copy the ENTIRE URL from your browser's address bar."
+        );
+        eprintln!("\nPaste the full callback URL or authorization code:");
+    } else {
+        eprintln!(
+            "3. After authorizing, your browser will redirect to a URL containing the code.\n\n\
+             Paste the authorization code (or the full callback URL):"
+        );
+    }
+
     eprint!("> ");
     std::io::stderr().flush().ok();
 
@@ -116,11 +137,15 @@ async fn run_callback_mode(auth_url: &str, host: &str, port: u16) -> anyhow::Res
     eprintln!("Opening authorization URL in your browser...\n");
 
     // Open the auth URL in the default browser.
+    // If the browser fails to open, fall back to manual mode so the user
+    // doesn't wait 120 seconds for a callback that will never arrive.
     if let Err(e) = open::that(auth_url) {
         eprintln!(
             "Could not open browser automatically: {e}\n\
-             Open this URL manually:\n\n  {auth_url}\n"
+             Falling back to manual authentication.\n"
         );
+        drop(listener);
+        return run_manual_mode(auth_url, true);
     }
 
     // Wait for the callback with a 120-second timeout.
@@ -189,4 +214,21 @@ async fn wait_for_callback(listener: &tokio::net::TcpListener) -> anyhow::Result
         .ok();
 
     Ok(code)
+}
+
+/// Detect headless environments where a local callback server is unreachable.
+///
+/// Returns `true` when running over SSH or when no display server is available
+/// on Linux (no X11 or Wayland).
+fn is_headless_environment() -> bool {
+    if std::env::var("SSH_CONNECTION").is_ok() || std::env::var("SSH_TTY").is_ok() {
+        return true;
+    }
+
+    #[cfg(target_os = "linux")]
+    if std::env::var("DISPLAY").is_err() && std::env::var("WAYLAND_DISPLAY").is_err() {
+        return true;
+    }
+
+    false
 }

@@ -935,6 +935,23 @@ pub(super) fn edit_category_schedule(
             "Active days:   {}",
             format_list(&config.schedule.active_days)
         ),
+        format!(
+            "Tweet times:   {}",
+            if config.schedule.preferred_times.is_empty() {
+                "(interval mode)".to_string()
+            } else {
+                format_list(&config.schedule.preferred_times)
+            }
+        ),
+        format!(
+            "Thread day:    {}",
+            config
+                .schedule
+                .thread_preferred_day
+                .as_deref()
+                .unwrap_or("(interval mode)")
+        ),
+        format!("Thread time:   {}", config.schedule.thread_preferred_time),
         "Back to categories".to_string(),
     ];
 
@@ -990,6 +1007,27 @@ pub(super) fn edit_category_schedule(
             "schedule",
             "active_days",
             "Active days",
+        )?,
+        4 => edit_and_record_list(
+            tracker,
+            &mut config.schedule.preferred_times,
+            "schedule",
+            "preferred_times",
+            "Tweet times (HH:MM, or \"auto\" for defaults)",
+        )?,
+        5 => edit_and_record_opt_string(
+            tracker,
+            &mut config.schedule.thread_preferred_day,
+            "schedule",
+            "thread_preferred_day",
+            "Thread day (Mon-Sun, empty for interval mode)",
+        )?,
+        6 => edit_and_record_string(
+            tracker,
+            &mut config.schedule.thread_preferred_time,
+            "schedule",
+            "thread_preferred_time",
+            "Thread time (HH:MM)",
         )?,
         _ => {} // Back
     }

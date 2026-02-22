@@ -5,7 +5,7 @@
 //! reply chain order must be maintained (each tweet replies to the previous).
 
 use super::loop_helpers::{ContentLoopError, ContentSafety, ContentStorage, ThreadPoster};
-use super::schedule::{schedule_gate, ActiveSchedule};
+use super::schedule::{apply_slot_jitter, schedule_gate, ActiveSchedule};
 use super::scheduler::LoopScheduler;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -99,10 +99,15 @@ impl ThreadLoop {
         scheduler: LoopScheduler,
         schedule: Option<Arc<ActiveSchedule>>,
     ) {
+        let slot_mode = schedule
+            .as_ref()
+            .is_some_and(|s| s.has_thread_preferred_schedule());
+
         tracing::info!(
             dry_run = self.dry_run,
             topics = self.topics.len(),
             thread_interval_secs = self.thread_interval_secs,
+            slot_mode = slot_mode,
             "Thread loop started"
         );
 
@@ -128,58 +133,112 @@ impl ThreadLoop {
                 break;
             }
 
-            let result = self
-                .run_iteration(&mut recent_topics, max_recent, &mut rng)
-                .await;
+            if slot_mode {
+                let sched = schedule.as_ref().expect("slot_mode requires schedule");
 
-            match &result {
-                ThreadResult::Posted {
-                    topic, tweet_count, ..
-                } => {
-                    tracing::info!(
-                        topic = %topic,
-                        tweets = tweet_count,
-                        dry_run = self.dry_run,
-                        "Thread iteration: thread posted"
-                    );
-                }
-                ThreadResult::PartialFailure {
-                    tweets_posted,
-                    total_tweets,
-                    error,
-                    ..
-                } => {
-                    tracing::warn!(
-                        posted = tweets_posted,
-                        total = total_tweets,
-                        error = %error,
-                        "Thread iteration: partial failure"
-                    );
-                }
-                ThreadResult::TooSoon { .. } => {
-                    tracing::debug!("Thread iteration: too soon since last thread");
-                }
-                ThreadResult::RateLimited => {
-                    tracing::info!("Thread iteration: weekly thread limit reached");
-                }
-                ThreadResult::NoTopics => {
-                    tracing::warn!("Thread iteration: no topics available");
-                }
-                ThreadResult::ValidationFailed { error } => {
-                    tracing::warn!(error = %error, "Thread iteration: validation failed");
-                }
-                ThreadResult::Failed { error } => {
-                    tracing::warn!(error = %error, "Thread iteration: failed");
-                }
-            }
+                match sched.next_thread_slot() {
+                    Some(wait) => {
+                        let jittered_wait = apply_slot_jitter(wait);
+                        tracing::info!(
+                            wait_secs = jittered_wait.as_secs(),
+                            "Thread slot mode: sleeping until preferred thread time"
+                        );
 
-            tokio::select! {
-                _ = cancel.cancelled() => break,
-                _ = scheduler.tick() => {},
+                        tokio::select! {
+                            _ = cancel.cancelled() => break,
+                            _ = tokio::time::sleep(jittered_wait) => {},
+                        }
+
+                        if cancel.is_cancelled() {
+                            break;
+                        }
+
+                        // In slot mode, skip the elapsed-time check — post directly
+                        if !self.safety.can_post_thread().await {
+                            Self::log_thread_result(&ThreadResult::RateLimited, self.dry_run);
+                            continue;
+                        }
+
+                        let topic = pick_topic(&self.topics, &mut recent_topics, &mut rng);
+                        let result = self.generate_and_post(&topic, None).await;
+
+                        if matches!(result, ThreadResult::Posted { .. }) {
+                            if recent_topics.len() >= max_recent {
+                                recent_topics.remove(0);
+                            }
+                            recent_topics.push(topic);
+                        }
+
+                        Self::log_thread_result(&result, self.dry_run);
+                    }
+                    None => {
+                        // Should not happen since next_thread_slot always returns Some when configured
+                        tracing::warn!("Thread slot mode: no next slot found, sleeping 1 hour");
+                        tokio::select! {
+                            _ = cancel.cancelled() => break,
+                            _ = tokio::time::sleep(Duration::from_secs(3600)) => {},
+                        }
+                    }
+                }
+            } else {
+                // Interval-based scheduling (existing behavior)
+                let result = self
+                    .run_iteration(&mut recent_topics, max_recent, &mut rng)
+                    .await;
+                Self::log_thread_result(&result, self.dry_run);
+
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    _ = scheduler.tick() => {},
+                }
             }
         }
 
         tracing::info!("Thread loop stopped");
+    }
+
+    /// Log the result of a thread iteration.
+    fn log_thread_result(result: &ThreadResult, dry_run: bool) {
+        match result {
+            ThreadResult::Posted {
+                topic, tweet_count, ..
+            } => {
+                tracing::info!(
+                    topic = %topic,
+                    tweets = tweet_count,
+                    dry_run = dry_run,
+                    "Thread iteration: thread posted"
+                );
+            }
+            ThreadResult::PartialFailure {
+                tweets_posted,
+                total_tweets,
+                error,
+                ..
+            } => {
+                tracing::warn!(
+                    posted = tweets_posted,
+                    total = total_tweets,
+                    error = %error,
+                    "Thread iteration: partial failure"
+                );
+            }
+            ThreadResult::TooSoon { .. } => {
+                tracing::debug!("Thread iteration: too soon since last thread");
+            }
+            ThreadResult::RateLimited => {
+                tracing::info!("Thread iteration: weekly thread limit reached");
+            }
+            ThreadResult::NoTopics => {
+                tracing::warn!("Thread iteration: no topics available");
+            }
+            ThreadResult::ValidationFailed { error } => {
+                tracing::warn!(error = %error, "Thread iteration: validation failed");
+            }
+            ThreadResult::Failed { error } => {
+                tracing::warn!(error = %error, "Thread iteration: failed");
+            }
+        }
     }
 
     /// Run a single thread generation (for CLI `tuitbot thread` command).
@@ -623,6 +682,12 @@ mod tests {
             &self,
         ) -> Result<Option<chrono::DateTime<chrono::Utc>>, ContentLoopError> {
             Ok(*self.last_thread.lock().expect("lock"))
+        }
+
+        async fn todays_tweet_times(
+            &self,
+        ) -> Result<Vec<chrono::DateTime<chrono::Utc>>, ContentLoopError> {
+            Ok(Vec::new())
         }
 
         async fn post_tweet(&self, _topic: &str, _content: &str) -> Result<(), ContentLoopError> {

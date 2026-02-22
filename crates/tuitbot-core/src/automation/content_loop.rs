@@ -5,7 +5,7 @@
 //! content. Rotates through configured topics to avoid repetition.
 
 use super::loop_helpers::{ContentSafety, ContentStorage, TopicScorer, TweetGenerator};
-use super::schedule::{schedule_gate, ActiveSchedule};
+use super::schedule::{apply_slot_jitter, schedule_gate, ActiveSchedule};
 use super::scheduler::LoopScheduler;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -78,10 +78,13 @@ impl ContentLoop {
         scheduler: LoopScheduler,
         schedule: Option<Arc<ActiveSchedule>>,
     ) {
+        let slot_mode = schedule.as_ref().is_some_and(|s| s.has_preferred_times());
+
         tracing::info!(
             dry_run = self.dry_run,
             topics = self.topics.len(),
             window_secs = self.post_window_secs,
+            slot_mode = slot_mode,
             "Content loop started"
         );
 
@@ -107,47 +110,146 @@ impl ContentLoop {
                 break;
             }
 
-            let result = self
-                .run_iteration(&mut recent_topics, max_recent, &mut rng)
-                .await;
+            if slot_mode {
+                // Slot-based scheduling: post at preferred times
+                let sched = schedule.as_ref().expect("slot_mode requires schedule");
 
-            match &result {
-                ContentResult::Posted { topic, content } => {
-                    tracing::info!(
-                        topic = %topic,
-                        chars = content.len(),
-                        dry_run = self.dry_run,
-                        "Content iteration: tweet posted"
-                    );
-                }
-                ContentResult::TooSoon {
-                    elapsed_secs,
-                    window_secs,
-                } => {
-                    tracing::debug!(
-                        elapsed = elapsed_secs,
-                        window = window_secs,
-                        "Content iteration: too soon since last tweet"
-                    );
-                }
-                ContentResult::RateLimited => {
-                    tracing::info!("Content iteration: daily tweet limit reached");
-                }
-                ContentResult::NoTopics => {
-                    tracing::warn!("Content iteration: no topics available");
-                }
-                ContentResult::Failed { error } => {
-                    tracing::warn!(error = %error, "Content iteration: failed");
-                }
-            }
+                // Query today's post times from storage
+                let today_posts = match self.storage.todays_tweet_times().await {
+                    Ok(times) => times,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "Failed to query today's tweet times");
+                        Vec::new()
+                    }
+                };
 
-            tokio::select! {
-                _ = cancel.cancelled() => break,
-                _ = scheduler.tick() => {},
+                match sched.next_unused_slot(&today_posts) {
+                    Some((wait, slot)) => {
+                        let jittered_wait = apply_slot_jitter(wait);
+                        tracing::info!(
+                            slot = %slot.format(),
+                            wait_secs = jittered_wait.as_secs(),
+                            "Slot mode: sleeping until next posting slot"
+                        );
+
+                        tokio::select! {
+                            _ = cancel.cancelled() => break,
+                            _ = tokio::time::sleep(jittered_wait) => {},
+                        }
+
+                        if cancel.is_cancelled() {
+                            break;
+                        }
+
+                        // In slot mode, skip the elapsed-time check — post directly
+                        let result = self
+                            .run_slot_iteration(&mut recent_topics, max_recent, &mut rng)
+                            .await;
+                        self.log_content_result(&result);
+                    }
+                    None => {
+                        // All slots used today — sleep until next active day
+                        tracing::info!(
+                            "Slot mode: all slots used today, sleeping until next active period"
+                        );
+                        if let Some(sched) = &schedule {
+                            let wait = sched.time_until_active();
+                            if wait.is_zero() {
+                                // Currently active but all slots used — sleep 1 hour and recheck
+                                tokio::select! {
+                                    _ = cancel.cancelled() => break,
+                                    _ = tokio::time::sleep(std::time::Duration::from_secs(3600)) => {},
+                                }
+                            } else {
+                                tokio::select! {
+                                    _ = cancel.cancelled() => break,
+                                    _ = tokio::time::sleep(wait) => {},
+                                }
+                            }
+                        } else {
+                            tokio::select! {
+                                _ = cancel.cancelled() => break,
+                                _ = tokio::time::sleep(std::time::Duration::from_secs(3600)) => {},
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Interval-based scheduling (existing behavior)
+                let result = self
+                    .run_iteration(&mut recent_topics, max_recent, &mut rng)
+                    .await;
+                self.log_content_result(&result);
+
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    _ = scheduler.tick() => {},
+                }
             }
         }
 
         tracing::info!("Content loop stopped");
+    }
+
+    /// Log the result of a content iteration.
+    fn log_content_result(&self, result: &ContentResult) {
+        match result {
+            ContentResult::Posted { topic, content } => {
+                tracing::info!(
+                    topic = %topic,
+                    chars = content.len(),
+                    dry_run = self.dry_run,
+                    "Content iteration: tweet posted"
+                );
+            }
+            ContentResult::TooSoon {
+                elapsed_secs,
+                window_secs,
+            } => {
+                tracing::debug!(
+                    elapsed = elapsed_secs,
+                    window = window_secs,
+                    "Content iteration: too soon since last tweet"
+                );
+            }
+            ContentResult::RateLimited => {
+                tracing::info!("Content iteration: daily tweet limit reached");
+            }
+            ContentResult::NoTopics => {
+                tracing::warn!("Content iteration: no topics available");
+            }
+            ContentResult::Failed { error } => {
+                tracing::warn!(error = %error, "Content iteration: failed");
+            }
+        }
+    }
+
+    /// Run a single iteration in slot mode (skips elapsed-time check).
+    async fn run_slot_iteration(
+        &self,
+        recent_topics: &mut Vec<String>,
+        max_recent: usize,
+        rng: &mut impl rand::Rng,
+    ) -> ContentResult {
+        // Check safety (daily tweet limit)
+        if !self.safety.can_post_tweet().await {
+            return ContentResult::RateLimited;
+        }
+
+        // Pick a topic using epsilon-greedy if scorer is available
+        let topic = self.pick_topic_epsilon_greedy(recent_topics, rng).await;
+
+        let result = self.generate_and_post(&topic).await;
+
+        // Update recent_topics on success
+        if matches!(result, ContentResult::Posted { .. }) {
+            if recent_topics.len() >= max_recent {
+                recent_topics.remove(0);
+            }
+            recent_topics.push(topic);
+        }
+
+        result
     }
 
     /// Run a single content generation (for CLI `tuitbot post` command).
@@ -496,6 +598,12 @@ mod tests {
             &self,
         ) -> Result<Option<chrono::DateTime<chrono::Utc>>, ContentLoopError> {
             Ok(None)
+        }
+
+        async fn todays_tweet_times(
+            &self,
+        ) -> Result<Vec<chrono::DateTime<chrono::Utc>>, ContentLoopError> {
+            Ok(Vec::new())
         }
 
         async fn post_tweet(&self, topic: &str, content: &str) -> Result<(), ContentLoopError> {

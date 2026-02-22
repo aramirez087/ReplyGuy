@@ -681,6 +681,13 @@ impl ContentStorage for ContentStorageAdapter {
         Ok(time_str.and_then(|s| parse_datetime(&s)))
     }
 
+    async fn todays_tweet_times(&self) -> Result<Vec<DateTime<Utc>>, ContentLoopError> {
+        let time_strs = storage::threads::get_todays_tweet_times(&self.pool)
+            .await
+            .map_err(|e| ContentLoopError::StorageError(e.to_string()))?;
+        Ok(time_strs.iter().filter_map(|s| parse_datetime(s)).collect())
+    }
+
     async fn last_thread_time(&self) -> Result<Option<DateTime<Utc>>, ContentLoopError> {
         let time_str = storage::threads::get_last_thread_time(&self.pool)
             .await

@@ -175,6 +175,20 @@ pub async fn get_last_thread_time(pool: &DbPool) -> Result<Option<String>, Stora
     Ok(row.map(|r| r.0))
 }
 
+/// Get the timestamps of all successfully posted original tweets today (UTC).
+pub async fn get_todays_tweet_times(pool: &DbPool) -> Result<Vec<String>, StorageError> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT created_at FROM original_tweets \
+         WHERE status = 'sent' AND date(created_at) = date('now') \
+         ORDER BY created_at ASC",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
 /// Count threads posted in the current ISO week (Monday-Sunday, UTC).
 pub async fn count_threads_this_week(pool: &DbPool) -> Result<i64, StorageError> {
     let row: (i64,) = sqlx::query_as(

@@ -522,6 +522,27 @@ pub(super) fn set_direct(config: &mut Config, kv: &str, config_path: &Path) -> R
             "active_days",
             value,
         ),
+        "schedule.preferred_times" => set_csv(
+            &mut tracker,
+            &mut config.schedule.preferred_times,
+            "schedule",
+            "preferred_times",
+            value,
+        ),
+        "schedule.thread_preferred_day" => set_opt_string(
+            &mut tracker,
+            &mut config.schedule.thread_preferred_day,
+            "schedule",
+            "thread_preferred_day",
+            value,
+        ),
+        "schedule.thread_preferred_time" => set_string(
+            &mut tracker,
+            &mut config.schedule.thread_preferred_time,
+            "schedule",
+            "thread_preferred_time",
+            value,
+        ),
 
         _ => bail!(
             "Unknown setting: {key}\n\

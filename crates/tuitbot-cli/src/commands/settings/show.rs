@@ -235,6 +235,41 @@ pub(super) fn show_config(config: &Config) {
         "  Active days:         {}",
         format_list(&config.schedule.active_days)
     );
+    eprintln!(
+        "  Tweet times:         {}",
+        if config.schedule.preferred_times.is_empty() {
+            "(interval mode)".to_string()
+        } else {
+            format_list(&config.schedule.preferred_times)
+        }
+    );
+    if !config.schedule.preferred_times_override.is_empty() {
+        let mut overrides: Vec<_> = config.schedule.preferred_times_override.iter().collect();
+        overrides.sort_by_key(|(k, _)| (*k).clone());
+        for (day, times) in overrides {
+            eprintln!(
+                "    {} override:      {}",
+                day,
+                if times.is_empty() {
+                    "(no posts)".to_string()
+                } else {
+                    times.join(", ")
+                }
+            );
+        }
+    }
+    eprintln!(
+        "  Thread day:          {}",
+        config
+            .schedule
+            .thread_preferred_day
+            .as_deref()
+            .unwrap_or("(interval mode)")
+    );
+    eprintln!(
+        "  Thread time:         {}",
+        config.schedule.thread_preferred_time
+    );
 
     // Storage & Logging
     eprintln!();

@@ -11,6 +11,7 @@ mod defaults;
 
 use crate::error::ConfigError;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 
@@ -323,6 +324,26 @@ pub struct ScheduleConfig {
     /// Days of the week when posting is active (e.g. ["Mon", "Tue", ...]).
     #[serde(default = "default_active_days")]
     pub active_days: Vec<String>,
+
+    /// Preferred posting times for tweets (HH:MM in 24h format, in configured timezone).
+    /// When set, the content loop posts at these specific times instead of using interval mode.
+    /// Use "auto" for research-backed defaults: 09:15, 12:30, 17:00.
+    #[serde(default)]
+    pub preferred_times: Vec<String>,
+
+    /// Per-day overrides for preferred posting times.
+    /// Keys are day abbreviations (Mon-Sun), values are lists of "HH:MM" times.
+    /// Days not listed use the base `preferred_times`. Empty list = no posts that day.
+    #[serde(default)]
+    pub preferred_times_override: HashMap<String, Vec<String>>,
+
+    /// Preferred day for weekly thread posting (Mon-Sun). None = interval mode.
+    #[serde(default)]
+    pub thread_preferred_day: Option<String>,
+
+    /// Preferred time for weekly thread posting (HH:MM, 24h format).
+    #[serde(default = "default_thread_preferred_time")]
+    pub thread_preferred_time: String,
 }
 
 impl Default for ScheduleConfig {
@@ -332,6 +353,10 @@ impl Default for ScheduleConfig {
             active_hours_start: default_active_hours_start(),
             active_hours_end: default_active_hours_end(),
             active_days: default_active_days(),
+            preferred_times: Vec::new(),
+            preferred_times_override: HashMap::new(),
+            thread_preferred_day: None,
+            thread_preferred_time: default_thread_preferred_time(),
         }
     }
 }
@@ -355,6 +380,9 @@ fn default_active_days() -> Vec<String> {
         "Sat".to_string(),
         "Sun".to_string(),
     ]
+}
+fn default_thread_preferred_time() -> String {
+    "10:00".to_string()
 }
 
 // --- Default value functions for serde ---
@@ -610,6 +638,102 @@ impl Config {
             }
         }
 
+        // Validate preferred_times
+        for time_str in &self.schedule.preferred_times {
+            if time_str != "auto" && !is_valid_hhmm(time_str) {
+                errors.push(ConfigError::InvalidValue {
+                    field: "schedule.preferred_times".to_string(),
+                    message: format!(
+                        "'{}' is not a valid time (use HH:MM 24h format or \"auto\")",
+                        time_str
+                    ),
+                });
+                break;
+            }
+        }
+
+        // Validate preferred_times_override keys and values
+        for (day, times) in &self.schedule.preferred_times_override {
+            if !valid_days.contains(&day.as_str()) {
+                errors.push(ConfigError::InvalidValue {
+                    field: "schedule.preferred_times_override".to_string(),
+                    message: format!(
+                        "'{}' is not a valid day abbreviation (use Mon, Tue, Wed, Thu, Fri, Sat, Sun)",
+                        day
+                    ),
+                });
+                break;
+            }
+            for time_str in times {
+                if !is_valid_hhmm(time_str) {
+                    errors.push(ConfigError::InvalidValue {
+                        field: "schedule.preferred_times_override".to_string(),
+                        message: format!(
+                            "'{}' is not a valid time for {} (use HH:MM 24h format)",
+                            time_str, day
+                        ),
+                    });
+                    break;
+                }
+            }
+        }
+
+        // Count effective slots per day vs max_tweets_per_day
+        let effective_slots = if self.schedule.preferred_times.is_empty() {
+            0
+        } else {
+            // "auto" expands to 3 slots
+            let base_count: usize = self
+                .schedule
+                .preferred_times
+                .iter()
+                .map(|t| if t == "auto" { 3 } else { 1 })
+                .sum();
+            // Check max across all override days too
+            let max_override = self
+                .schedule
+                .preferred_times_override
+                .values()
+                .map(|v| v.len())
+                .max()
+                .unwrap_or(0);
+            base_count.max(max_override)
+        };
+        if effective_slots > self.limits.max_tweets_per_day as usize {
+            errors.push(ConfigError::InvalidValue {
+                field: "schedule.preferred_times".to_string(),
+                message: format!(
+                    "preferred_times has {} slots but limits.max_tweets_per_day is {} — \
+                     increase the limit or reduce the number of time slots",
+                    effective_slots, self.limits.max_tweets_per_day
+                ),
+            });
+        }
+
+        // Validate thread_preferred_day
+        if let Some(day) = &self.schedule.thread_preferred_day {
+            if !valid_days.contains(&day.as_str()) {
+                errors.push(ConfigError::InvalidValue {
+                    field: "schedule.thread_preferred_day".to_string(),
+                    message: format!(
+                        "'{}' is not a valid day abbreviation (use Mon, Tue, Wed, Thu, Fri, Sat, Sun)",
+                        day
+                    ),
+                });
+            }
+        }
+
+        // Validate thread_preferred_time
+        if !is_valid_hhmm(&self.schedule.thread_preferred_time) {
+            errors.push(ConfigError::InvalidValue {
+                field: "schedule.thread_preferred_time".to_string(),
+                message: format!(
+                    "'{}' is not a valid time (use HH:MM 24h format)",
+                    self.schedule.thread_preferred_time
+                ),
+            });
+        }
+
         if errors.is_empty() {
             Ok(())
         } else {
@@ -805,9 +929,38 @@ impl Config {
         if let Ok(val) = env::var("TUITBOT_SCHEDULE__ACTIVE_DAYS") {
             self.schedule.active_days = split_csv(&val);
         }
+        if let Ok(val) = env::var("TUITBOT_SCHEDULE__PREFERRED_TIMES") {
+            self.schedule.preferred_times = split_csv(&val);
+        }
+        if let Ok(val) = env::var("TUITBOT_SCHEDULE__THREAD_PREFERRED_DAY") {
+            let val = val.trim().to_string();
+            if val.is_empty() || val == "none" {
+                self.schedule.thread_preferred_day = None;
+            } else {
+                self.schedule.thread_preferred_day = Some(val);
+            }
+        }
+        if let Ok(val) = env::var("TUITBOT_SCHEDULE__THREAD_PREFERRED_TIME") {
+            self.schedule.thread_preferred_time = val;
+        }
 
         Ok(())
     }
+}
+
+/// Check if a string is a valid HH:MM time (24h format).
+fn is_valid_hhmm(s: &str) -> bool {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 2 {
+        return false;
+    }
+    let Ok(hour) = parts[0].parse::<u8>() else {
+        return false;
+    };
+    let Ok(minute) = parts[1].parse::<u8>() else {
+        return false;
+    };
+    hour <= 23 && minute <= 59
 }
 
 /// Expand `~` at the start of a path to the user's home directory.
@@ -1077,6 +1230,131 @@ client_id = "test"
     fn split_csv_trims_and_filters() {
         let result = split_csv("  rust , cli ,, tools  ");
         assert_eq!(result, vec!["rust", "cli", "tools"]);
+    }
+
+    #[test]
+    fn validate_preferred_times_valid() {
+        let mut config = Config::default();
+        config.business.product_name = "Test".to_string();
+        config.business.product_keywords = vec!["test".to_string()];
+        config.llm.provider = "ollama".to_string();
+        config.schedule.preferred_times = vec!["09:15".to_string(), "12:30".to_string()];
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_preferred_times_auto() {
+        let mut config = Config::default();
+        config.business.product_name = "Test".to_string();
+        config.business.product_keywords = vec!["test".to_string()];
+        config.llm.provider = "ollama".to_string();
+        config.schedule.preferred_times = vec!["auto".to_string()];
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_preferred_times_invalid_format() {
+        let mut config = Config::default();
+        config.business.product_name = "Test".to_string();
+        config.business.product_keywords = vec!["test".to_string()];
+        config.llm.provider = "ollama".to_string();
+        config.schedule.preferred_times = vec!["9:15".to_string(), "25:00".to_string()];
+        let errors = config.validate().unwrap_err();
+        assert!(errors.iter().any(
+            |e| matches!(e, ConfigError::InvalidValue { field, .. } if field == "schedule.preferred_times")
+        ));
+    }
+
+    #[test]
+    fn validate_preferred_times_exceeds_max_tweets() {
+        let mut config = Config::default();
+        config.business.product_name = "Test".to_string();
+        config.business.product_keywords = vec!["test".to_string()];
+        config.llm.provider = "ollama".to_string();
+        config.limits.max_tweets_per_day = 2;
+        config.schedule.preferred_times = vec![
+            "09:00".to_string(),
+            "12:00".to_string(),
+            "17:00".to_string(),
+        ];
+        let errors = config.validate().unwrap_err();
+        assert!(errors.iter().any(
+            |e| matches!(e, ConfigError::InvalidValue { field, message } if field == "schedule.preferred_times" && message.contains("3 slots"))
+        ));
+    }
+
+    #[test]
+    fn validate_thread_preferred_day_invalid() {
+        let mut config = Config::default();
+        config.business.product_name = "Test".to_string();
+        config.business.product_keywords = vec!["test".to_string()];
+        config.llm.provider = "ollama".to_string();
+        config.schedule.thread_preferred_day = Some("Monday".to_string());
+        let errors = config.validate().unwrap_err();
+        assert!(errors.iter().any(
+            |e| matches!(e, ConfigError::InvalidValue { field, .. } if field == "schedule.thread_preferred_day")
+        ));
+    }
+
+    #[test]
+    fn validate_thread_preferred_time_invalid() {
+        let mut config = Config::default();
+        config.business.product_name = "Test".to_string();
+        config.business.product_keywords = vec!["test".to_string()];
+        config.llm.provider = "ollama".to_string();
+        config.schedule.thread_preferred_time = "25:00".to_string();
+        let errors = config.validate().unwrap_err();
+        assert!(errors.iter().any(
+            |e| matches!(e, ConfigError::InvalidValue { field, .. } if field == "schedule.thread_preferred_time")
+        ));
+    }
+
+    #[test]
+    fn preferred_times_override_invalid_day() {
+        let mut config = Config::default();
+        config.business.product_name = "Test".to_string();
+        config.business.product_keywords = vec!["test".to_string()];
+        config.llm.provider = "ollama".to_string();
+        config
+            .schedule
+            .preferred_times_override
+            .insert("Monday".to_string(), vec!["09:00".to_string()]);
+        let errors = config.validate().unwrap_err();
+        assert!(errors.iter().any(
+            |e| matches!(e, ConfigError::InvalidValue { field, .. } if field == "schedule.preferred_times_override")
+        ));
+    }
+
+    #[test]
+    fn preferred_times_toml_roundtrip() {
+        let toml_str = r#"
+[x_api]
+client_id = "test"
+
+[business]
+product_name = "Test"
+product_keywords = ["test"]
+
+[llm]
+provider = "ollama"
+model = "llama2"
+
+[schedule]
+timezone = "America/New_York"
+preferred_times = ["09:15", "12:30", "17:00"]
+thread_preferred_day = "Tue"
+thread_preferred_time = "10:00"
+"#;
+        let config: Config = toml::from_str(toml_str).expect("valid TOML");
+        assert_eq!(
+            config.schedule.preferred_times,
+            vec!["09:15", "12:30", "17:00"]
+        );
+        assert_eq!(
+            config.schedule.thread_preferred_day,
+            Some("Tue".to_string())
+        );
+        assert_eq!(config.schedule.thread_preferred_time, "10:00");
     }
 
     #[test]
