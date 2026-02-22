@@ -6,8 +6,10 @@ pub mod approve;
 pub mod auth;
 pub mod init;
 pub mod run;
+pub mod settings;
 pub mod stats;
 pub mod test;
+pub mod upgrade;
 
 use clap::Args;
 
@@ -109,3 +111,27 @@ pub struct StatsArgs;
 /// Arguments for the `approve` subcommand.
 #[derive(Debug, Args)]
 pub struct ApproveArgs;
+
+/// Arguments for the `settings` subcommand.
+#[derive(Debug, Args)]
+pub struct SettingsArgs {
+    /// Show current configuration (read-only)
+    #[arg(long)]
+    pub show: bool,
+
+    /// Set a config value directly (e.g., --set scoring.threshold=80)
+    #[arg(long)]
+    pub set: Option<String>,
+
+    /// Jump directly to a specific category
+    #[arg(value_name = "CATEGORY")]
+    pub category: Option<String>,
+}
+
+/// Arguments for the `upgrade` subcommand.
+#[derive(Debug, Args)]
+pub struct UpgradeArgs {
+    /// Skip interactive prompts and apply default values for new features
+    #[arg(long)]
+    pub non_interactive: bool,
+}

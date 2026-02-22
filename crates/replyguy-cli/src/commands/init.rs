@@ -497,6 +497,19 @@ fn step_persona(prev: WizardResult) -> Result<WizardResult> {
     );
     eprintln!();
 
+    let (opinions, experiences, pillars) = prompt_persona()?;
+
+    Ok(WizardResult {
+        persona_opinions: opinions,
+        persona_experiences: experiences,
+        content_pillars: pillars,
+        ..prev
+    })
+}
+
+/// Collect persona fields interactively.
+/// Returns (opinions, experiences, content_pillars).
+pub(crate) fn prompt_persona() -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
     let opinions_raw: String = Input::new()
         .with_prompt("Strong opinions, comma-separated (Enter to skip)")
         .allow_empty(true)
@@ -514,12 +527,11 @@ fn step_persona(prev: WizardResult) -> Result<WizardResult> {
 
     eprintln!();
 
-    Ok(WizardResult {
-        persona_opinions: parse_csv(&opinions_raw),
-        persona_experiences: parse_csv(&experiences_raw),
-        content_pillars: parse_csv(&pillars_raw),
-        ..prev
-    })
+    Ok((
+        parse_csv(&opinions_raw),
+        parse_csv(&experiences_raw),
+        parse_csv(&pillars_raw),
+    ))
 }
 
 /// Step 6/7: Target Accounts (optional).
@@ -533,6 +545,18 @@ fn step_target_accounts(prev: WizardResult) -> Result<WizardResult> {
     );
     eprintln!();
 
+    let (accounts, auto_follow) = prompt_target_accounts()?;
+
+    Ok(WizardResult {
+        target_accounts: accounts,
+        auto_follow,
+        ..prev
+    })
+}
+
+/// Collect target account fields interactively.
+/// Returns (accounts, auto_follow).
+pub(crate) fn prompt_target_accounts() -> Result<(Vec<String>, bool)> {
     let accounts_raw: String = Input::new()
         .with_prompt("Accounts to monitor, comma-separated @usernames (Enter to skip)")
         .allow_empty(true)
@@ -554,11 +578,7 @@ fn step_target_accounts(prev: WizardResult) -> Result<WizardResult> {
 
     eprintln!();
 
-    Ok(WizardResult {
-        target_accounts: accounts,
-        auto_follow,
-        ..prev
-    })
+    Ok((accounts, auto_follow))
 }
 
 /// Step 7/7: Approval Mode.
@@ -567,6 +587,16 @@ fn step_approval_mode(prev: WizardResult) -> Result<WizardResult> {
     eprintln!("{}", bold.apply_to("Step 7/7: Approval Mode"));
     eprintln!();
 
+    let approval_mode = prompt_approval_mode()?;
+
+    Ok(WizardResult {
+        approval_mode,
+        ..prev
+    })
+}
+
+/// Collect approval mode preference interactively.
+pub(crate) fn prompt_approval_mode() -> Result<bool> {
     let approval_mode = Confirm::new()
         .with_prompt("Queue posts for review before posting?")
         .default(false)
@@ -574,10 +604,33 @@ fn step_approval_mode(prev: WizardResult) -> Result<WizardResult> {
 
     eprintln!();
 
-    Ok(WizardResult {
-        approval_mode,
-        ..prev
-    })
+    Ok(approval_mode)
+}
+
+/// Collect enhanced safety limit fields interactively.
+/// Returns (max_replies_per_author_per_day, banned_phrases, product_mention_ratio).
+pub(crate) fn prompt_enhanced_limits() -> Result<(u32, Vec<String>, f32)> {
+    let max_replies: String = Input::new()
+        .with_prompt("Max replies to same author per day")
+        .default("1".to_string())
+        .interact_text()?;
+    let max_replies: u32 = max_replies.trim().parse().unwrap_or(1);
+
+    let banned_raw: String = Input::new()
+        .with_prompt("Banned phrases, comma-separated (Enter for defaults)")
+        .default("check out, you should try, I recommend, link in bio".to_string())
+        .interact_text()?;
+    let banned_phrases = parse_csv(&banned_raw);
+
+    let ratio_raw: String = Input::new()
+        .with_prompt("Product mention ratio (0.0–1.0)")
+        .default("0.2".to_string())
+        .interact_text()?;
+    let ratio: f32 = ratio_raw.trim().parse().unwrap_or(0.2);
+
+    eprintln!();
+
+    Ok((max_replies, banned_phrases, ratio))
 }
 
 /// Display a summary of all collected values.

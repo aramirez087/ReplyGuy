@@ -208,8 +208,12 @@ You don't have to run the full agent. ReplyGuy also has commands for doing thing
 | `replyguy score <tweet_id>` | Score a specific tweet to see if ReplyGuy would reply to it |
 | `replyguy stats` | Show analytics dashboard — follower trend, top topics, engagement rates |
 | `replyguy approve` | Review and approve queued posts (when `approval_mode = true`) |
+| `replyguy upgrade` | Detect and configure new features added since your last setup |
+| `replyguy upgrade --non-interactive` | Same as above, but apply default values without prompting |
 
 The `--dry-run` flag is great for testing. It shows you exactly what ReplyGuy would do without actually posting anything.
+
+> **Tip:** When you update ReplyGuy, `replyguy run` automatically detects new config features and offers to configure them. You can also run `replyguy upgrade` explicitly at any time.
 
 ---
 

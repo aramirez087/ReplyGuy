@@ -4,6 +4,8 @@
 /// initializes logging, and dispatches to subcommand handlers.
 mod commands;
 
+use std::io::IsTerminal;
+
 use clap::Parser;
 use replyguy_core::config::Config;
 use tracing_subscriber::EnvFilter;
@@ -54,12 +56,16 @@ enum Commands {
     Post(commands::PostArgs),
     /// Generate and post an educational thread
     Thread(commands::ThreadArgs),
+    /// Edit configuration interactively
+    Settings(commands::SettingsArgs),
     /// Score a specific tweet
     Score(commands::ScoreArgs),
     /// Show analytics dashboard
     Stats(commands::StatsArgs),
     /// Review and approve queued posts
     Approve(commands::ApproveArgs),
+    /// Configure new features added since last setup
+    Upgrade(commands::UpgradeArgs),
 }
 
 #[tokio::main]
@@ -88,9 +94,12 @@ async fn main() -> anyhow::Result<()> {
         .compact()
         .init();
 
-    // Handle `init` before config loading (config may not exist yet).
+    // Handle `init` and `upgrade` before config loading (config may not exist yet).
     if let Commands::Init(args) = cli.command {
         return commands::init::execute(args.force, args.non_interactive).await;
+    }
+    if let Commands::Upgrade(args) = cli.command {
+        return commands::upgrade::execute(args.non_interactive, &cli.config).await;
     }
 
     // Load configuration.
@@ -101,8 +110,13 @@ async fn main() -> anyhow::Result<()> {
         )
     })?;
 
+    // Check for config upgrade opportunity before `run`
+    if matches!(&cli.command, Commands::Run(_)) && std::io::stdin().is_terminal() {
+        commands::upgrade::check_before_run(&cli.config).await?;
+    }
+
     match cli.command {
-        Commands::Init(_) => unreachable!(),
+        Commands::Init(_) | Commands::Upgrade(_) | Commands::Settings(_) => unreachable!(),
         Commands::Run(args) => {
             commands::run::execute(&config, args.status_interval).await?;
         }
