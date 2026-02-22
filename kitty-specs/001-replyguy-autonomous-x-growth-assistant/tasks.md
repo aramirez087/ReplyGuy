@@ -246,7 +246,7 @@
 **Estimated prompt size**: ~450 lines
 
 ### Included Subtasks
-- [ ] T038 Implement mentions loop in `crates/replyguy-core/src/automation/mentions_loop.rs`
+- [x] T038 Implement mentions loop in `crates/replyguy-core/src/automation/mentions_loop.rs`
 - [ ] T039 Implement discovery loop in `crates/replyguy-core/src/automation/discovery_loop.rs`
 - [ ] T040 Integrate both loops with safety module (rate checks, dedup, action logging)
 - [ ] T041 [P] Implement dry-run support for both loops
