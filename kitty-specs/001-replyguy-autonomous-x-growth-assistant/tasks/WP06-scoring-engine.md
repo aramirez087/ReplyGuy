@@ -10,7 +10,7 @@ created_at: '2026-02-22T01:07:48.586281+00:00'
 subtasks: [T029, T030, T031, T032]
 phase: Phase 1 - Core Features
 assignee: ''
-agent: ''
+agent: "claude-opus"
 shell_pid: "70426"
 review_status: ''
 reviewed_by: ''
@@ -384,3 +384,4 @@ The CLI command updates both frontmatter and activity log automatically.
 ### Optional Phase Subdirectories
 
 For large features, organize prompts under `tasks/` to keep bundles grouped while maintaining lexical ordering.
+- 2026-02-22T01:07:48Z – claude-opus – shell_pid=70426 – lane=doing – Assigned agent via workflow command
