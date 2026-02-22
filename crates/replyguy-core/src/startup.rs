@@ -34,7 +34,7 @@ pub const OAUTH_SCOPES: &str = "tweet.read tweet.write users.read offline.access
 /// Detected X API tier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApiTier {
-    /// Free tier -- mentions and posting only.
+    /// Free tier -- posting only (no search, no mentions).
     Free,
     /// Basic tier -- adds search/discovery.
     Basic,
@@ -70,7 +70,7 @@ impl TierCapabilities {
     pub fn for_tier(tier: ApiTier) -> Self {
         match tier {
             ApiTier::Free => Self {
-                mentions: true,
+                mentions: false,
                 discovery: false,
                 posting: true,
                 search: false,
@@ -505,7 +505,7 @@ mod tests {
     #[test]
     fn free_tier_capabilities() {
         let caps = TierCapabilities::for_tier(ApiTier::Free);
-        assert!(caps.mentions);
+        assert!(!caps.mentions);
         assert!(!caps.discovery);
         assert!(caps.posting);
         assert!(!caps.search);
@@ -533,7 +533,7 @@ mod tests {
     fn free_tier_enabled_loops() {
         let caps = TierCapabilities::for_tier(ApiTier::Free);
         let loops = caps.enabled_loop_names();
-        assert_eq!(loops, vec!["mentions", "content", "threads"]);
+        assert_eq!(loops, vec!["content", "threads"]);
     }
 
     #[test]
@@ -547,7 +547,7 @@ mod tests {
     fn tier_capabilities_format_status() {
         let caps = TierCapabilities::for_tier(ApiTier::Free);
         let status = caps.format_status();
-        assert!(status.contains("Mentions: enabled"));
+        assert!(status.contains("Mentions: DISABLED"));
         assert!(status.contains("Discovery: DISABLED"));
 
         let caps = TierCapabilities::for_tier(ApiTier::Basic);
@@ -805,7 +805,7 @@ mod tests {
         let banner = format_startup_banner(ApiTier::Free, &caps, 300);
         assert!(banner.contains("ReplyGuy v"));
         assert!(banner.contains("Tier: Free"));
-        assert!(banner.contains("mentions"));
+        assert!(!banner.contains("mentions"));
         assert!(banner.contains("content"));
         assert!(banner.contains("threads"));
         assert!(!banner.contains("discovery"));

@@ -8,7 +8,7 @@ Built for **founders, indie hackers, and solo makers** who'd rather build their 
 
 ## What Does ReplyGuy Actually Do?
 
-ReplyGuy runs four automated loops, 24/7, while you focus on building:
+ReplyGuy runs up to four automated loops, 24/7, while you focus on building:
 
 ### 1. Finds Conversations That Matter
 ReplyGuy searches X for tweets matching your product's keywords (e.g., "mac productivity", "clipboard manager"). It scores every tweet using a smart scoring system to find the ones most worth replying to — prioritizing tweets with high engagement, relevant keywords, recent posts, and authors with real followings.
@@ -24,6 +24,8 @@ Once a week, ReplyGuy creates a 5-8 tweet thread on one of your topics — the k
 
 ### 5. Monitors Your Mentions
 When someone @-mentions you, ReplyGuy generates a thoughtful reply automatically. You never leave someone hanging.
+
+> **Note on X API access:** Features 1, 2, and 5 (discovery, replies, and mentions) require a paid X API tier or pay-per-use credits. Features 3 and 4 (posting tweets and threads) work on the Free tier. See [X API Access & Pricing](#x-api-access--pricing) for details.
 
 ### Built-In Safety
 ReplyGuy is designed to keep your account safe:
@@ -41,7 +43,7 @@ You'll need three things before getting started:
 | What | Where to get it | Cost |
 |------|-----------------|------|
 | **Rust 1.75+** | [rustup.rs](https://rustup.rs/) | Free |
-| **X API developer account** | [developer.x.com](https://developer.x.com) | Free tier works (with limitations — see [X API tiers](#x-api-tiers) below) |
+| **X API developer account** | [developer.x.com](https://developer.x.com) | Pay-per-use (a few $/mo) or Free (limited — see [X API access](#x-api-access--pricing)) |
 | **An AI provider** | [OpenAI](https://platform.openai.com/), [Anthropic](https://console.anthropic.com/), or [Ollama](https://ollama.ai/) (local, free) | Varies (Ollama is free) |
 
 ---
@@ -390,21 +392,52 @@ export REPLYGUY_BUSINESS__PRODUCT_KEYWORDS="rust, cli tools, developer productiv
 
 ---
 
-## X API Tiers
+## X API Access & Pricing
 
-ReplyGuy works on X's **Free** tier, but with limitations:
+X's API pricing has changed significantly. Here's what you need to know.
 
-| Feature | Free Tier | Basic Tier ($100/mo) |
-|---------|-----------|---------------------|
-| Tweet discovery (search) | Not available | Available |
-| Reply to tweets | Available | Available |
-| Post tweets | Available | Available |
-| Post threads | Available | Available |
-| Monitor mentions | Available | Available |
+### Pay-Per-Use (recommended for most users)
 
-On the **Free** tier, the discovery loop is automatically disabled. ReplyGuy will still reply to your @-mentions, post educational tweets, and publish threads — just without the proactive tweet-finding feature.
+As of early 2026, X's **default** for new developers is **pay-per-use** — no subscription, you buy credits and pay per API call. This gives you access to **all endpoints** ReplyGuy needs:
 
-If you upgrade to Basic, ReplyGuy automatically detects it and enables discovery.
+| Operation | Cost per call |
+|-----------|--------------|
+| Read a tweet | $0.005 |
+| Post a tweet / reply | $0.010 |
+| Read user profile | $0.010 |
+
+For typical ReplyGuy usage (moderate discovery + a few replies/tweets per day), expect roughly **$1-5/month** depending on how active your settings are. You can set spending limits in the X developer dashboard.
+
+> **This is the easiest way to get started.** Sign up at [developer.x.com](https://developer.x.com), add credits, and all features work immediately.
+
+### Legacy Subscription Tiers
+
+X still offers fixed subscription plans, which can be more cost-effective at high volume:
+
+| Feature | Free ($0) | Basic ($200/mo) | Pro ($5,000/mo) |
+|---------|-----------|-----------------|-----------------|
+| Post tweets & replies | Yes (write-only) | Yes | Yes |
+| Search tweets (discovery) | No | Yes (last 7 days) | Yes (full archive) |
+| Read mentions | No | Yes | Yes |
+| Read timelines | No | Yes | Yes |
+| Monthly post cap | ~1,500 | 50,000 | 300,000 |
+
+### What Works on Each Tier
+
+ReplyGuy auto-detects your tier at startup and enables/disables features accordingly:
+
+| ReplyGuy Feature | Free Tier | Basic / Pro / Pay-Per-Use |
+|------------------|-----------|---------------------------|
+| Post educational tweets | Yes | Yes |
+| Post threads | Yes | Yes |
+| Tweet discovery (search + reply) | No | Yes |
+| Monitor & reply to mentions | No | Yes |
+
+**On the Free tier**, only the content and thread loops run — ReplyGuy can post tweets and threads on your behalf, but cannot search for conversations or monitor your mentions (these are read endpoints that the Free tier doesn't include).
+
+**On Basic, Pro, or pay-per-use**, all four loops run — discovery, mentions, content, and threads. ReplyGuy automatically detects this and enables everything.
+
+> **Bottom line:** If you want the full ReplyGuy experience (finding and replying to relevant tweets + monitoring mentions), you need at least the pay-per-use tier with credits loaded. The Free tier only supports posting original content.
 
 ---
 
