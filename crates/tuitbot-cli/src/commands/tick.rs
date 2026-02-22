@@ -31,6 +31,7 @@ struct TickOutput {
     tier: String,
     schedule_active: bool,
     dry_run: bool,
+    approval_mode: bool,
     duration_ms: u64,
     loops: LoopResults,
     errors: Vec<LoopErrorJson>,
@@ -151,6 +152,7 @@ pub async fn execute(
             tier: deps.tier.to_string(),
             schedule_active: false,
             dry_run: args.dry_run,
+            approval_mode: config.approval_mode,
             duration_ms: start.elapsed().as_millis() as u64,
             loops: LoopResults {
                 analytics: LoopOutcome::Skipped {
@@ -233,6 +235,7 @@ pub async fn execute(
         tier: deps.tier.to_string(),
         schedule_active,
         dry_run: args.dry_run,
+        approval_mode: config.approval_mode,
         duration_ms: start.elapsed().as_millis() as u64,
         loops: LoopResults {
             analytics: analytics_outcome,
@@ -646,7 +649,7 @@ fn print_output(output: &TickOutput, format: OutputFormat) {
 
 fn print_text_output(output: &TickOutput) {
     eprintln!(
-        "tuitbot tick  tier={}  schedule={}  dry_run={}  duration={}ms",
+        "tuitbot tick  tier={}  schedule={}  dry_run={}  approval_mode={}  duration={}ms",
         output.tier,
         if output.schedule_active {
             "active"
@@ -654,6 +657,7 @@ fn print_text_output(output: &TickOutput) {
             "inactive"
         },
         output.dry_run,
+        output.approval_mode,
         output.duration_ms,
     );
     eprintln!();

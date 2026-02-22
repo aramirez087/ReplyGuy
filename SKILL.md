@@ -6,10 +6,13 @@ description: >
   replies/tweets/threads, monitors target accounts, and tracks analytics.
   Supports human-in-the-loop approval mode.
 version: 0.1.0
+homepage: https://github.com/aramirez087/tuitbot
 metadata:
   openclaw:
+    skillKey: tuitbot
     requires:
       bins: [tuitbot]
+      env: [TUITBOT_X_API__CLIENT_ID]
     primaryEnv: TUITBOT_LLM__API_KEY
     emoji: "\U0001F916"
 ---
@@ -75,10 +78,12 @@ export TUITBOT_X_API__CLIENT_ID="your-client-id"
 ### 3. Authenticate with X
 
 ```bash
-tuitbot auth --mode manual
+tuitbot auth
 ```
 
-> **Note:** This step requires the user to visit a URL and paste back an authorization code. It cannot be fully automated.
+This prints a URL. The user opens it in any browser (laptop, phone), authorizes, then pastes back the callback URL. Works on headless servers and VPS — no local browser needed. Tokens are saved to `~/.tuitbot/tokens.json`.
+
+> **Note:** This step requires user interaction (visit URL, paste code). It cannot be fully automated.
 
 ### 4. Validate setup
 
@@ -131,6 +136,10 @@ Show analytics dashboard.
 {"follower_trend": [{"date": "2025-01-15", "follower_count": 1200, "following_count": 300, "tweet_count": 500}], "net_follower_change": 50, "top_topics": [{"topic": "rust", "format": "tip", "total_posts": 5, "avg_performance": 85.0}], "engagement": {"avg_reply_score": 73.5, "avg_tweet_score": 81.2}, "content_measured": {"replies": 25, "tweets": 18}}
 ```
 
+### `tuitbot tick --require-approval`
+
+Force approval mode on for a single tick (queue posts for human review). This is automatically enabled when running inside OpenClaw (any `OPENCLAW_*` env var detected), but can also be set explicitly.
+
 ### `tuitbot run`
 
 Start the autonomous agent. This is a **long-running process** that runs 6 concurrent loops (discovery, mentions, content, threads, target monitoring, analytics).
@@ -156,6 +165,47 @@ Generate a tweet without posting.
 ### `tuitbot thread --dry-run`
 
 Generate a thread without posting.
+
+## MCP server
+
+Tuitbot includes a built-in MCP (Model Context Protocol) server for structured tool access over stdio. This is the preferred integration method for AI agents — no CLI output parsing required.
+
+### Starting the server
+
+```bash
+tuitbot mcp serve
+```
+
+With a custom config path:
+
+```bash
+tuitbot -c /path/to/config.toml mcp serve
+```
+
+The server communicates via JSON-RPC 2.0 over stdin/stdout (newline-delimited).
+
+### Available MCP tools
+
+| Category | Tools |
+|---|---|
+| **Analytics** | `get_stats`, `get_follower_trend` |
+| **Action Log** | `get_action_log`, `get_action_counts` |
+| **Rate Limits** | `get_rate_limits` |
+| **Replies** | `get_recent_replies`, `get_reply_count_today` |
+| **Targets** | `list_target_accounts` |
+| **Discovery** | `list_unreplied_tweets` |
+| **Scoring** | `score_tweet` (6-signal engine) |
+| **Approval Queue** | `list_pending_approvals`, `get_pending_count`, `approve_item`, `reject_item`, `approve_all` |
+| **Content Generation** | `generate_reply`, `generate_tweet`, `generate_thread` (requires LLM provider) |
+| **Capabilities** | `get_capabilities` (tier, rate limits, recommended max actions) |
+| **Config & Health** | `get_config`, `validate_config`, `health_check` |
+
+### MCP vs CLI
+
+- **MCP**: Typed JSON inputs/outputs, tool discovery via `tools/list`, no shell parsing. Best for programmatic agent integration.
+- **CLI with `--output json`**: Simpler to invoke ad-hoc but requires spawning a process per command and parsing stdout.
+
+When running inside OpenClaw via the plugin (`plugins/openclaw-tuitbot/`), MCP tools are automatically bridged into native OpenClaw tools prefixed with `tuitbot_` (e.g., `tuitbot_health_check`, `tuitbot_get_stats`).
 
 ## Approval workflow
 
@@ -227,9 +277,15 @@ Key settings that can be modified via `tuitbot settings --set`:
 
 Environment variables use `TUITBOT_` prefix with `__` separator: `TUITBOT_LLM__API_KEY`, `TUITBOT_SCORING__THRESHOLD`.
 
+Special env var: `TUITBOT_APPROVAL_MODE=true|false` overrides the `approval_mode` config value. When any `OPENCLAW_*` env var is present, approval mode is automatically enabled unless `TUITBOT_APPROVAL_MODE=false` explicitly opts out.
+
+## OpenClaw plugin
+
+Tuitbot ships with an OpenClaw plugin at `plugins/openclaw-tuitbot/` that bridges MCP tools into native OpenClaw tool registrations. When the plugin is loaded, approval mode is enabled by default for safety. See `plugins/openclaw-tuitbot/openclaw.plugin.json` for configuration schema.
+
 ## Limitations
 
 - **`tuitbot run` is long-running**: Start it as a background process. It does not return until stopped.
-- **`tuitbot auth` requires user interaction**: OAuth 2.0 PKCE flow requires the user to visit a URL and authorize. Cannot be fully automated.
+- **`tuitbot auth` requires user interaction**: OAuth 2.0 PKCE flow requires the user to visit a URL and paste back a code. Works on headless servers (VPS, SSH, OpenClaw) — no local browser needed — but cannot be fully automated.
 - **X API tier limits**: Discovery and replies require a paid X API tier or pay-per-use credits. Posting tweets/threads works on the Free tier.
 - **Rate limits**: The agent respects X API rate limits and configurable posting limits. It will not exceed them.

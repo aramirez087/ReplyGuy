@@ -388,7 +388,7 @@ fn default_thread_preferred_time() -> String {
 // --- Default value functions for serde ---
 
 fn default_auth_mode() -> String {
-    "local_callback".to_string()
+    "manual".to_string()
 }
 fn default_callback_host() -> String {
     "127.0.0.1".to_string()
@@ -944,6 +944,20 @@ impl Config {
             self.schedule.thread_preferred_time = val;
         }
 
+        // Approval mode
+        let explicit_approval = if let Ok(val) = env::var("TUITBOT_APPROVAL_MODE") {
+            self.approval_mode = parse_env_bool("TUITBOT_APPROVAL_MODE", &val)?;
+            true
+        } else {
+            false
+        };
+
+        // OpenClaw auto-detection: enable approval mode when running inside
+        // OpenClaw unless the user explicitly set TUITBOT_APPROVAL_MODE.
+        if !explicit_approval && env::vars().any(|(k, _)| k.starts_with("OPENCLAW_")) {
+            self.approval_mode = true;
+        }
+
         Ok(())
     }
 }
@@ -1025,6 +1039,20 @@ fn parse_env_u8(var_name: &str, val: &str) -> Result<u8, ConfigError> {
     })
 }
 
+/// Parse an environment variable value as a boolean.
+///
+/// Accepts: `true`, `false`, `1`, `0`, `yes`, `no` (case-insensitive).
+fn parse_env_bool(var_name: &str, val: &str) -> Result<bool, ConfigError> {
+    match val.trim().to_lowercase().as_str() {
+        "true" | "1" | "yes" => Ok(true),
+        "false" | "0" | "no" => Ok(false),
+        _ => Err(ConfigError::InvalidValue {
+            field: var_name.to_string(),
+            message: format!("'{val}' is not a valid boolean (use true/false/1/0/yes/no)"),
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1064,7 +1092,7 @@ threshold = 80
 client_id = "test"
 "#;
         let config: Config = toml::from_str(toml_str).expect("valid TOML");
-        assert_eq!(config.auth.mode, "local_callback");
+        assert_eq!(config.auth.mode, "manual");
         assert_eq!(config.auth.callback_port, 8080);
         assert_eq!(config.scoring.threshold, 60);
         assert_eq!(config.limits.max_replies_per_day, 5);
@@ -1367,5 +1395,61 @@ thread_preferred_time = "10:00"
             }
             other => panic!("expected FileNotFound, got: {other}"),
         }
+    }
+
+    #[test]
+    fn parse_env_bool_values() {
+        assert!(parse_env_bool("TEST", "true").unwrap());
+        assert!(parse_env_bool("TEST", "True").unwrap());
+        assert!(parse_env_bool("TEST", "1").unwrap());
+        assert!(parse_env_bool("TEST", "yes").unwrap());
+        assert!(parse_env_bool("TEST", "YES").unwrap());
+        assert!(!parse_env_bool("TEST", "false").unwrap());
+        assert!(!parse_env_bool("TEST", "False").unwrap());
+        assert!(!parse_env_bool("TEST", "0").unwrap());
+        assert!(!parse_env_bool("TEST", "no").unwrap());
+        assert!(!parse_env_bool("TEST", "NO").unwrap());
+        assert!(parse_env_bool("TEST", "maybe").is_err());
+    }
+
+    #[test]
+    fn env_var_override_approval_mode() {
+        env::set_var("TUITBOT_APPROVAL_MODE", "true");
+        let mut config = Config::default();
+        assert!(!config.approval_mode);
+        config.apply_env_overrides().expect("env override");
+        assert!(config.approval_mode);
+        env::remove_var("TUITBOT_APPROVAL_MODE");
+    }
+
+    #[test]
+    fn env_var_override_approval_mode_false() {
+        env::set_var("TUITBOT_APPROVAL_MODE", "false");
+        let mut config = Config::default();
+        config.approval_mode = true;
+        config.apply_env_overrides().expect("env override");
+        assert!(!config.approval_mode);
+        env::remove_var("TUITBOT_APPROVAL_MODE");
+    }
+
+    #[test]
+    fn openclaw_env_enables_approval_mode() {
+        env::set_var("OPENCLAW_AGENT_ID", "test");
+        let mut config = Config::default();
+        assert!(!config.approval_mode);
+        config.apply_env_overrides().expect("env override");
+        assert!(config.approval_mode);
+        env::remove_var("OPENCLAW_AGENT_ID");
+    }
+
+    #[test]
+    fn openclaw_env_respects_explicit_override() {
+        env::set_var("OPENCLAW_AGENT_ID", "test");
+        env::set_var("TUITBOT_APPROVAL_MODE", "false");
+        let mut config = Config::default();
+        config.apply_env_overrides().expect("env override");
+        assert!(!config.approval_mode);
+        env::remove_var("OPENCLAW_AGENT_ID");
+        env::remove_var("TUITBOT_APPROVAL_MODE");
     }
 }

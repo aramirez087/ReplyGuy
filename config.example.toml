@@ -22,6 +22,13 @@
 # When enabled, posts are queued for human review instead of posting automatically.
 # Use `tuitbot approve` to review and approve queued items.
 # approval_mode = false
+#
+# Environment variable override: TUITBOT_APPROVAL_MODE=true|false
+# CLI override (tick command only): tuitbot tick --require-approval
+#
+# OpenClaw auto-detection: When any OPENCLAW_* environment variable is present,
+# approval_mode is automatically enabled for safety — unless you explicitly set
+# TUITBOT_APPROVAL_MODE=false to opt out.
 
 # --- X API Credentials ---
 # Get your credentials from https://developer.x.com/en/portal/dashboard
@@ -34,14 +41,15 @@ client_id = "your-client-id-here"
 
 # --- Authentication Settings ---
 [auth]
-# Auth mode: "local_callback" (auto-catch via local server) or "manual" (paste code from browser).
-mode = "local_callback"
+# Auth mode: "manual" (paste code from browser — works on VPS/headless)
+# or "local_callback" (auto-catch via local server — requires a desktop browser).
+mode = "manual"
 
 # Host for the local callback server (used in local_callback mode).
-callback_host = "127.0.0.1"
+# callback_host = "127.0.0.1"
 
 # Port for the local callback server.
-callback_port = 8080
+# callback_port = 8080
 
 # --- Business Profile ---
 # Describe your product so Tuitbot can find relevant conversations
