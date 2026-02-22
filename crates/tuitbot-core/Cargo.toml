@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Core library for Tuitbot autonomous X growth assistant"
+license = "MIT"
+repository = "https://github.com/aramirez087/TuitBot"
+homepage = "https://github.com/aramirez087/TuitBot"
+documentation = "https://docs.rs/tuitbot-core"
+keywords = ["x-api", "twitter", "automation", "bot", "mcp"]
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }

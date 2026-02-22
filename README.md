@@ -440,12 +440,15 @@ Releases are fully automated in GitHub Actions and follow a release-PR model:
 1. Every push to `main` runs `.github/workflows/release.yml`.
 2. `release-plz` keeps a release PR open with version/changelog updates (`CHANGELOG.md`).
 3. Merging that release PR triggers:
-   * Tag + GitHub release (`vX.Y.Z`)
+   * crates.io publish for workspace crates (`tuitbot-core`, `tuitbot-mcp`, `tuitbot-cli`)
+   * Tag + GitHub release for CLI (`tuitbot-cli-vX.Y.Z`)
    * Cross-platform binary builds (`linux`, `macOS Intel`, `macOS Apple Silicon`, `windows`)
    * Asset uploads + `SHA256SUMS` checksum file
+4. If a release contains only library crate updates and no `tuitbot-cli` release, binary asset jobs are skipped automatically.
 
 To keep versioning clean, use Conventional Commit prefixes (`feat:`, `fix:`, `chore:`, etc.) and `!` for breaking changes.
 Repository setup required once: enable `Settings -> Actions -> General -> Allow GitHub Actions to create and approve pull requests`.
+Set a `CARGO_REGISTRY_TOKEN` secret from crates.io (`Account Settings -> API Tokens`) so CI can publish crates.
 Optional but recommended: set a `RELEASE_PLZ_TOKEN` (PAT) secret so workflows also run on release PRs created by automation.
 
 ---
