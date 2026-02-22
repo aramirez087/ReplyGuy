@@ -1,14 +1,17 @@
 ---
 work_package_id: WP08
 title: Mentions + Discovery Loops
-lane: planned
+lane: "doing"
 dependencies:
 - WP04
+base_branch: 001-replyguy-autonomous-x-growth-assistant-WP01
+base_commit: 54b47b462601a1e58d0222f08ae0a65ca3068a1d
+created_at: '2026-02-22T01:21:16.699693+00:00'
 subtasks: [T038, T039, T040, T041, T042, T043]
 phase: Phase 1 - Core Features
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "79992"
 review_status: ''
 reviewed_by: ''
 history:
