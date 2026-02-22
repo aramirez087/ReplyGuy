@@ -22,6 +22,7 @@ dirs = "5"
 sha2 = "0.10"
 base64 = "0.22"
 open = "5"
+tokio-util = "0.7.18"
 
 [dev-dependencies]
 tempfile = "3"
