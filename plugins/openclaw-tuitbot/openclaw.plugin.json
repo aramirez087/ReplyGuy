@@ -1,0 +1,27 @@
+{
+  "id": "tuitbot",
+  "name": "Tuitbot",
+  "version": "0.1.0",
+  "description": "Bridges Tuitbot MCP tools into OpenClaw for AI agent integration",
+  "entry": "./src/index.ts",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "tuitbotBinaryPath": {
+        "type": "string",
+        "description": "Path to the tuitbot binary. Defaults to 'tuitbot' (resolved via PATH).",
+        "default": "tuitbot"
+      },
+      "configPath": {
+        "type": "string",
+        "description": "Path to the tuitbot config.toml file. Defaults to ~/.tuitbot/config.toml."
+      },
+      "allowedTools": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Allowlist of MCP tool names to register. Empty or omitted = register all tools."
+      }
+    },
+    "additionalProperties": false
+  }
+}

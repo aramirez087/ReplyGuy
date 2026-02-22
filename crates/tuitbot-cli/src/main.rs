@@ -146,6 +146,10 @@ async fn main() -> anyhow::Result<()> {
             commands::run::execute(&config, args.status_interval).await?;
         }
         Commands::Tick(args) => {
+            let mut config = config;
+            if args.require_approval {
+                config.approval_mode = true;
+            }
             commands::tick::execute(&config, args, output_format).await?;
         }
         Commands::Auth(args) => {

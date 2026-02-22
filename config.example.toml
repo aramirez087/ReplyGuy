@@ -22,6 +22,13 @@
 # When enabled, posts are queued for human review instead of posting automatically.
 # Use `tuitbot approve` to review and approve queued items.
 # approval_mode = false
+#
+# Environment variable override: TUITBOT_APPROVAL_MODE=true|false
+# CLI override (tick command only): tuitbot tick --require-approval
+#
+# OpenClaw auto-detection: When any OPENCLAW_* environment variable is present,
+# approval_mode is automatically enabled for safety — unless you explicitly set
+# TUITBOT_APPROVAL_MODE=false to opt out.
 
 # --- X API Credentials ---
 # Get your credentials from https://developer.x.com/en/portal/dashboard

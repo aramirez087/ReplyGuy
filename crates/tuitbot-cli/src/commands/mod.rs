@@ -189,6 +189,10 @@ pub struct TickArgs {
     /// Options: discovery, mentions, content, thread, target, analytics
     #[arg(long, value_delimiter = ',')]
     pub loops: Option<Vec<String>>,
+
+    /// Force approval mode on for this tick (queue posts for human review)
+    #[arg(long)]
+    pub require_approval: bool,
 }
 
 /// Arguments for the `mcp` subcommand.
