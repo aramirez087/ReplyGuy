@@ -16,7 +16,7 @@ Tuitbot grows your X account on autopilot — finding relevant conversations, re
 
 Built for **founders**, **indie hackers**, and **solo makers** who'd rather build their product than spend hours on X.
 
-[Two Modes](#two-operating-modes) · [Features](#features) · [Getting Started](#getting-started) · [Configuration](#configuration-reference) · [Deployment](#deployment) · [Full Docs](docs/index.md)
+[Two Modes](#two-operating-modes) · [Features](#features) · [Getting Started](#getting-started) · [Quick Commands](#quick-commands) · [Release Strategy](#release-strategy-ci) · [Full Docs](docs/index.md)
 
 </div>
 
@@ -97,7 +97,7 @@ Once a week, Tuitbot crafts a multi-tweet thread using proven structures: transf
 ### 6. Tracks Analytics
 Snapshots your follower count daily, measures engagement after 24 hours, and alerts you if followers drop. View your dashboard anytime using `tuitbot stats`.
 
-> **Note on X API access:** Discovery, replies, mentions, and target monitoring require a paid X API tier or pay-per-use credits. Posting tweets and threads works perfectly on the Free tier. See [X API Access](#-x-api-access--pricing) for details.
+> **Note on X API access:** Discovery, replies, mentions, and target monitoring require a paid X API tier or pay-per-use credits. Posting tweets and threads works on the Free tier. See `docs/getting-started.md` for setup details.
 
 ---
 
@@ -182,259 +182,51 @@ That's it. Tuitbot manages its own timing, active hours, and loop scheduling int
 
 #### 4b. Run with an External Scheduler
 
-Set up your scheduler to invoke `tuitbot tick` on a cadence you control. Here are examples for common schedulers:
+Use your scheduler to invoke `tuitbot tick --output json` every 15-30 minutes.
 
-**Cron (every 30 minutes):**
-```bash
-crontab -e
-# Add:
-*/30 * * * * /usr/local/bin/tuitbot tick --output json >> /var/log/tuitbot-tick.log 2>&1
-```
+For full production examples (cron, systemd, launchd, OpenClaw), see:
 
-**systemd timer (every 20 minutes):**
-```ini
-# /etc/systemd/system/tuitbot-tick.timer
-[Unit]
-Description=Tuitbot tick timer
-
-[Timer]
-OnBootSec=5min
-OnUnitActiveSec=20min
-
-[Install]
-WantedBy=timers.target
-```
-
-```ini
-# /etc/systemd/system/tuitbot-tick.service
-[Unit]
-Description=Tuitbot tick
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/tuitbot tick --output json
-User=tuitbot
-```
-
-```bash
-sudo systemctl enable --now tuitbot-tick.timer
-```
-
-**macOS launchd (every 30 minutes):**
-```xml
-<!-- ~/Library/LaunchAgents/com.tuitbot.tick.plist -->
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.tuitbot.tick</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/tuitbot</string>
-        <string>tick</string>
-        <string>--output</string>
-        <string>json</string>
-    </array>
-    <key>StartInterval</key>
-    <integer>1800</integer>
-    <key>StandardOutPath</key>
-    <string>/tmp/tuitbot-tick.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/tuitbot-tick.log</string>
-</dict>
-</plist>
-```
-
-```bash
-launchctl load ~/Library/LaunchAgents/com.tuitbot.tick.plist
-```
-
-**OpenClaw:**
-
-Tuitbot ships with a `SKILL.md` that teaches OpenClaw-compatible assistants how to operate the agent. The `tick` command is the recommended integration point — OpenClaw calls `tuitbot tick --output json` on its schedule and parses the JSON summary for monitoring:
-
-```bash
-# OpenClaw invokes this on its own cadence
-tuitbot tick --output json --dry-run    # Safe testing
-tuitbot tick --output json              # Production
-```
-
-**OpenClaw plugin:** For native tool integration, install the plugin from `plugins/openclaw-tuitbot/`. It bridges Tuitbot's MCP tools into OpenClaw tool registrations so agents can call them directly without shell parsing. Approval mode is automatically enabled when the plugin is loaded (see [OpenClaw auto-detection](#view-advanced-environment-variables)).
-
-> **Choosing a cadence:** Tuitbot's built-in rate limits and safety checks mean you can tick aggressively (every 15-30 minutes) without worry. Loops that have nothing to do (e.g., content posted too recently) will report `skipped` and exit instantly. A tick with nothing to do takes <2 seconds.
+- `docs/getting-started.md`
+- `docs/operations.md`
+- `docs/mcp-reference.md`
 
 ---
 
-## CLI Commands
-
-You don't have to run the full un-supervised agent. Tuitbot has granular commands for precise control:
+## Quick Commands
 
 ```bash
+# Core setup / validation
+tuitbot init
+tuitbot auth
+tuitbot test
+
 # Operating modes
-tuitbot run                   # Start as long-running daemon
-tuitbot tick                  # Run all loops once and exit
-tuitbot tick --dry-run        # See what would happen, post nothing
-tuitbot tick --require-approval  # Queue posts for human review
-tuitbot tick --loops discovery,content  # Run only specific loops
-
-# Individual actions
-tuitbot discover              # Search, score, and reply to tweets once
-tuitbot mentions              # Check and reply to mentions once
-tuitbot post                  # Generate and post a single educational tweet
-tuitbot thread                # Generate and post a deep-dive thread
-tuitbot stats                 # Show comprehensive analytics dashboard
-
-# Testing & Configuration
-tuitbot discover --dry-run    # See what it WOULD do, without posting
-tuitbot score <tweet_id>      # Score a specific tweet through the engine
-tuitbot settings              # Open interactive settings editor
-tuitbot settings scoring      # Jump straight to scoring config
-tuitbot approve               # Review queued posts (if approval_mode = true)
-
-# AI Agent Integration
-tuitbot mcp serve             # Start MCP server for AI agents (stdio transport)
-```
-
----
-
-## Configuration Reference
-
-Your configuration is durably stored at `~/.tuitbot/config.toml`. Use `tuitbot settings` to interactively edit them, or modify the file directly with your favorite editor.
-
-### Business & Persona Profile
-Tell Tuitbot exactly what your product is and how you want to sound:
-```toml
-[business]
-product_name = "Docklet"
-product_description = "Floating command strip for macOS"
-product_keywords = ["macos productivity", "mac menu bar"]
-industry_topics = ["Mac productivity tips", "macOS power user workflows"]
-
-brand_voice = "Friendly technical expert. Casual, occasionally witty."
-reply_style = "Lead with genuine help. Only mention product if directly relevant."
-
-persona_opinions = ["Native apps will always beat Electron"]
-content_pillars = ["Mac productivity", "Swift development", "Indie hacking"]
-```
-
-### Automation & Limits
-Tuitbot safeguards your account with highly conservative defaults.
-```toml
-[limits]
-max_replies_per_day = 5
-max_tweets_per_day = 6
-product_mention_ratio = 0.2           # Mention product only 20% of the time (1 in 5)
-banned_phrases = ["check out", "you should try", "I recommend", "link in bio"]
-
-[schedule]
-timezone = "America/New_York"
-active_hours_start = 8
-active_hours_end = 22
-
-# Target peak engagement windows for tweets (HH:MM, 24h)
-# Use "auto" for research-backed defaults: ["09:15", "12:30", "17:00"]
-preferred_times = ["auto"]
-
-# Schedule weekly threads for maximum reach
-thread_preferred_day = "Tue"
-thread_preferred_time = "10:00"
-```
-
-> **Pro Tip:** Need ultimate peace of mind? Set `approval_mode = true` in your config. Tuitbot will queue all outgoing posts for your manual seal of approval via `tuitbot approve` before they ever go live!
-
-<details>
-<summary><b>View Advanced Environment Variables</b></summary>
-<br/>
-Every config option can seamlessly be set via env variables. Highly useful for Docker/CI workflows.
-<br/>Format: <code>TUITBOT_&lt;SECTION&gt;__&lt;KEY&gt;</code>
-
-```bash
-export TUITBOT_X_API__CLIENT_ID="your-client-id"
-export TUITBOT_LLM__API_KEY="sk-your-openai-key"
-export TUITBOT_LIMITS__MAX_REPLIES_PER_DAY=10
-export TUITBOT_BUSINESS__PRODUCT_KEYWORDS="rust, cli tools, productivity"
-export TUITBOT_APPROVAL_MODE=true  # Force approval mode via env var
-```
-
-**OpenClaw auto-detection:** When any `OPENCLAW_*` environment variable is present, `approval_mode` is automatically enabled for safety. Set `TUITBOT_APPROVAL_MODE=false` to explicitly opt out.
-</details>
-
----
-
-## AI Providers
-
-Tuitbot supports the leading AI heavyweights right out of the box.
-
-| Provider | Recommended Model | Cost Estimate | Notes |
-|---|---|---|---|
-| **OpenAI** | `gpt-4o-mini` | ~$0.15 / 1M tokens | Extremely fast and highly economical. |
-| **Anthropic** | `claude-sonnet-4-6` | ~$3.00 / 1M tokens | World-class reasoning and prose generation. |
-| **Ollama** | `llama3.2` | **Free** | Ultimate privacy. Runs locally on your machine. |
-
----
-
-## X API Access & Pricing
-
-X's API changed, but Tuitbot natively navigates the complex ecosystem perfectly.
-
-| Plan | Discovery & Replies | Posting Tweets & Threads | Monthly Cost |
-|---|:---:|:---:|---|
-| **Pay-Per-Use** *(Recommended)* | Yes | Yes | **~$1-5** |
-| **Free Tier** | No | Yes | **$0** |
-| **Basic Tier** | Yes | Yes | **$100** |
-
-*Tuitbot automatically detects your tier and unlocks features based on what your permissions allow.*
-
----
-
-## Deployment
-
-### Standalone Daemon
-
-**Linux (tmux):**
-```bash
-tmux new -s tuitbot
 tuitbot run
-# Detach with: Ctrl+B, then D
+tuitbot tick --output json
+tuitbot tick --dry-run
+
+# Operations
+tuitbot stats --output json
+tuitbot settings --show --output json
+tuitbot approve --list --output json
+
+# AI agent integration
+tuitbot mcp serve
 ```
 
-**Linux (systemd service):**
-```ini
-# /etc/systemd/system/tuitbot.service
-[Unit]
-Description=Tuitbot autonomous X growth assistant
-After=network.target
+---
 
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/tuitbot run
-Restart=on-failure
-User=tuitbot
+## Documentation
 
-[Install]
-WantedBy=multi-user.target
-```
+This README is intentionally concise. The full system docs are in `docs/`:
 
-```bash
-sudo systemctl enable --now tuitbot
-```
-
-**macOS (launchd daemon):**
-```bash
-launchctl load ~/Library/LaunchAgents/com.tuitbot.agent.plist
-```
-
-### Scheduler-Driven (Tick)
-
-See the [detailed examples in Getting Started](#4b-run-with-an-external-scheduler) for cron, systemd timer, launchd, and OpenClaw configurations.
-
-**Key points for production tick deployments:**
-- Use `--output json` and pipe to your log aggregation system
-- A 15-30 minute cadence works well; built-in rate limits prevent over-posting
-- Tuitbot's active-hours gate still applies by default; use `--ignore-schedule` to let your scheduler own all timing
-- The process lock file lives at `~/.tuitbot/tuitbot.lock` and is released automatically on exit or crash
+- `docs/index.md` - complete map
+- `docs/getting-started.md` - install and first run
+- `docs/configuration.md` - config model and production guidance
+- `docs/cli-reference.md` - command reference
+- `docs/mcp-reference.md` - AI agent integration
+- `docs/operations.md` - deployment and runbook
+- `docs/release-and-publishing.md` - release-plz and crates.io
 
 ---
 
@@ -455,97 +247,16 @@ Repository setup required once: enable `Settings -> Actions -> General -> Allow 
 Set a `CARGO_REGISTRY_TOKEN` secret from crates.io (`Account Settings -> API Tokens`) so CI can publish crates.
 Optional but recommended: set a `RELEASE_PLZ_TOKEN` (PAT) secret so workflows also run on release PRs created by automation.
 
-For full operational and contributor documentation, see `docs/index.md`.
-
----
-
-## AI Assistant Integration
-
-Tuitbot ships with a built-in **MCP (Model Context Protocol) server**, making it a first-class tool for AI agents like Claude Code, Cursor, and any MCP-compatible client. For OpenClaw agents, a dedicated **plugin** (`plugins/openclaw-tuitbot/`) bridges MCP tools into native OpenClaw tool registrations with automatic approval-mode safety.
-
-### MCP Server (Recommended)
-
-The MCP server exposes **22 structured tools** over stdio — no CLI parsing required. AI agents can natively discover and call Tuitbot operations with typed inputs and JSON outputs.
-
-**Setup** — add to your Claude Code settings (`~/.claude/settings.json`):
-
-```json
-{
-  "mcpServers": {
-    "tuitbot": {
-      "command": "tuitbot",
-      "args": ["mcp", "serve"]
-    }
-  }
-}
-```
-
-With a custom config path:
-
-```json
-{
-  "mcpServers": {
-    "tuitbot": {
-      "command": "tuitbot",
-      "args": ["-c", "/path/to/config.toml", "mcp", "serve"]
-    }
-  }
-}
-```
-
-**Available MCP Tools:**
-
-| Category | Tools |
-|---|---|
-| **Analytics** | `get_stats`, `get_follower_trend` |
-| **Action Log** | `get_action_log`, `get_action_counts` |
-| **Rate Limits** | `get_rate_limits` |
-| **Replies** | `get_recent_replies`, `get_reply_count_today` |
-| **Targets** | `list_target_accounts` |
-| **Discovery** | `list_unreplied_tweets` |
-| **Scoring** | `score_tweet` (6-signal engine) |
-| **Approval Queue** | `list_pending_approvals`, `get_pending_count`, `approve_item`, `reject_item`, `approve_all` |
-| **Content Generation** | `generate_reply`, `generate_tweet`, `generate_thread` (requires LLM provider) |
-| **Config & Health** | `get_config`, `validate_config`, `health_check` |
-
-### Machine-Readable CLI Output
-
-All read-only commands also support `--output json` for structured output:
-
-```bash
-tuitbot test --output json              # Validate setup
-tuitbot settings --show --output json   # View config (secrets redacted)
-tuitbot stats --output json             # Analytics dashboard
-tuitbot approve --list --output json    # List pending approval items
-tuitbot tick --output json              # Tick summary with per-loop status
-```
-
-Non-interactive approve commands work without a terminal:
-
-```bash
-tuitbot approve --approve 1             # Approve item by ID
-tuitbot approve --reject 2              # Reject item by ID
-tuitbot approve --approve-all           # Approve all pending
-```
+Full details: `docs/release-and-publishing.md`.
 
 ---
 
 ## Troubleshooting
 
-**Common Fixes:**
-* **Auth Errors:** Ensure your X App callback URL is exactly `http://127.0.0.1:8080/callback`. No trailing slashes.
-* **No Tweets Found:** Relax your configured keywords or lower the scoring threshold in `tuitbot settings scoring`.
-* **Verbose Logging:** If all else fails, use `RUST_LOG=tuitbot_core=debug tuitbot run` to get exhaustive logs.
-* **Lock Errors on tick:** If `tuitbot tick` reports a lock error, check that no other `tuitbot run` or `tuitbot tick` process is active. The lock file at `~/.tuitbot/tuitbot.lock` is released automatically, but if the process was killed with `SIGKILL`, you may need to delete it manually.
-
-**Local File Storage:**
-All data is stored locally. Total privacy. Total agency.
-* `~/.tuitbot/config.toml` — User configuration
-* `~/.tuitbot/tokens.json` — Rotating X API tokens
-* `~/.tuitbot/tuitbot.db` — Lightweight SQLite database
-* `~/.tuitbot/tuitbot.lock` — Process lock (tick mode)
-
-*To confidently reset your entire system, completely purge: `rm -rf ~/.tuitbot`.*
+- Auth issues: callback URL must be exactly `http://127.0.0.1:8080/callback`.
+- Lock issues on `tick`: ensure no other `tuitbot run` or `tuitbot tick` process is active.
+- Debug logs: `RUST_LOG=tuitbot_core=debug tuitbot run`.
+- Full troubleshooting guide: `docs/troubleshooting.md`.
 
 ---
 
