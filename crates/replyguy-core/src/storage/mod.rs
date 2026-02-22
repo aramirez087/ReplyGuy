@@ -4,6 +4,8 @@
 //! for all persistent entities. Uses SQLx with WAL mode for concurrent access.
 
 pub mod action_log;
+pub mod cleanup;
+pub mod rate_limits;
 pub mod replies;
 pub mod threads;
 pub mod tweets;
