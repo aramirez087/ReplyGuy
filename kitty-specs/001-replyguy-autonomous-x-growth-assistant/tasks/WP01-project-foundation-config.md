@@ -15,7 +15,7 @@ subtasks:
 - T006
 phase: Phase 0 - Foundation
 assignee: ''
-agent: ''
+agent: "claude-opus"
 shell_pid: "35288"
 review_status: ''
 reviewed_by: ''
@@ -457,3 +457,4 @@ The CLI command updates both frontmatter and activity log automatically.
 ### Optional Phase Subdirectories
 
 For large features, organize prompts under `tasks/` to keep bundles grouped while maintaining lexical ordering.
+- 2026-02-22T00:22:11Z – claude-opus – shell_pid=35288 – lane=doing – Assigned agent via workflow command
