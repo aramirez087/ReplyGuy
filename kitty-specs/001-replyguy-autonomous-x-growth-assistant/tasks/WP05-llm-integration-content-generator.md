@@ -1,21 +1,24 @@
 ---
-work_package_id: "WP05"
-subtasks: ["T024", "T025", "T026", "T027", "T028"]
-title: "LLM Integration + Content Generator"
-phase: "Phase 0 - Foundation"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
-dependencies: ["WP01"]
+work_package_id: WP05
+title: LLM Integration + Content Generator
+lane: "doing"
+dependencies: [WP01]
+base_branch: 001-replyguy-autonomous-x-growth-assistant-WP01
+base_commit: 54b47b462601a1e58d0222f08ae0a65ca3068a1d
+created_at: '2026-02-22T01:01:20.319027+00:00'
+subtasks: [T024, T025, T026, T027, T028]
+phase: Phase 0 - Foundation
+assignee: ''
+agent: ''
+shell_pid: "64816"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-21T22:00:00Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-21T22:00:00Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP05 -- LLM Integration + Content Generator
