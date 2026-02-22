@@ -6,6 +6,7 @@ pub mod config;
 pub mod error;
 pub mod safety;
 pub mod storage;
+pub mod x_api;
 
 pub use error::*;
 

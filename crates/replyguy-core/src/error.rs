@@ -62,6 +62,13 @@ pub enum XApiError {
         message: String,
     },
 
+    /// X API returned HTTP 403 (forbidden / tier restriction).
+    #[error("X API forbidden: {message}")]
+    Forbidden {
+        /// Details about why access is forbidden.
+        message: String,
+    },
+
     /// Network-level failure communicating with X API.
     #[error("X API network error: {source}")]
     Network {
