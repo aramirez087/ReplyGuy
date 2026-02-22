@@ -692,18 +692,16 @@ client_id = "test"
 
     #[test]
     fn env_var_invalid_numeric_returns_error() {
-        // Use a unique env var to avoid race conditions with other tests
-        env::set_var("REPLYGUY_STORAGE__RETENTION_DAYS", "not_a_number");
-        let mut config = Config::default();
-        let result = config.apply_env_overrides();
+        // Test the parse function directly to avoid env var race conditions
+        // with other tests that call apply_env_overrides()
+        let result = parse_env_u32("REPLYGUY_SCORING__THRESHOLD", "not_a_number");
         assert!(result.is_err());
         match result.unwrap_err() {
             ConfigError::InvalidValue { field, .. } => {
-                assert_eq!(field, "REPLYGUY_STORAGE__RETENTION_DAYS");
+                assert_eq!(field, "REPLYGUY_SCORING__THRESHOLD");
             }
             other => panic!("expected InvalidValue, got: {other}"),
         }
-        env::remove_var("REPLYGUY_STORAGE__RETENTION_DAYS");
     }
 
     #[test]
