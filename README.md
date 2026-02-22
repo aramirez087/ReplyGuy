@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/logo.svg" alt="Tuitbot Logo" width="120" />
+
 # Tuitbot
 
 **Your autonomous X (Twitter) growth assistant.**
