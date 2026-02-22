@@ -1,9 +1,8 @@
-//! Automation runtime and engagement loops.
+//! Automation runtime, engagement loops, and content generation.
 //!
 //! This module contains the automation runtime for managing concurrent task
-//! lifecycles, and the core engagement engine that delivers the primary value
-//! proposition of ReplyGuy: autonomous tweet discovery and contextual reply
-//! generation.
+//! lifecycles, the core engagement engine (tweet discovery and mention replies),
+//! and original content generation (educational tweets and threads).
 //!
 //! Submodules:
 //! - [`scheduler`]: Loop scheduler with configurable interval and jitter.
@@ -12,23 +11,30 @@
 //! - [`loop_helpers`]: Shared types, traits, and error handling for loops.
 //! - [`mentions_loop`]: Monitors @-mentions and generates replies.
 //! - [`discovery_loop`]: Searches tweets by keyword, scores, and replies.
+//! - [`content_loop`]: Generates and posts educational tweets.
+//! - [`thread_loop`]: Generates and posts multi-tweet threads.
 
+pub mod content_loop;
 pub mod discovery_loop;
 pub mod loop_helpers;
 pub mod mentions_loop;
 pub mod posting_queue;
 pub mod scheduler;
 pub mod status_reporter;
+pub mod thread_loop;
 
+pub use content_loop::{ContentLoop, ContentResult};
 pub use discovery_loop::{DiscoveryLoop, DiscoveryResult, DiscoverySummary};
 pub use loop_helpers::{
-    ConsecutiveErrorTracker, LoopError, LoopStorage, LoopTweet, MentionsFetcher, PostSender,
-    ReplyGenerator, SafetyChecker, ScoreResult, TweetScorer, TweetSearcher,
+    ConsecutiveErrorTracker, ContentLoopError, ContentSafety, ContentStorage, LoopError,
+    LoopStorage, LoopTweet, MentionsFetcher, PostSender, ReplyGenerator, SafetyChecker,
+    ScoreResult, ThreadPoster, TweetGenerator, TweetScorer, TweetSearcher,
 };
 pub use mentions_loop::{MentionResult, MentionsLoop};
 pub use posting_queue::{create_posting_queue, PostAction, PostExecutor, QUEUE_CAPACITY};
 pub use scheduler::{scheduler_from_config, LoopScheduler};
 pub use status_reporter::{ActionCounts, StatusQuerier};
+pub use thread_loop::{ThreadGenerator, ThreadLoop, ThreadResult};
 
 use std::future::Future;
 use std::time::Duration;
