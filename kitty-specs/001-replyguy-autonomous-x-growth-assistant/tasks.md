@@ -251,7 +251,7 @@
 - [x] T040 Integrate both loops with safety module (rate checks, dedup, action logging)
 - [x] T041 [P] Implement dry-run support for both loops
 - [x] T042 [P] Implement CLI `replyguy mentions` command in `crates/replyguy-cli/src/commands/mentions.rs`
-- [ ] T043 [P] Implement CLI `replyguy discover` command in `crates/replyguy-cli/src/commands/discover.rs`
+- [x] T043 [P] Implement CLI `replyguy discover` command in `crates/replyguy-cli/src/commands/discover.rs`
 
 ### Implementation Notes
 - Mentions loop: fetch mentions since last check (track `since_id`), generate reply via ContentGenerator, post via posting queue, record in DB
