@@ -1,18 +1,31 @@
-//! Automation runtime and task lifecycle management.
+//! Automation runtime and engagement loops.
 //!
-//! The `Runtime` struct is the central coordinator that spawns automation
-//! loops as concurrent Tokio tasks, manages their lifecycle via a shared
-//! `CancellationToken`, and handles graceful shutdown on OS signals.
+//! This module contains the automation runtime for managing concurrent task
+//! lifecycles, and the core engagement engine that delivers the primary value
+//! proposition of ReplyGuy: autonomous tweet discovery and contextual reply
+//! generation.
 //!
 //! Submodules:
 //! - [`scheduler`]: Loop scheduler with configurable interval and jitter.
 //! - [`posting_queue`]: Serialized posting queue for concurrent loops.
 //! - [`status_reporter`]: Periodic action count summaries.
+//! - [`loop_helpers`]: Shared types, traits, and error handling for loops.
+//! - [`mentions_loop`]: Monitors @-mentions and generates replies.
+//! - [`discovery_loop`]: Searches tweets by keyword, scores, and replies.
 
+pub mod discovery_loop;
+pub mod loop_helpers;
+pub mod mentions_loop;
 pub mod posting_queue;
 pub mod scheduler;
 pub mod status_reporter;
 
+pub use discovery_loop::{DiscoveryLoop, DiscoveryResult, DiscoverySummary};
+pub use loop_helpers::{
+    ConsecutiveErrorTracker, LoopError, LoopStorage, LoopTweet, MentionsFetcher, PostSender,
+    ReplyGenerator, SafetyChecker, ScoreResult, TweetScorer, TweetSearcher,
+};
+pub use mentions_loop::{MentionResult, MentionsLoop};
 pub use posting_queue::{create_posting_queue, PostAction, PostExecutor, QUEUE_CAPACITY};
 pub use scheduler::{scheduler_from_config, LoopScheduler};
 pub use status_reporter::{ActionCounts, StatusQuerier};

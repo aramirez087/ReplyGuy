@@ -120,7 +120,11 @@ impl TokenManager {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.text().await.unwrap_or_default();
-            tracing::error!(status, body_len = body.len(), "Token refresh failed (response body redacted)");
+            tracing::error!(
+                status,
+                body_len = body.len(),
+                "Token refresh failed (response body redacted)"
+            );
             return Err(XApiError::AuthExpired);
         }
 
