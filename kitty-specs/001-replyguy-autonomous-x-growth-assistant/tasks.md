@@ -313,13 +313,13 @@
 **Estimated prompt size**: ~350 lines
 
 ### Included Subtasks
-- [ ] T050 Implement CLI `replyguy run` command in `crates/replyguy-cli/src/commands/run.rs`
-- [ ] T051 [P] Implement CLI `replyguy auth` command in `crates/replyguy-cli/src/commands/auth.rs`
-- [ ] T052 [P] Implement CLI `replyguy test` command in `crates/replyguy-cli/src/commands/test.rs`
-- [ ] T053 Configure verbose/quiet output modes with tracing-subscriber
-- [ ] T054 [P] Create `config.example.toml` with documented defaults
-- [ ] T055 [P] Create GitHub Actions CI workflow (.github/workflows/ci.yml) for Linux, macOS, Windows
-- [ ] T056 [P] Create README.md with project overview, installation, quickstart, and configuration reference
+- [x] T050 Implement CLI `replyguy run` command in `crates/replyguy-cli/src/commands/run.rs`
+- [x] T051 [P] Implement CLI `replyguy auth` command in `crates/replyguy-cli/src/commands/auth.rs`
+- [x] T052 [P] Implement CLI `replyguy test` command in `crates/replyguy-cli/src/commands/test.rs`
+- [x] T053 Configure verbose/quiet output modes with tracing-subscriber
+- [x] T054 [P] Create `config.example.toml` with documented defaults
+- [x] T055 [P] Create GitHub Actions CI workflow (.github/workflows/ci.yml) for Linux, macOS, Windows
+- [x] T056 [P] Create README.md with project overview, installation, quickstart, and configuration reference
 
 ### Implementation Notes
 - `run`: init DB, load config, detect tier, report enabled loops, start runtime orchestrator, await shutdown
