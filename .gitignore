@@ -28,6 +28,9 @@ Thumbs.db
 *.swo
 *~
 
+# Documentation build output
+site/
+
 # Added by Spec Kitty CLI (auto-managed)
 .claude/
 .codex/

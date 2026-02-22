@@ -16,7 +16,7 @@ Tuitbot grows your X account on autopilot — finding relevant conversations, re
 
 Built for **founders**, **indie hackers**, and **solo makers** who'd rather build their product than spend hours on X.
 
-[Two Modes](#two-operating-modes) · [Features](#features) · [Getting Started](#getting-started) · [Configuration](#configuration-reference) · [Deployment](#deployment)
+[Two Modes](#two-operating-modes) · [Features](#features) · [Getting Started](#getting-started) · [Configuration](#configuration-reference) · [Deployment](#deployment) · [Full Docs](docs/index.md)
 
 </div>
 
@@ -445,12 +445,12 @@ Releases are fully automated in GitHub Actions and follow a release-PR model:
    * Cross-platform binary builds (`linux`, `macOS Intel`, `macOS Apple Silicon`, `windows`)
    * Asset uploads + `SHA256SUMS` checksum file
 4. If a release contains only library crate updates and no `tuitbot-cli` release, binary asset jobs are skipped automatically.
-5. The pipeline keeps `release_always = true` so unreleased versions on `main` (including first crates.io bootstrap) can publish without waiting for a generated release PR.
-
 To keep versioning clean, use Conventional Commit prefixes (`feat:`, `fix:`, `chore:`, etc.) and `!` for breaking changes.
 Repository setup required once: enable `Settings -> Actions -> General -> Allow GitHub Actions to create and approve pull requests`.
 Set a `CARGO_REGISTRY_TOKEN` secret from crates.io (`Account Settings -> API Tokens`) so CI can publish crates.
 Optional but recommended: set a `RELEASE_PLZ_TOKEN` (PAT) secret so workflows also run on release PRs created by automation.
+
+For full operational and contributor documentation, see `docs/index.md`.
 
 ---
 

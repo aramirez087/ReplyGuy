@@ -1,0 +1,31 @@
+site_name: Tuitbot Docs
+site_description: Systematic documentation for Tuitbot
+site_url: https://aramirez087.github.io/TuitBot/
+repo_url: https://github.com/aramirez087/TuitBot
+repo_name: aramirez087/TuitBot
+edit_uri: edit/main/docs/
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.copy
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - tables
+  - pymdownx.superfences
+  - pymdownx.highlight
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Configuration: configuration.md
+  - CLI Reference: cli-reference.md
+  - MCP Reference: mcp-reference.md
+  - Architecture: architecture.md
+  - Operations: operations.md
+  - Release and Publishing: release-and-publishing.md
+  - Troubleshooting: troubleshooting.md
+  - Contributing: contributing.md
