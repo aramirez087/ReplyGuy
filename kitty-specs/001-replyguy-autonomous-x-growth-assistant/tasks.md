@@ -281,7 +281,7 @@
 
 ### Included Subtasks
 - [x] T044 Implement content loop in `crates/replyguy-core/src/automation/content_loop.rs`
-- [ ] T045 Implement thread loop in `crates/replyguy-core/src/automation/thread_loop.rs`
+- [x] T045 Implement thread loop in `crates/replyguy-core/src/automation/thread_loop.rs`
 - [ ] T046 Integrate both loops with safety (rate checks, action logging)
 - [ ] T047 [P] Implement dry-run support for both loops
 - [ ] T048 [P] Implement CLI `replyguy post` command in `crates/replyguy-cli/src/commands/post.rs`
