@@ -245,6 +245,35 @@ launchctl load ~/Library/LaunchAgents/com.tuitbot.agent.plist
 
 ---
 
+## 🤖 AI Assistant Integration
+
+Tuitbot can be used as a tool by AI assistants via the [OpenClaw](https://openclaw.dev) skill system or any agent framework that can invoke CLI commands.
+
+### OpenClaw Skill
+
+Tuitbot ships with a `SKILL.md` file that teaches OpenClaw-compatible assistants how to set up, configure, and operate the agent. Install it by pointing your assistant at this repository.
+
+### Machine-Readable Output
+
+All read-only commands support `--output json` for structured output:
+
+```bash
+tuitbot test --output json              # Validate setup
+tuitbot settings --show --output json   # View config (secrets redacted)
+tuitbot stats --output json             # Analytics dashboard
+tuitbot approve --list --output json    # List pending approval items
+```
+
+Non-interactive approve commands work without a terminal:
+
+```bash
+tuitbot approve --approve 1             # Approve item by ID
+tuitbot approve --reject 2              # Reject item by ID
+tuitbot approve --approve-all           # Approve all pending
+```
+
+---
+
 ## 🆘 Troubleshooting
 
 **Common Fixes:**

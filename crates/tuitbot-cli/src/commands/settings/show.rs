@@ -1,3 +1,4 @@
+use anyhow::Result;
 use console::Style;
 use tuitbot_core::config::Config;
 
@@ -252,6 +253,23 @@ pub(super) fn show_config(config: &Config) {
         }
     );
     eprintln!();
+}
+
+/// Output configuration as JSON with secrets redacted.
+pub(super) fn show_config_json(config: &Config) -> Result<()> {
+    let mut config = config.clone();
+    config.llm.api_key = config
+        .llm
+        .api_key
+        .as_ref()
+        .map(|_| "***REDACTED***".to_string());
+    config.x_api.client_secret = config
+        .x_api
+        .client_secret
+        .as_ref()
+        .map(|_| "***REDACTED***".to_string());
+    println!("{}", serde_json::to_string(&config)?);
+    Ok(())
 }
 
 pub(super) fn mask_secret(secret: &Option<String>) -> String {

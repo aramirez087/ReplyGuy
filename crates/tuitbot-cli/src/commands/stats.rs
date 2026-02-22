@@ -3,12 +3,60 @@
 //! Displays analytics dashboard: follower trend, top-performing topics,
 //! engagement rates, and weekly volume.
 
+use serde::Serialize;
 use tuitbot_core::config::Config;
 use tuitbot_core::storage;
 
+use super::OutputFormat;
+
+#[derive(Serialize)]
+struct FollowerSnapshotJson {
+    date: String,
+    follower_count: i64,
+    following_count: i64,
+    tweet_count: i64,
+}
+
+#[derive(Serialize)]
+struct TopicJson {
+    topic: String,
+    format: String,
+    total_posts: i64,
+    avg_performance: f64,
+}
+
+#[derive(Serialize)]
+struct EngagementJson {
+    avg_reply_score: f64,
+    avg_tweet_score: f64,
+}
+
+#[derive(Serialize)]
+struct ContentMeasuredJson {
+    replies: i64,
+    tweets: i64,
+}
+
+#[derive(Serialize)]
+struct StatsOutput {
+    follower_trend: Vec<FollowerSnapshotJson>,
+    net_follower_change: Option<i64>,
+    top_topics: Vec<TopicJson>,
+    engagement: EngagementJson,
+    content_measured: ContentMeasuredJson,
+}
+
 /// Execute the `tuitbot stats` command.
-pub async fn execute(config: &Config) -> anyhow::Result<()> {
+pub async fn execute(config: &Config, output: OutputFormat) -> anyhow::Result<()> {
     let pool = storage::init_db(&config.storage.db_path).await?;
+
+    if output.is_json() {
+        let result = collect_stats_json(&pool).await;
+        pool.close().await;
+        let stats = result?;
+        println!("{}", serde_json::to_string(&stats)?);
+        return Ok(());
+    }
 
     eprintln!();
     eprintln!("=== Tuitbot Analytics ===");
@@ -30,6 +78,64 @@ pub async fn execute(config: &Config) -> anyhow::Result<()> {
 
     pool.close().await;
     Ok(())
+}
+
+async fn collect_stats_json(pool: &storage::DbPool) -> anyhow::Result<StatsOutput> {
+    let snapshots = storage::analytics::get_follower_snapshots(pool, 7)
+        .await
+        .unwrap_or_default();
+
+    let net_follower_change = if snapshots.len() >= 2 {
+        Some(snapshots[0].follower_count - snapshots[snapshots.len() - 1].follower_count)
+    } else {
+        None
+    };
+
+    let follower_trend: Vec<FollowerSnapshotJson> = snapshots
+        .iter()
+        .rev()
+        .map(|s| FollowerSnapshotJson {
+            date: s.snapshot_date.clone(),
+            follower_count: s.follower_count,
+            following_count: s.following_count,
+            tweet_count: s.tweet_count,
+        })
+        .collect();
+
+    let topics = storage::analytics::get_top_topics(pool, 10)
+        .await
+        .unwrap_or_default();
+    let top_topics: Vec<TopicJson> = topics
+        .into_iter()
+        .map(|t| TopicJson {
+            topic: t.topic,
+            format: t.format,
+            total_posts: t.total_posts,
+            avg_performance: t.avg_performance,
+        })
+        .collect();
+
+    let avg_reply_score = storage::analytics::get_avg_reply_engagement(pool)
+        .await
+        .unwrap_or(0.0);
+    let avg_tweet_score = storage::analytics::get_avg_tweet_engagement(pool)
+        .await
+        .unwrap_or(0.0);
+
+    let (replies, tweets) = storage::analytics::get_performance_counts(pool)
+        .await
+        .unwrap_or((0, 0));
+
+    Ok(StatsOutput {
+        follower_trend,
+        net_follower_change,
+        top_topics,
+        engagement: EngagementJson {
+            avg_reply_score,
+            avg_tweet_score,
+        },
+        content_measured: ContentMeasuredJson { replies, tweets },
+    })
 }
 
 async fn print_follower_trend(pool: &storage::DbPool) {

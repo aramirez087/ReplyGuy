@@ -20,10 +20,10 @@ use std::path::PathBuf;
 use anyhow::{bail, Result};
 use tuitbot_core::config::Config;
 
-use super::SettingsArgs;
+use super::{OutputFormat, SettingsArgs};
 
 /// Entry point for the settings command.
-pub async fn execute(args: SettingsArgs, config_path: &str) -> Result<()> {
+pub async fn execute(args: SettingsArgs, config_path: &str, output: OutputFormat) -> Result<()> {
     let expanded = expand_tilde(config_path);
     if !expanded.exists() {
         bail!(
@@ -40,7 +40,11 @@ pub async fn execute(args: SettingsArgs, config_path: &str) -> Result<()> {
     })?;
 
     if args.show {
-        show::show_config(&config);
+        if output.is_json() {
+            show::show_config_json(&config)?;
+        } else {
+            show::show_config(&config);
+        }
         return Ok(());
     }
 

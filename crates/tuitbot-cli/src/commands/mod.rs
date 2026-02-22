@@ -13,6 +13,26 @@ pub mod upgrade;
 
 use clap::Args;
 
+/// Output format for machine-readable output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    Text,
+    Json,
+}
+
+impl OutputFormat {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "json" => Self::Json,
+            _ => Self::Text,
+        }
+    }
+
+    pub fn is_json(self) -> bool {
+        self == Self::Json
+    }
+}
+
 /// Arguments for the `init` subcommand.
 #[derive(Debug, Args)]
 pub struct InitArgs {
@@ -110,7 +130,23 @@ pub struct StatsArgs;
 
 /// Arguments for the `approve` subcommand.
 #[derive(Debug, Args)]
-pub struct ApproveArgs;
+pub struct ApproveArgs {
+    /// List pending items without interactive review
+    #[arg(long)]
+    pub list: bool,
+
+    /// Approve a specific item by ID
+    #[arg(long)]
+    pub approve: Option<i64>,
+
+    /// Reject a specific item by ID
+    #[arg(long)]
+    pub reject: Option<i64>,
+
+    /// Approve all pending items
+    #[arg(long)]
+    pub approve_all: bool,
+}
 
 /// Arguments for the `settings` subcommand.
 #[derive(Debug, Args)]

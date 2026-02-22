@@ -39,6 +39,10 @@ struct Cli {
     #[arg(short, long, global = true)]
     quiet: bool,
 
+    /// Output format (text or json) for machine-readable output
+    #[arg(long, global = true, default_value = "text", value_parser = ["text", "json"])]
+    output: String,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -99,6 +103,8 @@ async fn main() -> anyhow::Result<()> {
         .compact()
         .init();
 
+    let output_format = commands::OutputFormat::from_str(&cli.output);
+
     // Handle `init`, `upgrade`, and `settings` before general config loading
     // (they manage their own config lifecycle).
     if let Commands::Init(args) = cli.command {
@@ -108,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
         return commands::upgrade::execute(args.non_interactive, &cli.config).await;
     }
     if let Commands::Settings(args) = cli.command {
-        return commands::settings::execute(args, &cli.config).await;
+        return commands::settings::execute(args, &cli.config, output_format).await;
     }
 
     // Load configuration.
@@ -133,7 +139,7 @@ async fn main() -> anyhow::Result<()> {
             commands::auth::execute(&config, args.mode.as_deref()).await?;
         }
         Commands::Test(_args) => {
-            commands::test::execute(&config, &cli.config).await?;
+            commands::test::execute(&config, &cli.config, output_format).await?;
         }
         Commands::Discover(_args) => {
             eprintln!("discover: not yet available (requires WP08 merge)");
@@ -151,10 +157,10 @@ async fn main() -> anyhow::Result<()> {
             eprintln!("score: not yet available (requires WP06 merge)");
         }
         Commands::Stats(_args) => {
-            commands::stats::execute(&config).await?;
+            commands::stats::execute(&config, output_format).await?;
         }
-        Commands::Approve(_args) => {
-            commands::approve::execute(&config).await?;
+        Commands::Approve(args) => {
+            commands::approve::execute(&config, args, output_format).await?;
         }
     }
 

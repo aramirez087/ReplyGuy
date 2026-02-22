@@ -2,14 +2,66 @@
 //!
 //! Interactive review of queued posts when approval_mode is enabled.
 //! Shows pending items one at a time and allows approve/reject/skip.
+//!
+//! Non-interactive modes:
+//!   --list          List pending items
+//!   --approve <ID>  Approve a specific item
+//!   --reject <ID>   Reject a specific item
+//!   --approve-all   Approve all pending items
 
 use std::io::{self, BufRead, Write};
+
+use serde::Serialize;
 use tuitbot_core::config::Config;
 use tuitbot_core::storage;
 
+use super::{ApproveArgs, OutputFormat};
+
+#[derive(Serialize)]
+struct ApprovalItemJson {
+    id: i64,
+    action_type: String,
+    target_tweet_id: String,
+    target_author: String,
+    generated_content: String,
+    topic: String,
+    archetype: String,
+    score: f64,
+    created_at: String,
+}
+
+impl From<&storage::approval_queue::ApprovalItem> for ApprovalItemJson {
+    fn from(item: &storage::approval_queue::ApprovalItem) -> Self {
+        Self {
+            id: item.id,
+            action_type: item.action_type.clone(),
+            target_tweet_id: item.target_tweet_id.clone(),
+            target_author: item.target_author.clone(),
+            generated_content: item.generated_content.clone(),
+            topic: item.topic.clone(),
+            archetype: item.archetype.clone(),
+            score: item.score,
+            created_at: item.created_at.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ApproveActionResult {
+    id: i64,
+    status: String,
+}
+
 /// Execute the `tuitbot approve` command.
-pub async fn execute(config: &Config) -> anyhow::Result<()> {
-    if !config.approval_mode {
+pub async fn execute(
+    config: &Config,
+    args: ApproveArgs,
+    output: OutputFormat,
+) -> anyhow::Result<()> {
+    let is_non_interactive =
+        args.list || args.approve.is_some() || args.reject.is_some() || args.approve_all;
+
+    if !config.approval_mode && !is_non_interactive {
         eprintln!("Approval mode is not enabled.");
         eprintln!("Set `approval_mode = true` in your config.toml to queue posts for review.");
         return Ok(());
@@ -17,6 +69,90 @@ pub async fn execute(config: &Config) -> anyhow::Result<()> {
 
     let pool = storage::init_db(&config.storage.db_path).await?;
 
+    // Handle non-interactive modes
+    if args.list {
+        let pending = storage::approval_queue::get_pending(&pool).await?;
+        if output.is_json() {
+            let items: Vec<ApprovalItemJson> = pending.iter().map(ApprovalItemJson::from).collect();
+            println!("{}", serde_json::to_string(&items)?);
+        } else if pending.is_empty() {
+            eprintln!("No pending items.");
+        } else {
+            for item in &pending {
+                eprintln!(
+                    "  #{} [{}] {} | topic: {} | score: {:.1} | {}",
+                    item.id,
+                    item.action_type,
+                    if item.target_tweet_id.is_empty() {
+                        "(original)".to_string()
+                    } else {
+                        format!("reply to {}", item.target_tweet_id)
+                    },
+                    if item.topic.is_empty() {
+                        "-"
+                    } else {
+                        &item.topic
+                    },
+                    item.score,
+                    item.created_at,
+                );
+            }
+            eprintln!("\n{} pending item(s).", pending.len());
+        }
+        pool.close().await;
+        return Ok(());
+    }
+
+    if let Some(id) = args.approve {
+        storage::approval_queue::update_status(&pool, id, "approved").await?;
+        if output.is_json() {
+            let result = ApproveActionResult {
+                id,
+                status: "approved".to_string(),
+            };
+            println!("{}", serde_json::to_string(&result)?);
+        } else {
+            eprintln!("Approved item #{id}.");
+        }
+        pool.close().await;
+        return Ok(());
+    }
+
+    if let Some(id) = args.reject {
+        storage::approval_queue::update_status(&pool, id, "rejected").await?;
+        if output.is_json() {
+            let result = ApproveActionResult {
+                id,
+                status: "rejected".to_string(),
+            };
+            println!("{}", serde_json::to_string(&result)?);
+        } else {
+            eprintln!("Rejected item #{id}.");
+        }
+        pool.close().await;
+        return Ok(());
+    }
+
+    if args.approve_all {
+        let pending = storage::approval_queue::get_pending(&pool).await?;
+        let mut results = Vec::new();
+        for item in &pending {
+            storage::approval_queue::update_status(&pool, item.id, "approved").await?;
+            results.push(ApproveActionResult {
+                id: item.id,
+                status: "approved".to_string(),
+            });
+        }
+        if output.is_json() {
+            println!("{}", serde_json::to_string(&results)?);
+        } else {
+            eprintln!("Approved {} item(s).", results.len());
+        }
+        pool.close().await;
+        return Ok(());
+    }
+
+    // Interactive mode (existing behavior)
     // Expire items older than 24 hours
     let expired = storage::approval_queue::expire_old_items(&pool, 24).await?;
     if expired > 0 {

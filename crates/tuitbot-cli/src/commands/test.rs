@@ -4,10 +4,14 @@
 //! running the agent. Each check runs independently -- a failure
 //! in one does not skip others.
 
+use serde::Serialize;
 use tuitbot_core::config::Config;
 use tuitbot_core::startup::{expand_tilde, load_tokens_from_file};
 
+use super::OutputFormat;
+
 /// A single diagnostic check result.
+#[derive(Serialize)]
 struct CheckResult {
     label: &'static str,
     passed: bool,
@@ -44,18 +48,29 @@ impl std::fmt::Display for CheckResult {
     }
 }
 
-/// Run all diagnostic checks and print results.
-///
-/// Returns `true` if all checks pass, `false` if any fail.
-/// Does **not** call `process::exit` — callers decide what to do on failure.
-pub async fn run_checks(config: &Config, config_path: &str) -> bool {
-    let results = vec![
+#[derive(Serialize)]
+struct TestOutput {
+    passed: bool,
+    checks: Vec<CheckResult>,
+}
+
+/// Run all diagnostic checks and return results.
+fn collect_checks(config: &Config, config_path: &str) -> Vec<CheckResult> {
+    vec![
         check_config(config, config_path),
         check_business_profile(config),
         check_auth(),
         check_llm_config(config),
         check_database(config),
-    ];
+    ]
+}
+
+/// Run all diagnostic checks and print results.
+///
+/// Returns `true` if all checks pass, `false` if any fail.
+/// Does **not** call `process::exit` — callers decide what to do on failure.
+pub async fn run_checks(config: &Config, config_path: &str) -> bool {
+    let results = collect_checks(config, config_path);
 
     // Print results.
     eprintln!();
@@ -79,8 +94,23 @@ pub async fn run_checks(config: &Config, config_path: &str) -> bool {
 ///
 /// Runs all diagnostic checks and reports results. Exits with code 1
 /// if any check fails.
-pub async fn execute(config: &Config, config_path: &str) -> anyhow::Result<()> {
-    if !run_checks(config, config_path).await {
+pub async fn execute(
+    config: &Config,
+    config_path: &str,
+    output: OutputFormat,
+) -> anyhow::Result<()> {
+    if output.is_json() {
+        let checks = collect_checks(config, config_path);
+        let all_passed = checks.iter().all(|r| r.passed);
+        let output = TestOutput {
+            passed: all_passed,
+            checks,
+        };
+        println!("{}", serde_json::to_string(&output)?);
+        if !all_passed {
+            std::process::exit(1);
+        }
+    } else if !run_checks(config, config_path).await {
         std::process::exit(1);
     }
     Ok(())
