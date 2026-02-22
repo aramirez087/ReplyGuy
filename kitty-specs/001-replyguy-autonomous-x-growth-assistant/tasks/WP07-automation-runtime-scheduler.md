@@ -1,7 +1,7 @@
 ---
 work_package_id: WP07
 title: Automation Runtime + Scheduler
-lane: "doing"
+lane: "for_review"
 dependencies: [WP03]
 base_branch: 001-replyguy-autonomous-x-growth-assistant-WP01
 base_commit: 54b47b462601a1e58d0222f08ae0a65ca3068a1d
@@ -248,3 +248,4 @@ The CLI command updates both frontmatter and activity log automatically.
 
 For large features, organize prompts under `tasks/` to keep bundles grouped while maintaining lexical ordering.
 - 2026-02-22T01:14:13Z – claude-opus – shell_pid=75157 – lane=doing – Assigned agent via workflow command
+- 2026-02-22T01:20:38Z – claude-opus – shell_pid=75157 – lane=for_review – Ready for review: LoopScheduler with jitter, PostingQueue with bounded MPSC and drain-on-shutdown, StatusReporter with ActionCounts, Runtime with CancellationToken and signal handling. 62 tests pass, clippy clean, fmt clean.
