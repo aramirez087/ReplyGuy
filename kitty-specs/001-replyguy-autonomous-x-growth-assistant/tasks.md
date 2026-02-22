@@ -186,7 +186,7 @@
 - [x] T029 Implement scoring signals in `crates/replyguy-core/src/scoring/signals.rs`
 - [x] T030 Implement ScoringEngine in `crates/replyguy-core/src/scoring/mod.rs`
 - [x] T031 [P] Implement score formatting for CLI display
-- [ ] T032 Implement CLI `replyguy score <tweet_id>` command in `crates/replyguy-cli/src/commands/score.rs`
+- [x] T032 Implement CLI `replyguy score <tweet_id>` command in `crates/replyguy-cli/src/commands/score.rs`
 
 ### Implementation Notes
 - Four signals: keyword_relevance (0-40), follower_count (0-20, log scale), recency (0-15), engagement_rate (0-25)
