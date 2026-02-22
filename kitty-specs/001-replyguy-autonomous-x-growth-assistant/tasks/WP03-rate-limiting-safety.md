@@ -1,27 +1,30 @@
 ---
-work_package_id: "WP03"
-subtasks:
-  - "T013"
-  - "T014"
-  - "T015"
-  - "T016"
-  - "T017"
-title: "Rate Limiting + Safety Module"
-phase: "Phase 0 - Foundation"
-lane: "planned"
-assignee: ""
-agent: ""
-shell_pid: ""
-review_status: ""
-reviewed_by: ""
+work_package_id: WP03
+title: Rate Limiting + Safety Module
+lane: "doing"
 dependencies:
-  - "WP02"
+- WP02
+base_branch: 001-replyguy-autonomous-x-growth-assistant-WP02
+base_commit: cdeb29c7786397b924bd45ecbfdb19a0e303d912
+created_at: '2026-02-22T00:40:07.128079+00:00'
+subtasks:
+- T013
+- T014
+- T015
+- T016
+- T017
+phase: Phase 0 - Foundation
+assignee: ''
+agent: ''
+shell_pid: "50187"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-02-21T22:00:00Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-02-21T22:00:00Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP03 -- Rate Limiting + Safety Module
