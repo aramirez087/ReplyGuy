@@ -305,32 +305,66 @@ impl TargetLoop {
             if followed_at.is_none() {
                 tracing::info!(username = %resolved_username, "Auto-following target account");
                 if !self.config.dry_run {
-                    self.user_mgr
+                    match self
+                        .user_mgr
                         .follow_user(&self.config.own_user_id, &user_id)
-                        .await?;
-                    self.storage.record_follow(&user_id).await?;
+                        .await
+                    {
+                        Ok(()) => {
+                            self.storage.record_follow(&user_id).await?;
+
+                            let _ = self
+                                .storage
+                                .log_action(
+                                    "target_follow",
+                                    "success",
+                                    &format!("Followed @{resolved_username}"),
+                                )
+                                .await;
+
+                            // Don't engage yet — warmup period starts now
+                            return Ok(Vec::new());
+                        }
+                        Err(e) => {
+                            // Follow failed (e.g. 403 on Basic tier). Log warning but
+                            // continue to engagement — following is best-effort.
+                            tracing::warn!(
+                                username = %resolved_username,
+                                error = %e,
+                                "Auto-follow failed (API tier may not support follows), skipping follow"
+                            );
+
+                            let _ = self
+                                .storage
+                                .log_action(
+                                    "target_follow",
+                                    "skipped",
+                                    &format!("Follow @{resolved_username} failed: {e}"),
+                                )
+                                .await;
+
+                            // Record as "followed" to avoid retrying every iteration
+                            let _ = self.storage.record_follow(&user_id).await;
+                        }
+                    }
+                } else {
+                    let _ = self
+                        .storage
+                        .log_action(
+                            "target_follow",
+                            "dry_run",
+                            &format!("Followed @{resolved_username}"),
+                        )
+                        .await;
+
+                    // Don't engage yet — warmup period starts now
+                    return Ok(Vec::new());
                 }
-
-                let _ = self
-                    .storage
-                    .log_action(
-                        "target_follow",
-                        if self.config.dry_run {
-                            "dry_run"
-                        } else {
-                            "success"
-                        },
-                        &format!("Followed @{resolved_username}"),
-                    )
-                    .await;
-
-                // Don't engage yet — warmup period starts now
-                return Ok(Vec::new());
             }
 
-            // Check warmup period
+            // Check warmup period (skip if follow was recorded due to failure)
             if self.config.follow_warmup_days > 0 {
-                if let Some(ref followed_str) = followed_at {
+                if let Some(ref followed_str) = self.storage.get_followed_at(&user_id).await? {
                     if !warmup_elapsed(followed_str, self.config.follow_warmup_days) {
                         tracing::debug!(
                             username = %resolved_username,
@@ -345,6 +379,13 @@ impl TargetLoop {
 
         // Fetch recent tweets
         let tweets = self.fetcher.fetch_user_tweets(&user_id).await?;
+        tracing::info!(
+            username = %resolved_username,
+            count = tweets.len(),
+            "Monitoring @{}, found {} new tweets",
+            resolved_username,
+            tweets.len(),
+        );
 
         let mut results = Vec::new();
 
@@ -427,6 +468,12 @@ impl TargetLoop {
                 };
             }
         };
+
+        tracing::info!(
+            username = %username,
+            "Replied to target @{}",
+            username,
+        );
 
         if self.config.dry_run {
             tracing::info!(

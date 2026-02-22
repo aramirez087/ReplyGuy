@@ -45,6 +45,13 @@ impl LlmProvider for OpenAiCompatProvider {
     ) -> Result<LlmResponse, LlmError> {
         let system_prompt = params.system_prompt.as_deref().unwrap_or(system);
 
+        tracing::debug!(
+            provider = %self.provider_name,
+            model = %self.model,
+            max_tokens = params.max_tokens,
+            "LLM request",
+        );
+
         let request = ChatCompletionRequest {
             model: &self.model,
             messages: vec![
@@ -107,6 +114,13 @@ impl LlmProvider for OpenAiCompatProvider {
             input_tokens: u.prompt_tokens.unwrap_or(0),
             output_tokens: u.completion_tokens.unwrap_or(0),
         });
+
+        tracing::debug!(
+            input_tokens = usage.input_tokens,
+            output_tokens = usage.output_tokens,
+            chars = text.len(),
+            "LLM response",
+        );
 
         Ok(LlmResponse {
             text,

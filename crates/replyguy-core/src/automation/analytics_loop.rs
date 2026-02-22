@@ -213,6 +213,12 @@ impl AnalyticsLoop {
         let metrics = self.profile_fetcher.get_profile_metrics().await?;
         summary.follower_count = metrics.follower_count;
 
+        tracing::info!(
+            followers = metrics.follower_count,
+            "Follower snapshot: {} followers",
+            metrics.follower_count,
+        );
+
         self.storage
             .store_follower_snapshot(
                 metrics.follower_count,

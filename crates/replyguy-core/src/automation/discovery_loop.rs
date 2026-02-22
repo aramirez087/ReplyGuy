@@ -215,6 +215,7 @@ impl DiscoveryLoop {
         keyword: &str,
         limit: Option<usize>,
     ) -> Result<(Vec<DiscoveryResult>, DiscoverySummary), LoopError> {
+        tracing::info!(keyword = %keyword, "Searching keyword");
         let tweets = self.searcher.search_tweets(keyword).await?;
 
         let mut summary = DiscoverySummary {
@@ -332,6 +333,13 @@ impl DiscoveryLoop {
                 };
             }
         };
+
+        tracing::info!(
+            author = %tweet.author_username,
+            score = format!("{:.0}", score_result.total),
+            "Posted reply to @{}",
+            tweet.author_username,
+        );
 
         if self.dry_run {
             tracing::info!(

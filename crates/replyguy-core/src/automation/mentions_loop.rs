@@ -262,6 +262,12 @@ impl MentionsLoop {
             }
         };
 
+        tracing::info!(
+            author = %mention.author_username,
+            "Replied to mention from @{}",
+            mention.author_username,
+        );
+
         if self.dry_run {
             tracing::info!(
                 "DRY RUN: Would reply to mention {} by @{}: \"{}\"",

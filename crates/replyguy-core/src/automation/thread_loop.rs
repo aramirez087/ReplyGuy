@@ -6,6 +6,7 @@
 
 use super::loop_helpers::{ContentLoopError, ContentSafety, ContentStorage, ThreadPoster};
 use rand::seq::SliceRandom;
+use rand::SeedableRng;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -109,7 +110,7 @@ impl ThreadLoop {
             .max(min_recent)
             .min(self.topics.len());
         let mut recent_topics: Vec<String> = Vec::with_capacity(max_recent);
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rngs::StdRng::from_entropy();
 
         loop {
             if cancel.is_cancelled() {
@@ -253,6 +254,8 @@ impl ThreadLoop {
 
     /// Generate a thread and post it (or print in dry-run mode).
     async fn generate_and_post(&self, topic: &str, count: Option<usize>) -> ThreadResult {
+        tracing::info!(topic = %topic, "Generating thread on topic");
+
         // Generate with retries for length validation
         let tweets = match self.generate_with_validation(topic, count).await {
             Ok(tweets) => tweets,
@@ -414,6 +417,13 @@ impl ThreadLoop {
 
             match post_result {
                 Ok(new_tweet_id) => {
+                    tracing::info!(
+                        position = i + 1,
+                        total = total,
+                        "Posted thread tweet {}/{}",
+                        i + 1,
+                        total,
+                    );
                     if i == 0 {
                         root_tweet_id = Some(new_tweet_id.clone());
                         // Update thread with root tweet ID

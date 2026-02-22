@@ -86,11 +86,11 @@ async fn main() -> anyhow::Result<()> {
     let filter = if std::env::var("RUST_LOG").is_ok() {
         EnvFilter::from_default_env()
     } else if cli.verbose {
-        EnvFilter::new("debug")
+        EnvFilter::new("replyguy=debug,replyguy_core=debug,info")
     } else if cli.quiet {
         EnvFilter::new("error")
     } else {
-        EnvFilter::new("warn")
+        EnvFilter::new("replyguy=info,replyguy_core=info,warn")
     };
 
     tracing_subscriber::fmt()

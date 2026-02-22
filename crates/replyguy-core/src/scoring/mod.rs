@@ -120,6 +120,19 @@ impl ScoringEngine {
                 .clamp(0.0, 100.0);
         let meets_threshold = total >= self.config.threshold as f32;
 
+        tracing::debug!(
+            author = %tweet.author_username,
+            total = format!("{:.0}", total),
+            keyword = format!("{:.0}", keyword_relevance),
+            follower = format!("{:.0}", follower),
+            recency = format!("{:.0}", recency),
+            engagement = format!("{:.0}", engagement),
+            reply = format!("{:.0}", reply_count),
+            content = format!("{:.0}", content_type),
+            meets = meets_threshold,
+            "Scored tweet",
+        );
+
         TweetScore {
             total,
             keyword_relevance,

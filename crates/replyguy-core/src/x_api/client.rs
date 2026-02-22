@@ -188,6 +188,7 @@ impl XApiClient for XApiHttpClient {
         max_results: u32,
         since_id: Option<&str>,
     ) -> Result<SearchResponse, XApiError> {
+        tracing::debug!(query = %query, max_results = max_results, "Search tweets");
         let max_str = max_results.to_string();
         let mut params = vec![
             ("query", query),
@@ -204,10 +205,16 @@ impl XApiClient for XApiHttpClient {
         }
 
         let response = self.get("/tweets/search/recent", &params).await?;
-        response
-            .json::<SearchResponse>()
+        let resp: SearchResponse = response
+            .json()
             .await
-            .map_err(|e| XApiError::Network { source: e })
+            .map_err(|e| XApiError::Network { source: e })?;
+        tracing::debug!(
+            query = %query,
+            results = resp.data.len(),
+            "Search tweets completed",
+        );
+        Ok(resp)
     }
 
     async fn get_mentions(
@@ -236,6 +243,7 @@ impl XApiClient for XApiHttpClient {
     }
 
     async fn post_tweet(&self, text: &str) -> Result<PostedTweet, XApiError> {
+        tracing::debug!(chars = text.len(), "Posting tweet");
         let body = PostTweetRequest {
             text: text.to_string(),
             reply: None,
@@ -254,6 +262,7 @@ impl XApiClient for XApiHttpClient {
         text: &str,
         in_reply_to_id: &str,
     ) -> Result<PostedTweet, XApiError> {
+        tracing::debug!(in_reply_to = %in_reply_to_id, chars = text.len(), "Posting reply");
         let body = PostTweetRequest {
             text: text.to_string(),
             reply: Some(ReplyTo {

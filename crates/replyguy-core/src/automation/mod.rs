@@ -14,6 +14,7 @@
 //! - [`content_loop`]: Generates and posts educational tweets.
 //! - [`thread_loop`]: Generates and posts multi-tweet threads.
 
+pub mod adapters;
 pub mod analytics_loop;
 pub mod content_loop;
 pub mod discovery_loop;

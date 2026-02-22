@@ -6,6 +6,7 @@
 
 use super::loop_helpers::{ContentSafety, ContentStorage, TopicScorer, TweetGenerator};
 use rand::seq::SliceRandom;
+use rand::SeedableRng;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -89,7 +90,7 @@ impl ContentLoop {
             .max(min_recent)
             .min(self.topics.len());
         let mut recent_topics: Vec<String> = Vec::with_capacity(max_recent);
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rngs::StdRng::from_entropy();
 
         loop {
             if cancel.is_cancelled() {
@@ -259,6 +260,8 @@ impl ContentLoop {
 
     /// Generate a tweet and post it (or print in dry-run mode).
     async fn generate_and_post(&self, topic: &str) -> ContentResult {
+        tracing::info!(topic = %topic, "Generating tweet on topic");
+
         // Generate tweet
         let content = match self.generator.generate_tweet(topic).await {
             Ok(text) => text,

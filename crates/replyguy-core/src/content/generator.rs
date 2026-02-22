@@ -53,6 +53,12 @@ impl ContentGenerator {
         mention_product: bool,
         archetype: Option<ReplyArchetype>,
     ) -> Result<String, LlmError> {
+        tracing::debug!(
+            author = %tweet_author,
+            archetype = ?archetype,
+            mention_product = mention_product,
+            "Generating reply",
+        );
         let voice_section = match &self.business.brand_voice {
             Some(v) if !v.is_empty() => format!("\nVoice & personality: {v}"),
             _ => String::new(),
@@ -124,6 +130,8 @@ impl ContentGenerator {
             .await?;
         let text = resp.text.trim().to_string();
 
+        tracing::debug!(chars = text.len(), "Generated reply");
+
         if validate_length(&text, MAX_TWEET_CHARS) {
             return Ok(text);
         }
@@ -156,6 +164,11 @@ impl ContentGenerator {
         topic: &str,
         format: Option<TweetFormat>,
     ) -> Result<String, LlmError> {
+        tracing::debug!(
+            topic = %topic,
+            format = ?format,
+            "Generating tweet",
+        );
         let voice_section = match &self.business.brand_voice {
             Some(v) if !v.is_empty() => format!("\nVoice & personality: {v}"),
             _ => String::new(),
@@ -236,6 +249,11 @@ impl ContentGenerator {
         topic: &str,
         structure: Option<ThreadStructure>,
     ) -> Result<Vec<String>, LlmError> {
+        tracing::debug!(
+            topic = %topic,
+            structure = ?structure,
+            "Generating thread",
+        );
         let voice_section = match &self.business.brand_voice {
             Some(v) if !v.is_empty() => format!("\nVoice & personality: {v}"),
             _ => String::new(),
