@@ -84,11 +84,11 @@
 **Estimated prompt size**: ~300 lines
 
 ### Included Subtasks
-- [ ] T013 Implement rate limit state CRUD in `crates/replyguy-core/src/storage/rate_limits.rs`
-- [ ] T014 Implement rate limiter (check, enforce, period reset) in `crates/replyguy-core/src/safety/mod.rs`
-- [ ] T015 [P] Implement duplicate reply prevention in `crates/replyguy-core/src/safety/dedup.rs`
-- [ ] T016 [P] Implement data retention cleanup in `crates/replyguy-core/src/storage/cleanup.rs`
-- [ ] T017 Safety orchestration combining rate limiter + dedup in `crates/replyguy-core/src/safety/mod.rs`
+- [x] T013 Implement rate limit state CRUD in `crates/replyguy-core/src/storage/rate_limits.rs`
+- [x] T014 Implement rate limiter (check, enforce, period reset) in `crates/replyguy-core/src/safety/mod.rs`
+- [x] T015 [P] Implement duplicate reply prevention in `crates/replyguy-core/src/safety/dedup.rs`
+- [x] T016 [P] Implement data retention cleanup in `crates/replyguy-core/src/storage/cleanup.rs`
+- [x] T017 Safety orchestration combining rate limiter + dedup in `crates/replyguy-core/src/safety/mod.rs`
 
 ### Implementation Notes
 - Rate limits: check `period_start + period_seconds` vs now; reset counter when period expires
