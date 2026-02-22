@@ -280,7 +280,7 @@
 **Estimated prompt size**: ~400 lines
 
 ### Included Subtasks
-- [ ] T044 Implement content loop in `crates/replyguy-core/src/automation/content_loop.rs`
+- [x] T044 Implement content loop in `crates/replyguy-core/src/automation/content_loop.rs`
 - [ ] T045 Implement thread loop in `crates/replyguy-core/src/automation/thread_loop.rs`
 - [ ] T046 Integrate both loops with safety (rate checks, action logging)
 - [ ] T047 [P] Implement dry-run support for both loops
