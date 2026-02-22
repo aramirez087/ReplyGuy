@@ -666,12 +666,13 @@ Then run `replyguy init` again.
 
 ## Global Flags
 
-These work with any command:
+These work with any command, in either position (before or after the subcommand):
 
 ```bash
-replyguy -c /path/to/config.toml run   # Use a custom config file
 replyguy --verbose run                   # Debug-level logging
+replyguy run --verbose                   # Same thing — flags work in either position
 replyguy --quiet run                     # Only show errors
+replyguy -c /path/to/config.toml run     # Use a custom config file
 ```
 
 ---

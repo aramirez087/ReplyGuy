@@ -23,15 +23,20 @@ Quick start:
   4. replyguy run      — start the agent")]
 struct Cli {
     /// Path to config.toml
-    #[arg(short = 'c', long, default_value = "~/.replyguy/config.toml")]
+    #[arg(
+        short = 'c',
+        long,
+        global = true,
+        default_value = "~/.replyguy/config.toml"
+    )]
     config: String,
 
     /// Enable verbose logging (debug level)
-    #[arg(short, long, conflicts_with = "quiet")]
+    #[arg(short, long, global = true, conflicts_with = "quiet")]
     verbose: bool,
 
     /// Suppress all output except errors
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     quiet: bool,
 
     #[command(subcommand)]
