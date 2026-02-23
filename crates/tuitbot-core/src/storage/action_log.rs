@@ -96,6 +96,18 @@ pub async fn get_action_counts_since(
     Ok(rows.into_iter().collect())
 }
 
+/// Get the most recent action log entries, newest first.
+pub async fn get_recent_actions(
+    pool: &DbPool,
+    limit: u32,
+) -> Result<Vec<ActionLogEntry>, StorageError> {
+    sqlx::query_as::<_, ActionLogEntry>("SELECT * FROM action_log ORDER BY created_at DESC LIMIT ?")
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

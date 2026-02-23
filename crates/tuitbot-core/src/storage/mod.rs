@@ -91,7 +91,7 @@ pub async fn init_test_db() -> Result<DbPool, StorageError> {
 }
 
 /// Expand `~` at the start of a path to the user's home directory.
-fn expand_tilde(path: &str) -> String {
+pub fn expand_tilde(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("~/") {
         if let Some(home) = dirs::home_dir() {
             return home.join(rest).to_string_lossy().to_string();

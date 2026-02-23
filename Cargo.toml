@@ -1,3 +1,3 @@
 [workspace]
-members = ["crates/tuitbot-core", "crates/tuitbot-cli", "crates/tuitbot-mcp"]
+members = ["crates/tuitbot-core", "crates/tuitbot-cli", "crates/tuitbot-mcp", "crates/tuitbot-server"]
 resolver = "2"

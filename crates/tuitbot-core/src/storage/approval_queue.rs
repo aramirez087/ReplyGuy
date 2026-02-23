@@ -21,7 +21,7 @@ type ApprovalRow = (
 );
 
 /// A pending item in the approval queue.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ApprovalItem {
     pub id: i64,
     pub action_type: String,

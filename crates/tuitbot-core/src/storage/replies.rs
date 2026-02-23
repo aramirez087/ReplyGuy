@@ -101,6 +101,22 @@ pub async fn count_replies_today(pool: &DbPool) -> Result<i64, StorageError> {
     Ok(row.0)
 }
 
+/// Get the most recent replies, newest first, with pagination.
+pub async fn get_recent_replies(
+    pool: &DbPool,
+    limit: u32,
+    offset: u32,
+) -> Result<Vec<ReplySent>, StorageError> {
+    sqlx::query_as::<_, ReplySent>(
+        "SELECT * FROM replies_sent ORDER BY created_at DESC LIMIT ? OFFSET ?",
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

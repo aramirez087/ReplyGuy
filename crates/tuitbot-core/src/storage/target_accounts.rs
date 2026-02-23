@@ -7,7 +7,7 @@ use super::DbPool;
 use crate::error::StorageError;
 
 /// A target account record.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct TargetAccount {
     pub account_id: String,
     pub username: String,

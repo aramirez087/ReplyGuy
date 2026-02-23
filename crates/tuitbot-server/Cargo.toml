@@ -1,0 +1,28 @@
+[package]
+name = "tuitbot-server"
+version = "0.1.1"
+edition = "2021"
+rust-version = "1.75"
+description = "HTTP API server for Tuitbot autonomous X growth assistant"
+license = "MIT"
+repository = "https://github.com/aramirez087/TuitBot"
+homepage = "https://github.com/aramirez087/TuitBot"
+documentation = "https://docs.rs/tuitbot-server"
+keywords = ["x-api", "twitter", "api-server", "automation", "dashboard"]
+
+[dependencies]
+tuitbot-core = { version = "0.1.1", path = "../tuitbot-core" }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+tuitbot-core = { version = "0.1.1", path = "../tuitbot-core", features = ["test-helpers"] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

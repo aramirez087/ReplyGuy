@@ -26,6 +26,64 @@ Users who want control keep self-hosting. Everyone else pays monthly.
 The key architectural shift: `tuitbot-server` goes from single-user localhost
 to multi-tenant cloud deployment. The core crate stays untouched.
 
+## Three deployment modes
+
+After this task, the product supports three ways to run — all using the same
+codebase. The server and dashboard are always the same; only the deployment
+context changes.
+
+| Mode | How it runs | Dashboard access | Auth model | Who it's for |
+|------|-------------|-----------------|------------|--------------|
+| **Desktop app** (Tauri) | Tauri embeds the server + frontend in a native window | Native window on their machine | Local file token (task 02) | Users who want a native Mac/Windows app |
+| **Self-hosted Docker** | `docker compose up` on a VPS | Browser → `https://tuitbot.myserver.com` | Single-user, local file token (no Stripe, no signup) | Technical users who want always-on + full control |
+| **Cloud hosted** | You run the infra at `app.tuitbot.dev` | Browser → `https://app.tuitbot.dev` | Multi-tenant: email/password + Stripe billing | Everyone else — zero setup, monthly subscription |
+
+### How Docker self-hosting works (the evangelist path)
+
+The Docker image bundles **everything** — the Rust API server, the automation
+runtime, AND the compiled Svelte dashboard as static files. There is nothing
+else to install. The flow:
+
+```
+1. Get a $5/mo VPS (Hetzner, DigitalOcean, whatever)
+2. git clone the repo (or docker pull tuitbot/tuitbot)
+3. cp .env.example .env   # add your X API + LLM keys
+4. docker compose up -d
+5. Open browser → https://tuitbot.myserver.com
+6. Walk through the onboarding wizard (same as task 10)
+7. Done — automation runs 24/7, dashboard in the browser.
+```
+
+No Tauri install, no Node.js, no Rust toolchain. One container, one port.
+
+The server serves the dashboard frontend as static files at the root path:
+
+```rust
+// In tuitbot-server, when TUITBOT_DASHBOARD_DIR is set:
+let dashboard_dir = std::env::var("TUITBOT_DASHBOARD_DIR").ok();
+if let Some(dir) = dashboard_dir {
+    router = router.fallback_service(
+        ServeDir::new(&dir)
+            .fallback(ServeFile::new(format!("{dir}/index.html")))
+    );
+}
+```
+
+When `TUITBOT_DASHBOARD_DIR` is set (Docker/cloud), the server serves the frontend.
+When it's not set (desktop app), Tauri serves the frontend natively. Same server
+code, zero conditional logic in the routes.
+
+**Self-host mode vs cloud mode:** The server takes a `--mode` flag:
+
+- `tuitbot-server --mode self-host` (default) — single user, local file token
+  auth from task 02, no Stripe, no signup page. Identical to the desktop
+  experience but accessed via browser.
+- `tuitbot-server --mode cloud` — multi-tenant, user accounts, Stripe billing,
+  managed X API OAuth. This is what runs at `app.tuitbot.dev`.
+
+Self-hosters never touch multi-tenant code. The mode flag gates which auth
+middleware and route set is loaded.
+
 ## What to build
 
 ### 1. Multi-tenant architecture
@@ -194,10 +252,11 @@ Resource management:
 
 ### 8. Docker deployment
 
-Create `Dockerfile` and `docker-compose.yml` at the repo root:
+Create `Dockerfile` and two compose files at the repo root. The Dockerfile is
+shared — only the compose file and `--mode` flag differ.
 
 ```dockerfile
-# Multi-stage build
+# Dockerfile — shared by cloud and self-host
 FROM node:20-slim AS frontend
 WORKDIR /app/dashboard
 COPY dashboard/package*.json ./
@@ -220,14 +279,48 @@ ENV TUITBOT_DASHBOARD_DIR=/srv/dashboard
 ENV TUITBOT_DATA_DIR=/data
 VOLUME /data
 EXPOSE 3001
-CMD ["tuitbot-server", "--cloud"]
+# Default to self-host mode — self-hosters don't need to think about modes
+CMD ["tuitbot-server", "--mode", "self-host"]
 ```
 
+#### Self-host compose (`docker-compose.yml`)
+
+This is what self-hosters use. No Stripe, no multi-tenant, no managed OAuth.
+Single user, their own API keys, browser dashboard.
+
 ```yaml
-# docker-compose.yml
+# docker-compose.yml — self-host (default)
 services:
   tuitbot:
-    build: .
+    image: tuitbot/tuitbot:latest  # or build: .
+    ports: ["3001:3001"]
+    volumes: ["tuitbot_data:/data"]
+    environment:
+      # Users provide their own keys — that's it
+      - TUITBOT_X_API__CLIENT_ID=${X_API_CLIENT_ID}
+      - TUITBOT_LLM__API_KEY=${LLM_API_KEY}
+      - TUITBOT_LLM__PROVIDER=${LLM_PROVIDER:-openai}
+    restart: unless-stopped
+
+volumes:
+  tuitbot_data:
+```
+
+Self-host setup is 3 steps:
+1. Copy `.env.example` → `.env`, fill in X API + LLM keys
+2. `docker compose up -d`
+3. Open `http://server-ip:3001` → onboarding wizard
+
+#### Cloud compose (`docker-compose.cloud.yml`)
+
+This is what you use to deploy the managed service.
+
+```yaml
+# docker-compose.cloud.yml — your hosted deployment
+services:
+  tuitbot:
+    image: tuitbot/tuitbot:latest
+    command: ["tuitbot-server", "--mode", "cloud"]
     ports: ["3001:3001"]
     volumes: ["tuitbot_data:/data"]
     environment:
@@ -243,9 +336,8 @@ volumes:
   tuitbot_data:
 ```
 
-This same Docker image works for:
-- **Your cloud hosting** — deploy to fly.io, Railway, or a VPS
-- **Self-hosters** — `docker pull tuitbot/tuitbot && docker compose up`
+Same image, different command. Cloud mode enables multi-tenant auth, Stripe
+billing, managed X API OAuth, and the marketing pages.
 
 ### 9. Cloud deployment
 
@@ -304,17 +396,29 @@ Desktop app users who want to switch to cloud:
 
 ## Acceptance criteria
 
-- [ ] Users can sign up with email + password
+### Self-host (Docker)
+- [ ] `docker compose up` starts the server + dashboard in a single container
+- [ ] Browser at `http://localhost:3001` shows the onboarding wizard on first run
+- [ ] Self-host mode uses local file token auth (no signup/login page)
+- [ ] Self-hosters provide their own X API + LLM keys via env vars or onboarding wizard
+- [ ] Automation runs 24/7 inside the container, survives container restarts
+- [ ] All dashboard pages work in the browser (analytics, activity, approval, calendar, targets, settings)
+- [ ] Desktop app (Tauri) continues to work unchanged
+
+### Cloud hosted
+- [ ] Users can sign up with email + password at `app.tuitbot.dev`
 - [ ] Stripe checkout creates a subscription and activates the account
-- [ ] X API OAuth flow connects the user's X account
+- [ ] X API OAuth flow connects the user's X account (no developer portal needed)
 - [ ] Automation runtime starts and runs 24/7 for paying users
-- [ ] Dashboard works in the browser at `app.tuitbot.dev` (no Tauri needed)
 - [ ] Per-user data isolation (each user has their own DB)
 - [ ] Subscription cancellation stops automation and shows grace period notice
 - [ ] Tier limits enforce reply/tweet/thread maximums
-- [ ] Docker image builds and runs with `docker compose up`
-- [ ] Self-hosters can deploy with the same Docker image
-- [ ] Desktop app continues to work unchanged for self-host users
+- [ ] Marketing pages (landing, pricing) render with SSR for SEO
+
+### Shared
+- [ ] Same Docker image used for both self-host and cloud (only `--mode` flag differs)
+- [ ] Server serves the dashboard frontend as static files when `TUITBOT_DASHBOARD_DIR` is set
+- [ ] Migration path works: desktop user can export and import into cloud
 
 ## Reference files
 

@@ -39,3 +39,13 @@ git_tag_name = "tuitbot-cli-v{{ version }}"
 git_release_name = "tuitbot-cli-v{{ version }}"
 changelog_path = "CHANGELOG.md"
 changelog_include = ["tuitbot-core", "tuitbot-mcp"]
+
+[[package]]
+name = "tuitbot-server"
+release = true
+publish = true
+git_only = false
+git_release_enable = false
+changelog_update = false
+git_tag_name = "tuitbot-server-v{{ version }}"
+git_release_name = "tuitbot-server-v{{ version }}"

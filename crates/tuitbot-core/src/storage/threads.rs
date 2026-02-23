@@ -202,6 +202,29 @@ pub async fn count_threads_this_week(pool: &DbPool) -> Result<i64, StorageError>
     Ok(row.0)
 }
 
+/// Get the most recent original tweets, newest first.
+pub async fn get_recent_original_tweets(
+    pool: &DbPool,
+    limit: u32,
+) -> Result<Vec<OriginalTweet>, StorageError> {
+    sqlx::query_as::<_, OriginalTweet>(
+        "SELECT * FROM original_tweets ORDER BY created_at DESC LIMIT ?",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })
+}
+
+/// Get the most recent threads, newest first.
+pub async fn get_recent_threads(pool: &DbPool, limit: u32) -> Result<Vec<Thread>, StorageError> {
+    sqlx::query_as::<_, Thread>("SELECT * FROM threads ORDER BY created_at DESC LIMIT ?")
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

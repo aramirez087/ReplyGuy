@@ -11,7 +11,7 @@ use crate::error::StorageError;
 // ============================================================================
 
 /// A daily follower snapshot.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct FollowerSnapshot {
     pub snapshot_date: String,
     pub follower_count: i64,
@@ -144,7 +144,7 @@ pub async fn upsert_tweet_performance(
 // ============================================================================
 
 /// A topic/format performance score.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ContentScore {
     pub topic: String,
     pub format: String,
