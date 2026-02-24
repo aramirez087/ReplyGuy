@@ -294,6 +294,59 @@ export interface SettingsTestResult {
 	latency_ms?: number;
 }
 
+// --- Strategy types ---
+
+export interface TopicPerformance {
+	topic: string;
+	format: string;
+	avg_score: number;
+	post_count: number;
+}
+
+export interface ContentHighlight {
+	content_type: string;
+	content_preview: string;
+	performance_score: number;
+	likes: number;
+	replies_received: number;
+}
+
+export interface Recommendation {
+	category: string;
+	priority: string;
+	title: string;
+	description: string;
+}
+
+export interface StrategyReport {
+	id: number;
+	week_start: string;
+	week_end: string;
+	replies_sent: number;
+	tweets_posted: number;
+	threads_posted: number;
+	target_replies: number;
+	follower_start: number;
+	follower_end: number;
+	follower_delta: number;
+	avg_reply_score: number;
+	avg_tweet_score: number;
+	reply_acceptance_rate: number;
+	estimated_follow_conversion: number;
+	top_topics: TopicPerformance[];
+	bottom_topics: TopicPerformance[];
+	top_content: ContentHighlight[];
+	recommendations: Recommendation[];
+}
+
+export interface StrategyInputs {
+	content_pillars: string[];
+	industry_topics: string[];
+	product_keywords: string[];
+	competitor_keywords: string[];
+	target_accounts: string[];
+}
+
 // --- API client ---
 
 export const api = {
@@ -398,6 +451,15 @@ export const api = {
 			),
 		stats: (username: string) =>
 			request<TargetStats>(`/api/targets/${encodeURIComponent(username)}/stats`)
+	},
+
+	strategy: {
+		current: () => request<StrategyReport>('/api/strategy/current'),
+		history: (limit: number = 12) =>
+			request<StrategyReport[]>(`/api/strategy/history?limit=${limit}`),
+		refresh: () =>
+			request<StrategyReport>('/api/strategy/refresh', { method: 'POST' }),
+		inputs: () => request<StrategyInputs>('/api/strategy/inputs')
 	},
 
 	approval: {

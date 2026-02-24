@@ -86,6 +86,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/targets/{username}",
             delete(routes::targets::remove_target),
         )
+        // Strategy
+        .route("/strategy/current", get(routes::strategy::current))
+        .route("/strategy/history", get(routes::strategy::history))
+        .route("/strategy/refresh", post(routes::strategy::refresh))
+        .route("/strategy/inputs", get(routes::strategy::inputs))
         // Settings
         .route("/settings/status", get(routes::settings::config_status))
         .route("/settings/init", post(routes::settings::init_settings))

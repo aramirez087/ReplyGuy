@@ -12,6 +12,7 @@ pub mod cursors;
 pub mod rate_limits;
 pub mod replies;
 pub mod scheduled_content;
+pub mod strategy;
 pub mod target_accounts;
 pub mod threads;
 pub mod tweets;

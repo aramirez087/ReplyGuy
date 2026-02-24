@@ -8,4 +8,5 @@ pub mod health;
 pub mod replies;
 pub mod runtime;
 pub mod settings;
+pub mod strategy;
 pub mod targets;
