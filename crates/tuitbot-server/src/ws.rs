@@ -57,6 +57,12 @@ pub enum WsEvent {
         reason: String,
         timestamp: String,
     },
+    /// A new content item was scheduled via the composer.
+    ContentScheduled {
+        id: i64,
+        content_type: String,
+        scheduled_for: Option<String>,
+    },
     /// An error occurred.
     Error { message: String },
 }

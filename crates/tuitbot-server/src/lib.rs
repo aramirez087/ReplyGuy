@@ -62,6 +62,13 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/content/threads",
             get(routes::content::list_threads).post(routes::content::compose_thread),
         )
+        .route("/content/calendar", get(routes::content::calendar))
+        .route("/content/schedule", get(routes::content::schedule))
+        .route("/content/compose", post(routes::content::compose))
+        .route(
+            "/content/scheduled/{id}",
+            patch(routes::content::edit_scheduled).delete(routes::content::cancel_scheduled),
+        )
         // Targets
         .route(
             "/targets",

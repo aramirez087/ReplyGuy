@@ -129,6 +129,44 @@ export interface ApprovalStats {
 	rejected: number;
 }
 
+export interface CalendarItem {
+	id: number;
+	content_type: string;
+	content: string;
+	target_author: string | null;
+	topic: string | null;
+	timestamp: string;
+	status: string;
+	performance_score: number | null;
+	source: string;
+}
+
+export interface ScheduleConfig {
+	timezone: string;
+	active_hours: { start: number; end: number };
+	preferred_times: string[];
+	preferred_times_override: Record<string, string[]>;
+	thread_day: string | null;
+	thread_time: string;
+}
+
+export interface ComposeRequest {
+	content_type: string;
+	content: string;
+	scheduled_for?: string;
+}
+
+export interface ScheduledContentItem {
+	id: number;
+	content_type: string;
+	content: string;
+	scheduled_for: string | null;
+	status: string;
+	posted_tweet_id: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
 // --- API client ---
 
 export const api = {
@@ -155,6 +193,30 @@ export const api = {
 			return request<ActivityResponse>(`/api/activity${qs ? `?${qs}` : ''}`);
 		},
 		rateLimits: () => request<RateLimitUsage>('/api/activity/rate-limits')
+	},
+
+	content: {
+		calendar: (from: string, to: string) =>
+			request<CalendarItem[]>(`/api/content/calendar?from=${from}&to=${to}`),
+		schedule: () => request<ScheduleConfig>('/api/content/schedule'),
+		compose: (data: ComposeRequest) =>
+			request<{ status: string; id: number }>('/api/content/compose', {
+				method: 'POST',
+				body: JSON.stringify(data)
+			}),
+		updateScheduled: (id: number, data: { content?: string; scheduled_for?: string }) =>
+			request<ScheduledContentItem>(`/api/content/scheduled/${id}`, {
+				method: 'PATCH',
+				body: JSON.stringify(data)
+			}),
+		cancelScheduled: (id: number) =>
+			request<{ status: string; id: number }>(`/api/content/scheduled/${id}`, {
+				method: 'DELETE'
+			}),
+		tweets: (limit: number = 50) =>
+			request<unknown[]>(`/api/content/tweets?limit=${limit}`),
+		threads: (limit: number = 20) =>
+			request<unknown[]>(`/api/content/threads?limit=${limit}`)
 	},
 
 	approval: {
