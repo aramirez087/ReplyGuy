@@ -262,8 +262,6 @@ export interface TuitbotConfig {
 	targets: {
 		accounts: string[];
 		max_target_replies_per_day: number;
-		auto_follow: boolean;
-		follow_warmup_days: number;
 	};
 	approval_mode: boolean;
 	storage: {

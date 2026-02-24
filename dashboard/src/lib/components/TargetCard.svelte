@@ -61,22 +61,6 @@
 			</span>
 		</div>
 
-		<div class="card-status">
-			{#if isFollowing}
-				<span class="status-badge following">
-					<UserCheck size={12} />
-					Following
-				</span>
-			{/if}
-			{#if warmupComplete}
-				<span class="status-badge warmup-complete">Warmup complete</span>
-			{:else if isFollowing}
-				<span class="status-badge warmup-pending">
-					Warmup: {warmupRemaining}d remaining
-				</span>
-			{/if}
-		</div>
-
 		<div class="card-meta">
 			<span class="meta-item">
 				<Clock size={12} />
@@ -182,38 +166,6 @@
 		color: var(--color-text-muted);
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
-	}
-
-	.card-status {
-		display: flex;
-		gap: 6px;
-		margin-bottom: 8px;
-		flex-wrap: wrap;
-	}
-
-	.status-badge {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		font-size: 11px;
-		font-weight: 500;
-		padding: 2px 8px;
-		border-radius: 4px;
-	}
-
-	.status-badge.following {
-		background-color: color-mix(in srgb, var(--color-success) 12%, transparent);
-		color: var(--color-success);
-	}
-
-	.status-badge.warmup-complete {
-		background-color: color-mix(in srgb, var(--color-success) 12%, transparent);
-		color: var(--color-success);
-	}
-
-	.status-badge.warmup-pending {
-		background-color: color-mix(in srgb, var(--color-warning) 12%, transparent);
-		color: var(--color-warning);
 	}
 
 	.card-meta {
