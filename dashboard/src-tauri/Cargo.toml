@@ -1,0 +1,24 @@
+[package]
+name = "tuitbot-dashboard"
+version = "0.1.0"
+description = "Tuitbot desktop dashboard — Tauri shell"
+authors = ["aramirez087"]
+license = "MIT"
+repository = "https://github.com/aramirez087/TuitBot"
+edition = "2021"
+rust-version = "1.75"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.0-rc.13" }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+dirs = "6"
+tauri = { version = "2.0.0-rc.17" }
+tauri-plugin-log = "2.0.0-rc"
