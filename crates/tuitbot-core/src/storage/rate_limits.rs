@@ -205,6 +205,48 @@ pub async fn increment_rate_limit(pool: &DbPool, action_type: &str) -> Result<()
     Ok(())
 }
 
+/// Usage count for a single action type.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ActionUsage {
+    pub used: i64,
+    pub max: i64,
+}
+
+/// Daily action usage summary for the activity feed rate limit display.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DailyUsage {
+    pub replies: ActionUsage,
+    pub tweets: ActionUsage,
+    pub threads: ActionUsage,
+}
+
+/// Get daily usage counts for reply, tweet, and thread actions.
+///
+/// Reads from the rate limits table and extracts only the three
+/// user-facing action types.
+pub async fn get_daily_usage(pool: &DbPool) -> Result<DailyUsage, StorageError> {
+    let limits = get_all_rate_limits(pool).await?;
+
+    let mut usage = DailyUsage {
+        replies: ActionUsage { used: 0, max: 0 },
+        tweets: ActionUsage { used: 0, max: 0 },
+        threads: ActionUsage { used: 0, max: 0 },
+    };
+
+    for limit in limits {
+        let target = match limit.action_type.as_str() {
+            "reply" => &mut usage.replies,
+            "tweet" => &mut usage.tweets,
+            "thread" => &mut usage.threads,
+            _ => continue,
+        };
+        target.used = limit.request_count;
+        target.max = limit.max_requests;
+    }
+
+    Ok(usage)
+}
+
 /// Fetch all rate limit entries, ordered by action type.
 ///
 /// Used for status reporting and debugging.
@@ -414,5 +456,26 @@ mod tests {
         let mut sorted = types.clone();
         sorted.sort();
         assert_eq!(types, sorted, "should be sorted by action_type");
+    }
+
+    #[tokio::test]
+    async fn daily_usage_returns_correct_counts() {
+        let pool = init_test_db().await.expect("init db");
+        init_rate_limits(&pool, &test_limits_config(), &test_intervals_config())
+            .await
+            .expect("init");
+
+        increment_rate_limit(&pool, "reply").await.expect("inc");
+        increment_rate_limit(&pool, "reply").await.expect("inc");
+        increment_rate_limit(&pool, "tweet").await.expect("inc");
+
+        let usage = get_daily_usage(&pool).await.expect("get usage");
+
+        assert_eq!(usage.replies.used, 2);
+        assert_eq!(usage.replies.max, 3);
+        assert_eq!(usage.tweets.used, 1);
+        assert_eq!(usage.tweets.max, 2);
+        assert_eq!(usage.threads.used, 0);
+        assert_eq!(usage.threads.max, 1);
     }
 }

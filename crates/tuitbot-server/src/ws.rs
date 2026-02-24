@@ -38,6 +38,19 @@ pub enum WsEvent {
         running: bool,
         active_loops: Vec<String>,
     },
+    /// A tweet was discovered and scored by the discovery loop.
+    TweetDiscovered {
+        tweet_id: String,
+        author: String,
+        score: f64,
+        timestamp: String,
+    },
+    /// An action was skipped (rate limited, below threshold, safety filter).
+    ActionSkipped {
+        action_type: String,
+        reason: String,
+        timestamp: String,
+    },
     /// An error occurred.
     Error { message: String },
 }

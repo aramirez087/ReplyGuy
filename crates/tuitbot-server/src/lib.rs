@@ -24,12 +24,17 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let api = Router::new()
         .route("/health", get(routes::health::health))
         // Analytics
+        .route("/analytics/summary", get(routes::analytics::summary))
         .route("/analytics/followers", get(routes::analytics::followers))
         .route(
             "/analytics/performance",
             get(routes::analytics::performance),
         )
         .route("/analytics/topics", get(routes::analytics::topics))
+        .route(
+            "/analytics/recent-performance",
+            get(routes::analytics::recent_performance),
+        )
         // Approval
         .route("/approval", get(routes::approval::list_pending))
         .route(
@@ -40,6 +45,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/approval/approve-all", post(routes::approval::approve_all))
         // Activity
         .route("/activity", get(routes::activity::list_activity))
+        .route(
+            "/activity/rate-limits",
+            get(routes::activity::rate_limit_usage),
+        )
         // Replies
         .route("/replies", get(routes::replies::list_replies))
         // Content

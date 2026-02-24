@@ -11,18 +11,23 @@
 	onMount(async () => {
 		initTheme();
 		// In Tauri context, get token from the sidecar via invoke.
-		// In browser dev mode, try a dev token or skip auth.
+		// In browser dev mode, fall back to the token injected by Vite.
+		let token = "";
 		try {
 			const { invoke } = await import("@tauri-apps/api/core");
-			const token: string = await invoke("get_api_token");
+			token = await invoke("get_api_token");
+		} catch {
+			// Not running in Tauri — use the dev token injected by vite.config.ts.
+			token = __DEV_API_TOKEN__;
+			if (!token) {
+				console.warn(
+					"No API token available. Start tuitbot-server to generate ~/.tuitbot/api_token, then restart the dev server.",
+				);
+			}
+		}
+		if (token) {
 			setToken(token);
 			connectWs(token);
-		} catch {
-			// Not running in Tauri (browser dev mode) — try reading token from env or skip.
-			// For development, you can manually set the token here.
-			console.warn(
-				"Not in Tauri context. API auth and WebSocket disabled in dev mode.",
-			);
 		}
 	});
 </script>

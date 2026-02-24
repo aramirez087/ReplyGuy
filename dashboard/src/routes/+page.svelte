@@ -1,170 +1,182 @@
 <script lang="ts">
-    import { api } from "$lib/api";
-    import { connected, runtimeRunning } from "$lib/stores/websocket";
-    import { Activity, Zap, Users, CheckCircle } from "lucide-svelte";
-    import { onMount } from "svelte";
+	import { onMount, onDestroy } from 'svelte';
+	import { Users, MessageSquare, FileText, TrendingUp } from 'lucide-svelte';
+	import StatCard from '$lib/components/StatCard.svelte';
+	import FollowerChart from '$lib/components/FollowerChart.svelte';
+	import TopTopics from '$lib/components/TopTopics.svelte';
+	import RecentPerformance from '$lib/components/RecentPerformance.svelte';
+	import {
+		summary,
+		recentPerformance,
+		loading,
+		error,
+		followerCount,
+		followerChange7d,
+		repliesToday,
+		tweetsToday,
+		avgEngagement,
+		loadDashboard,
+		startAutoRefresh,
+		stopAutoRefresh
+	} from '$lib/stores/analytics';
 
-    let healthStatus = $state<string>("checking...");
-    let serverVersion = $state<string>("");
+	onMount(() => {
+		loadDashboard();
+		startAutoRefresh();
+	});
 
-    onMount(async () => {
-        try {
-            const health = await api.health();
-            healthStatus = health.status;
-            serverVersion = health.version;
-        } catch {
-            healthStatus = "unreachable";
-        }
-    });
+	onDestroy(() => {
+		stopAutoRefresh();
+	});
 </script>
 
 <svelte:head>
-    <title>Dashboard — Tuitbot</title>
+	<title>Dashboard — Tuitbot</title>
 </svelte:head>
 
 <div class="page-header">
-    <h1>Dashboard</h1>
-    <p class="subtitle">Your autonomous growth overview</p>
+	<h1>Dashboard</h1>
+	<p class="subtitle">Your autonomous growth overview</p>
 </div>
 
-<div class="status-cards">
-    <div class="card">
-        <div class="card-icon">
-            <Zap size={20} />
-        </div>
-        <div class="card-content">
-            <span class="card-label">Server</span>
-            <span class="card-value" class:online={healthStatus === "ok"}>
-                {healthStatus}
-                {#if serverVersion}
-                    <span class="version">v{serverVersion}</span>
-                {/if}
-            </span>
-        </div>
-    </div>
+{#if $error}
+	<div class="error-banner">
+		<span>{$error}</span>
+		<button onclick={() => loadDashboard()}>Retry</button>
+	</div>
+{/if}
 
-    <div class="card">
-        <div class="card-icon">
-            <Activity size={20} />
-        </div>
-        <div class="card-content">
-            <span class="card-label">WebSocket</span>
-            <span class="card-value" class:online={$connected}>
-                {$connected ? "Connected" : "Disconnected"}
-            </span>
-        </div>
-    </div>
+{#if $loading && !$summary}
+	<div class="stat-grid">
+		{#each Array(4) as _}
+			<div class="skeleton-card"></div>
+		{/each}
+	</div>
+	<div class="skeleton-chart"></div>
+{:else}
+	<div class="stat-grid">
+		<StatCard label="Followers" value={$followerCount.toLocaleString()} change={$followerChange7d}>
+			{#snippet icon()}<Users size={20} />{/snippet}
+		</StatCard>
+		<StatCard label="Replies Today" value={$repliesToday}>
+			{#snippet icon()}<MessageSquare size={20} />{/snippet}
+		</StatCard>
+		<StatCard label="Tweets Today" value={$tweetsToday}>
+			{#snippet icon()}<FileText size={20} />{/snippet}
+		</StatCard>
+		<StatCard label="Avg Engagement" value={$avgEngagement.toFixed(1)}>
+			{#snippet icon()}<TrendingUp size={20} />{/snippet}
+		</StatCard>
+	</div>
 
-    <div class="card">
-        <div class="card-icon">
-            <Users size={20} />
-        </div>
-        <div class="card-content">
-            <span class="card-label">Runtime</span>
-            <span class="card-value" class:online={$runtimeRunning}>
-                {$runtimeRunning ? "Running" : "Stopped"}
-            </span>
-        </div>
-    </div>
+	<div class="chart-section">
+		<FollowerChart />
+	</div>
 
-    <div class="card">
-        <div class="card-icon">
-            <CheckCircle size={20} />
-        </div>
-        <div class="card-content">
-            <span class="card-label">Approval Queue</span>
-            <span class="card-value">—</span>
-        </div>
-    </div>
-</div>
-
-<div class="placeholder-section">
-    <p>Charts and analytics will be added in Task 04.</p>
-</div>
+	<div class="bottom-grid">
+		<div class="bottom-left">
+			<TopTopics topics={$summary?.top_topics ?? []} />
+		</div>
+		<div class="bottom-right">
+			<RecentPerformance items={$recentPerformance} />
+		</div>
+	</div>
+{/if}
 
 <style>
-    .page-header {
-        margin-bottom: 24px;
-    }
+	.page-header {
+		margin-bottom: 24px;
+	}
 
-    h1 {
-        font-size: 24px;
-        font-weight: 700;
-        color: var(--color-text);
-        margin: 0 0 4px;
-    }
+	h1 {
+		font-size: 24px;
+		font-weight: 700;
+		color: var(--color-text);
+		margin: 0 0 4px;
+	}
 
-    .subtitle {
-        font-size: 13px;
-        color: var(--color-text-muted);
-        margin: 0;
-    }
+	.subtitle {
+		font-size: 13px;
+		color: var(--color-text-muted);
+		margin: 0;
+	}
 
-    .status-cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-        gap: 12px;
-        margin-bottom: 32px;
-    }
+	.error-banner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 12px 16px;
+		background-color: #f8514920;
+		border: 1px solid var(--color-danger);
+		border-radius: 8px;
+		margin-bottom: 20px;
+		color: var(--color-danger);
+		font-size: 13px;
+	}
 
-    .card {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        padding: 16px;
-        background-color: var(--color-surface);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: 8px;
-    }
+	.error-banner button {
+		padding: 4px 12px;
+		border: 1px solid var(--color-danger);
+		border-radius: 4px;
+		background: transparent;
+		color: var(--color-danger);
+		font-size: 12px;
+		font-weight: 600;
+		cursor: pointer;
+	}
 
-    .card-icon {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 40px;
-        height: 40px;
-        border-radius: 8px;
-        background-color: var(--color-surface-active);
-        color: var(--color-accent);
-        flex-shrink: 0;
-    }
+	.error-banner button:hover {
+		background-color: #f8514920;
+	}
 
-    .card-content {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-    }
+	.stat-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+		gap: 12px;
+		margin-bottom: 24px;
+	}
 
-    .card-label {
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--color-text-subtle);
-    }
+	.chart-section {
+		margin-bottom: 24px;
+	}
 
-    .card-value {
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--color-text-muted);
-    }
+	.bottom-grid {
+		display: grid;
+		grid-template-columns: 1fr 2fr;
+		gap: 16px;
+	}
 
-    .card-value.online {
-        color: var(--color-success);
-    }
+	@media (max-width: 800px) {
+		.bottom-grid {
+			grid-template-columns: 1fr;
+		}
+	}
 
-    .version {
-        font-size: 11px;
-        font-weight: 400;
-        color: var(--color-text-subtle);
-        margin-left: 4px;
-    }
+	/* Skeleton placeholders */
+	.skeleton-card {
+		height: 80px;
+		background-color: var(--color-surface);
+		border: 1px solid var(--color-border-subtle);
+		border-radius: 8px;
+		animation: pulse 1.5s ease-in-out infinite;
+	}
 
-    .placeholder-section {
-        padding: 40px;
-        text-align: center;
-        color: var(--color-text-subtle);
-        border: 1px dashed var(--color-border);
-        border-radius: 8px;
-    }
+	.skeleton-chart {
+		height: 300px;
+		background-color: var(--color-surface);
+		border: 1px solid var(--color-border-subtle);
+		border-radius: 8px;
+		margin-bottom: 24px;
+		animation: pulse 1.5s ease-in-out infinite;
+	}
+
+	@keyframes pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.5;
+		}
+	}
 </style>

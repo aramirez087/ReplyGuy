@@ -35,6 +35,18 @@ fn default_topic_limit() -> u32 {
     20
 }
 
+/// Query parameters for the recent-performance endpoint.
+#[derive(Deserialize)]
+pub struct RecentPerformanceQuery {
+    /// Maximum number of items to return (default: 20).
+    #[serde(default = "default_recent_limit")]
+    pub limit: u32,
+}
+
+fn default_recent_limit() -> u32 {
+    20
+}
+
 /// `GET /api/analytics/followers` — follower snapshots over time.
 pub async fn followers(
     State(state): State<Arc<AppState>>,
@@ -65,4 +77,19 @@ pub async fn topics(
 ) -> Result<Json<Value>, ApiError> {
     let scores = analytics::get_top_topics(&state.db, params.limit).await?;
     Ok(Json(json!(scores)))
+}
+
+/// `GET /api/analytics/summary` — combined analytics dashboard summary.
+pub async fn summary(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
+    let data = analytics::get_analytics_summary(&state.db).await?;
+    Ok(Json(json!(data)))
+}
+
+/// `GET /api/analytics/recent-performance` — recent content with performance metrics.
+pub async fn recent_performance(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<RecentPerformanceQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let items = analytics::get_recent_performance_items(&state.db, params.limit).await?;
+    Ok(Json(json!(items)))
 }

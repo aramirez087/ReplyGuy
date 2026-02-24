@@ -203,11 +203,15 @@ async fn approval_reject_not_found() {
 // ============================================================
 
 #[tokio::test]
-async fn activity_returns_array() {
+async fn activity_returns_paginated_object() {
     let router = test_router().await;
     let (status, body) = get_json(router, "/api/activity").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.is_array());
+    assert!(body.is_object());
+    assert!(body["actions"].is_array());
+    assert!(body["total"].is_number());
+    assert!(body["limit"].is_number());
+    assert!(body["offset"].is_number());
 }
 
 // ============================================================

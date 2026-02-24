@@ -3,6 +3,7 @@
 use serde::Serialize;
 
 use tuitbot_core::storage;
+use tuitbot_core::storage::analytics::ContentScore;
 use tuitbot_core::storage::DbPool;
 
 #[derive(Serialize)]
@@ -24,7 +25,8 @@ struct TopicOut {
 #[derive(Serialize)]
 struct StatsOut {
     follower_trend: Vec<FollowerSnapshotOut>,
-    net_follower_change: Option<i64>,
+    net_follower_change_7d: i64,
+    net_follower_change_30d: i64,
     top_topics: Vec<TopicOut>,
     avg_reply_engagement: f64,
     avg_tweet_engagement: f64,
@@ -32,17 +34,29 @@ struct StatsOut {
     tweets_measured: i64,
 }
 
-/// Collect analytics stats for the given number of days.
+fn topics_to_out(topics: Vec<ContentScore>) -> Vec<TopicOut> {
+    topics
+        .into_iter()
+        .map(|t| TopicOut {
+            topic: t.topic,
+            format: t.format,
+            total_posts: t.total_posts,
+            avg_performance: t.avg_performance,
+        })
+        .collect()
+}
+
+/// Collect analytics stats using the consolidated summary from storage.
 pub async fn get_stats(pool: &DbPool, days: u32) -> String {
+    // Use the consolidated summary to avoid data drift with the dashboard
+    let summary = match storage::analytics::get_analytics_summary(pool).await {
+        Ok(s) => s,
+        Err(e) => return format!("Error loading analytics summary: {e}"),
+    };
+
     let snapshots = storage::analytics::get_follower_snapshots(pool, days)
         .await
         .unwrap_or_default();
-
-    let net_follower_change = if snapshots.len() >= 2 {
-        Some(snapshots[0].follower_count - snapshots[snapshots.len() - 1].follower_count)
-    } else {
-        None
-    };
 
     let follower_trend: Vec<FollowerSnapshotOut> = snapshots
         .iter()
@@ -55,37 +69,15 @@ pub async fn get_stats(pool: &DbPool, days: u32) -> String {
         })
         .collect();
 
-    let topics = storage::analytics::get_top_topics(pool, 10)
-        .await
-        .unwrap_or_default();
-    let top_topics: Vec<TopicOut> = topics
-        .into_iter()
-        .map(|t| TopicOut {
-            topic: t.topic,
-            format: t.format,
-            total_posts: t.total_posts,
-            avg_performance: t.avg_performance,
-        })
-        .collect();
-
-    let avg_reply_engagement = storage::analytics::get_avg_reply_engagement(pool)
-        .await
-        .unwrap_or(0.0);
-    let avg_tweet_engagement = storage::analytics::get_avg_tweet_engagement(pool)
-        .await
-        .unwrap_or(0.0);
-    let (replies_measured, tweets_measured) = storage::analytics::get_performance_counts(pool)
-        .await
-        .unwrap_or((0, 0));
-
     let out = StatsOut {
         follower_trend,
-        net_follower_change,
-        top_topics,
-        avg_reply_engagement,
-        avg_tweet_engagement,
-        replies_measured,
-        tweets_measured,
+        net_follower_change_7d: summary.followers.change_7d,
+        net_follower_change_30d: summary.followers.change_30d,
+        top_topics: topics_to_out(summary.top_topics),
+        avg_reply_engagement: summary.engagement.avg_reply_score,
+        avg_tweet_engagement: summary.engagement.avg_tweet_score,
+        replies_measured: summary.engagement.total_replies_sent,
+        tweets_measured: summary.engagement.total_tweets_posted,
     };
 
     serde_json::to_string_pretty(&out).unwrap_or_else(|e| format!("Error serializing stats: {e}"))

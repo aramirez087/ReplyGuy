@@ -108,6 +108,69 @@ pub async fn get_recent_actions(
         .map_err(|e| StorageError::Query { source: e })
 }
 
+/// Fetch paginated action log entries with optional type and status filters.
+///
+/// Results are ordered by `created_at` descending (newest first).
+pub async fn get_actions_paginated(
+    pool: &DbPool,
+    limit: u32,
+    offset: u32,
+    action_type: Option<&str>,
+    status: Option<&str>,
+) -> Result<Vec<ActionLogEntry>, StorageError> {
+    let mut sql = String::from("SELECT * FROM action_log WHERE 1=1");
+    if action_type.is_some() {
+        sql.push_str(" AND action_type = ?");
+    }
+    if status.is_some() {
+        sql.push_str(" AND status = ?");
+    }
+    sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
+
+    let mut query = sqlx::query_as::<_, ActionLogEntry>(&sql);
+    if let Some(at) = action_type {
+        query = query.bind(at);
+    }
+    if let Some(st) = status {
+        query = query.bind(st);
+    }
+    query = query.bind(limit).bind(offset);
+
+    query
+        .fetch_all(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })
+}
+
+/// Get total count of action log entries with optional type and status filters.
+pub async fn get_actions_count(
+    pool: &DbPool,
+    action_type: Option<&str>,
+    status: Option<&str>,
+) -> Result<i64, StorageError> {
+    let mut sql = String::from("SELECT COUNT(*) FROM action_log WHERE 1=1");
+    if action_type.is_some() {
+        sql.push_str(" AND action_type = ?");
+    }
+    if status.is_some() {
+        sql.push_str(" AND status = ?");
+    }
+
+    let mut query = sqlx::query_as::<_, (i64,)>(&sql);
+    if let Some(at) = action_type {
+        query = query.bind(at);
+    }
+    if let Some(st) = status {
+        query = query.bind(st);
+    }
+
+    let (count,) = query
+        .fetch_one(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })?;
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,5 +276,127 @@ mod tests {
             .expect("get counts");
 
         assert!(counts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn paginated_actions_with_offset() {
+        let pool = init_test_db().await.expect("init db");
+
+        for i in 0..10 {
+            log_action(
+                &pool,
+                "search",
+                "success",
+                Some(&format!("Action {i}")),
+                None,
+            )
+            .await
+            .expect("log");
+        }
+
+        let page1 = get_actions_paginated(&pool, 3, 0, None, None)
+            .await
+            .expect("page 1");
+        assert_eq!(page1.len(), 3);
+
+        let page2 = get_actions_paginated(&pool, 3, 3, None, None)
+            .await
+            .expect("page 2");
+        assert_eq!(page2.len(), 3);
+
+        // Pages should not overlap
+        let ids1: Vec<i64> = page1.iter().map(|a| a.id).collect();
+        let ids2: Vec<i64> = page2.iter().map(|a| a.id).collect();
+        assert!(ids1.iter().all(|id| !ids2.contains(id)));
+    }
+
+    #[tokio::test]
+    async fn paginated_actions_with_type_filter() {
+        let pool = init_test_db().await.expect("init db");
+
+        log_action(&pool, "search", "success", None, None)
+            .await
+            .expect("log");
+        log_action(&pool, "reply", "success", None, None)
+            .await
+            .expect("log");
+        log_action(&pool, "search", "success", None, None)
+            .await
+            .expect("log");
+
+        let searches = get_actions_paginated(&pool, 10, 0, Some("search"), None)
+            .await
+            .expect("get");
+        assert_eq!(searches.len(), 2);
+
+        let count = get_actions_count(&pool, Some("search"), None)
+            .await
+            .expect("count");
+        assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
+    async fn paginated_actions_with_status_filter() {
+        let pool = init_test_db().await.expect("init db");
+
+        log_action(&pool, "search", "success", None, None)
+            .await
+            .expect("log");
+        log_action(&pool, "reply", "failure", Some("Rate limited"), None)
+            .await
+            .expect("log");
+        log_action(&pool, "tweet", "failure", Some("API error"), None)
+            .await
+            .expect("log");
+
+        let failures = get_actions_paginated(&pool, 10, 0, None, Some("failure"))
+            .await
+            .expect("get");
+        assert_eq!(failures.len(), 2);
+
+        let count = get_actions_count(&pool, None, Some("failure"))
+            .await
+            .expect("count");
+        assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
+    async fn paginated_actions_combined_filters() {
+        let pool = init_test_db().await.expect("init db");
+
+        log_action(&pool, "reply", "success", None, None)
+            .await
+            .expect("log");
+        log_action(&pool, "reply", "failure", None, None)
+            .await
+            .expect("log");
+        log_action(&pool, "tweet", "failure", None, None)
+            .await
+            .expect("log");
+
+        let reply_failures = get_actions_paginated(&pool, 10, 0, Some("reply"), Some("failure"))
+            .await
+            .expect("get");
+        assert_eq!(reply_failures.len(), 1);
+
+        let count = get_actions_count(&pool, Some("reply"), Some("failure"))
+            .await
+            .expect("count");
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn actions_count_no_filter() {
+        let pool = init_test_db().await.expect("init db");
+
+        log_action(&pool, "search", "success", None, None)
+            .await
+            .expect("log");
+        log_action(&pool, "reply", "success", None, None)
+            .await
+            .expect("log");
+
+        let count = get_actions_count(&pool, None, None).await.expect("count");
+        assert_eq!(count, 2);
     }
 }
