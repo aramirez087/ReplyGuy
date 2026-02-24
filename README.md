@@ -39,7 +39,7 @@ The easiest way to use Tuitbot. Built with Tauri and SvelteKit, the desktop app 
 - **Analytics:** 30-day follower charts, engagement stats, and top-performing topics.
 - **Visual Approval Queue:** Edit, review, and manually approve AI-generated replies and tweets.
 - **Content Calendar:** Schedule threads and tweets visually alongside autonomous content.
-- **Target Accounts Manager:** Track relationships, view interaction history, and monitor warmup progress.
+- **Target Accounts Manager:** Track relationships and view interaction history.
 - **Settings Editor:** Configure your business profile, adjust LLM settings, and manipulate the 6-signal scoring engine without touching a `.toml` file.
 
 ### CLI & Scheduler-Driven Modes

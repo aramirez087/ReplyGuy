@@ -249,20 +249,9 @@ pub struct TargetsConfig {
     /// Maximum target account replies per day (separate from general limit).
     #[serde(default = "default_max_target_replies_per_day")]
     pub max_target_replies_per_day: u32,
-
-    /// Whether to auto-follow target accounts.
-    #[serde(default)]
-    pub auto_follow: bool,
-
-    /// Number of days to wait after following before engaging.
-    #[serde(default = "default_follow_warmup_days")]
-    pub follow_warmup_days: u32,
 }
 
 fn default_max_target_replies_per_day() -> u32 {
-    3
-}
-fn default_follow_warmup_days() -> u32 {
     3
 }
 

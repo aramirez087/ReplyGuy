@@ -249,9 +249,6 @@ impl RuntimeDeps {
         let target_loop_config = TargetLoopConfig {
             accounts: config.targets.accounts.clone(),
             max_target_replies_per_day: config.targets.max_target_replies_per_day,
-            auto_follow: config.targets.auto_follow,
-            follow_warmup_days: config.targets.follow_warmup_days,
-            own_user_id: own_user_id.clone(),
             dry_run,
         };
 

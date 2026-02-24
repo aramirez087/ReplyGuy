@@ -209,12 +209,6 @@ model = "gpt-4o-mini"
 # Maximum replies to target account tweets per day (separate from general limit).
 max_target_replies_per_day = 3
 
-# Automatically follow target accounts (if not already following).
-auto_follow = false
-
-# Days to wait after following before first engagement (avoids looking robotic).
-follow_warmup_days = 3
-
 # --- Data Storage ---
 [storage]
 # Path to the SQLite database file.

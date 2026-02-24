@@ -1,31 +1,17 @@
 <script lang="ts">
-	import { Target, UserCheck, Clock, Eye, Trash2 } from 'lucide-svelte';
+	import { Target, Clock, Eye, Trash2 } from 'lucide-svelte';
 	import type { TargetAccount } from '$lib/api';
 
 	interface Props {
 		target: TargetAccount;
 		maxDailyReplies: number;
-		followWarmupDays: number;
 		onview: (username: string) => void;
 		onremove: (username: string) => void;
 	}
 
-	let { target, maxDailyReplies, followWarmupDays, onview, onremove }: Props = $props();
+	let { target, maxDailyReplies, onview, onremove }: Props = $props();
 
 	let confirmingRemove = $state(false);
-
-	const isFollowing = $derived(target.followed_at !== null);
-
-	const warmupDaysElapsed = $derived(() => {
-		if (!target.followed_at) return 0;
-		const followed = new Date(target.followed_at).getTime();
-		return Math.floor((Date.now() - followed) / 86_400_000);
-	});
-
-	const warmupComplete = $derived(isFollowing && warmupDaysElapsed() >= followWarmupDays);
-	const warmupRemaining = $derived(
-		isFollowing ? Math.max(0, followWarmupDays - warmupDaysElapsed()) : followWarmupDays
-	);
 
 	const dailyPercent = $derived(
 		maxDailyReplies > 0

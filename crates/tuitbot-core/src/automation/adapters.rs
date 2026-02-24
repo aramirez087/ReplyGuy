@@ -217,17 +217,6 @@ impl TargetUserManager for XApiTargetAdapter {
             .map_err(xapi_to_loop_error)?;
         Ok((user.id, user.username))
     }
-
-    async fn follow_user(
-        &self,
-        source_user_id: &str,
-        target_user_id: &str,
-    ) -> Result<(), LoopError> {
-        self.client
-            .follow_user(source_user_id, target_user_id)
-            .await
-            .map_err(xapi_to_loop_error)
-    }
 }
 
 /// Adapts `XApiHttpClient` to `ProfileFetcher` and `EngagementFetcher`.
@@ -827,19 +816,6 @@ impl TargetStorage for TargetStorageAdapter {
         username: &str,
     ) -> Result<(), LoopError> {
         storage::target_accounts::upsert_target_account(&self.pool, account_id, username)
-            .await
-            .map_err(storage_to_loop_error)
-    }
-
-    async fn get_followed_at(&self, account_id: &str) -> Result<Option<String>, LoopError> {
-        let account = storage::target_accounts::get_target_account(&self.pool, account_id)
-            .await
-            .map_err(storage_to_loop_error)?;
-        Ok(account.and_then(|a| a.followed_at))
-    }
-
-    async fn record_follow(&self, account_id: &str) -> Result<(), LoopError> {
-        storage::target_accounts::record_follow(&self.pool, account_id)
             .await
             .map_err(storage_to_loop_error)
     }
