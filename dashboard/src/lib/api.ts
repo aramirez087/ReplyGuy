@@ -167,6 +167,40 @@ export interface ScheduledContentItem {
 	updated_at: string;
 }
 
+// --- Target types ---
+
+export interface TargetAccount {
+	account_id: string;
+	username: string;
+	followed_at: string | null;
+	first_engagement_at: string | null;
+	total_replies_sent: number;
+	last_reply_at: string | null;
+	status: string;
+	interactions_today: number;
+}
+
+export interface TargetTimelineItem {
+	tweet_id: string;
+	text: string;
+	posted_at: string;
+	relevance_score: number;
+	replied_to: boolean;
+	tweet_reply_count: number;
+	tweet_like_count: number;
+	reply_content: string | null;
+	reply_created_at: string | null;
+}
+
+export interface TargetStats {
+	total_replies: number;
+	avg_score: number;
+	best_reply_content: string | null;
+	best_reply_score: number | null;
+	first_interaction: string | null;
+	interaction_frequency_days: number | null;
+}
+
 // --- Settings types ---
 
 export interface TuitbotConfig {
@@ -337,6 +371,26 @@ export const api = {
 				method: 'POST',
 				body: JSON.stringify(data)
 			})
+	},
+
+	targets: {
+		list: () => request<TargetAccount[]>('/api/targets'),
+		add: (username: string) =>
+			request<{ status: string; username: string }>('/api/targets', {
+				method: 'POST',
+				body: JSON.stringify({ username })
+			}),
+		remove: (username: string) =>
+			request<{ status: string; username: string }>(
+				`/api/targets/${encodeURIComponent(username)}`,
+				{ method: 'DELETE' }
+			),
+		timeline: (username: string, limit: number = 50) =>
+			request<TargetTimelineItem[]>(
+				`/api/targets/${encodeURIComponent(username)}/timeline?limit=${limit}`
+			),
+		stats: (username: string) =>
+			request<TargetStats>(`/api/targets/${encodeURIComponent(username)}/stats`)
 	},
 
 	approval: {

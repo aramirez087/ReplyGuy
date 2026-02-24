@@ -75,6 +75,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             get(routes::targets::list_targets).post(routes::targets::add_target),
         )
         .route(
+            "/targets/{username}/timeline",
+            get(routes::targets::target_timeline),
+        )
+        .route(
+            "/targets/{username}/stats",
+            get(routes::targets::target_stats),
+        )
+        .route(
             "/targets/{username}",
             delete(routes::targets::remove_target),
         )
