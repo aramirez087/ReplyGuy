@@ -99,6 +99,27 @@ cargo package --workspace --allow-dirty
 
 If either command fails, treat it as a release blocker and fix before handoff.
 
+## File Size & Decomposition Guidelines
+
+Keep individual source files focused and navigable. Split proactively — don't wait for files to become unwieldy.
+
+**Rust crates:**
+- Single `.rs` files should stay under **500 lines**. If a file exceeds this, convert it to a module directory (`foo.rs` → `foo/mod.rs` + submodules).
+- Follow the existing pattern in `commands/settings/` and `commands/init/`: a thin `mod.rs` orchestrator with logic in focused submodules (`steps.rs`, `render.rs`, `display.rs`, etc.).
+- Tests go in a dedicated `tests.rs` submodule once they exceed ~100 lines.
+- Helper/utility functions shared within a module belong in `helpers.rs`, not inlined in the orchestrator.
+
+**Svelte components (dashboard):**
+- Page components (`+page.svelte`) should stay under **400 lines**. Extract distinct UI sections into sibling components in the same route directory.
+- Each section component imports its own store subscriptions and icons directly — the parent passes only callbacks and simple state via `$props()`.
+- Scoped CSS is duplicated per component (standard Svelte pattern). Shared design tokens live in `app.css`.
+- Follow the settings page pattern: `+page.svelte` handles layout/nav/save flow, while `*Section.svelte` files own their form fields and section-specific logic.
+
+**General rules:**
+- Prefer many small, focused files over few large ones. A file doing one thing well is easier to maintain than a file doing eight things.
+- When adding a new section/step/feature to an existing module, add it to the appropriate submodule — don't pile onto the orchestrator.
+- If you find yourself scrolling past 500 lines in any file, stop and refactor before continuing.
+
 ## Architecture
 
 ### Workspace Layout
