@@ -62,6 +62,8 @@ function createOnboardingStore() {
 				llm_api_key: '',
 				llm_model: 'gpt-4o-mini',
 				llm_base_url: '',
+				language: 'en',
+				brand_voice: 'balanced',
 				approval_mode: true,
 			});
 		},

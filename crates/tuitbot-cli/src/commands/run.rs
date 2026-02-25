@@ -7,6 +7,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use tuitbot_core::automation::circuit_breaker::CircuitBreaker;
 use tuitbot_core::automation::{
     run_approval_poster, run_posting_queue_with_approval, run_token_refresh_loop,
     scheduler_from_config, status_reporter::run_status_reporter, AnalyticsLoop, ContentLoop,
@@ -44,12 +45,20 @@ pub async fn execute(config: &Config, status_interval: u64) -> anyhow::Result<()
     let min_delay = Duration::from_secs(config.limits.min_action_delay_seconds);
     let max_delay = Duration::from_secs(config.limits.max_action_delay_seconds);
 
+    // Create circuit breaker from config.
+    let circuit_breaker = CircuitBreaker::new(
+        config.circuit_breaker.error_threshold,
+        Duration::from_secs(config.circuit_breaker.window_seconds),
+        Duration::from_secs(config.circuit_breaker.cooldown_seconds),
+    );
+
     // Spawn posting queue consumer.
     let cancel = runtime.cancel_token();
     let post_rx = deps.post_rx.take().expect("post_rx not yet consumed");
     runtime.spawn("posting-queue", {
         let executor = deps.post_executor.clone() as Arc<dyn PostExecutor>;
         let approval_queue = deps.approval_queue.clone();
+        let cb = circuit_breaker.clone();
         async move {
             run_posting_queue_with_approval(
                 post_rx,
@@ -57,6 +66,7 @@ pub async fn execute(config: &Config, status_interval: u64) -> anyhow::Result<()
                 approval_queue,
                 min_delay,
                 max_delay,
+                Some(cb),
                 cancel,
             )
             .await;

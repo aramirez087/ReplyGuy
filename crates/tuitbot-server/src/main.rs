@@ -90,6 +90,7 @@ async fn main() -> Result<()> {
         api_token,
         runtime: Mutex::new(None),
         content_generator,
+        circuit_breaker: None,
     });
 
     let router = tuitbot_server::build_router(state);

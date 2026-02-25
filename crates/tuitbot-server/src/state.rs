@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, Mutex};
+use tuitbot_core::automation::circuit_breaker::CircuitBreaker;
 use tuitbot_core::automation::Runtime;
 use tuitbot_core::content::ContentGenerator;
 use tuitbot_core::storage::DbPool;
@@ -26,4 +27,6 @@ pub struct AppState {
     pub runtime: Mutex<Option<Runtime>>,
     /// Optional content generator for AI assist endpoints.
     pub content_generator: Option<Arc<ContentGenerator>>,
+    /// Optional circuit breaker for X API rate-limit protection.
+    pub circuit_breaker: Option<Arc<CircuitBreaker>>,
 }

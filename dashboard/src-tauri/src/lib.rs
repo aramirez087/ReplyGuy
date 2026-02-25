@@ -64,9 +64,12 @@ pub fn run() {
                 Arc::new(AppState {
                     db: pool,
                     config_path,
+                    data_dir: dir,
                     event_tx,
                     api_token,
                     runtime: Mutex::new(None),
+                    content_generator: None,
+                    circuit_breaker: None,
                 })
             });
 

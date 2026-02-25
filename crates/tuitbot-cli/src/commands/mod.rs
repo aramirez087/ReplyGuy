@@ -4,8 +4,10 @@
 /// matching the CLI interface contract.
 pub mod approve;
 pub mod auth;
+pub mod backup;
 pub mod init;
 pub mod mcp;
+pub mod restore;
 pub mod run;
 pub mod settings;
 pub mod stats;
@@ -210,6 +212,37 @@ pub struct TickArgs {
     /// Force approval mode on for this tick (queue posts for human review)
     #[arg(long)]
     pub require_approval: bool,
+}
+
+/// Arguments for the `backup` subcommand.
+#[derive(Debug, Args)]
+pub struct BackupArgs {
+    /// Custom output directory for the backup file
+    #[arg(long)]
+    pub output_dir: Option<String>,
+
+    /// List existing backups
+    #[arg(long)]
+    pub list: bool,
+
+    /// Keep N most recent backups, delete the rest
+    #[arg(long)]
+    pub prune: Option<usize>,
+}
+
+/// Arguments for the `restore` subcommand.
+#[derive(Debug, Args)]
+pub struct RestoreArgs {
+    /// Path to the backup file to restore from
+    pub backup_path: String,
+
+    /// Skip confirmation prompt
+    #[arg(long)]
+    pub force: bool,
+
+    /// Validate backup without restoring
+    #[arg(long)]
+    pub validate_only: bool,
 }
 
 /// Arguments for the `mcp` subcommand.

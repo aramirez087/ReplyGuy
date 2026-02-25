@@ -23,6 +23,7 @@ use crate::state::AppState;
 pub fn build_router(state: Arc<AppState>) -> Router {
     let api = Router::new()
         .route("/health", get(routes::health::health))
+        .route("/health/detailed", get(routes::health::health_detailed))
         // Analytics
         .route("/analytics/summary", get(routes::analytics::summary))
         .route("/analytics/followers", get(routes::analytics::followers))

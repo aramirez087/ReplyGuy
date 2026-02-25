@@ -67,6 +67,13 @@ pub enum WsEvent {
         content_type: String,
         scheduled_for: Option<String>,
     },
+    /// Circuit breaker state changed.
+    CircuitBreakerTripped {
+        state: String,
+        error_count: u32,
+        cooldown_remaining_seconds: u64,
+        timestamp: String,
+    },
     /// An error occurred.
     Error { message: String },
 }

@@ -28,6 +28,7 @@ async fn test_router() -> axum::Router {
         api_token: TEST_TOKEN.to_string(),
         content_generator: None,
         runtime: Mutex::new(None),
+        circuit_breaker: None,
     });
 
     tuitbot_server::build_router(state)
@@ -234,6 +235,7 @@ async fn approval_stats_returns_counts() {
         api_token: TEST_TOKEN.to_string(),
         content_generator: None,
         runtime: Mutex::new(None),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -271,6 +273,7 @@ async fn approval_list_with_status_filter() {
         api_token: TEST_TOKEN.to_string(),
         content_generator: None,
         runtime: Mutex::new(None),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -318,6 +321,7 @@ async fn approval_edit_content() {
         api_token: TEST_TOKEN.to_string(),
         content_generator: None,
         runtime: Mutex::new(None),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -363,6 +367,7 @@ async fn approval_edit_empty_content() {
         api_token: TEST_TOKEN.to_string(),
         content_generator: None,
         runtime: Mutex::new(None),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -494,6 +499,7 @@ async fn add_and_list_target() {
         api_token: TEST_TOKEN.to_string(),
         content_generator: None,
         runtime: Mutex::new(None),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -527,6 +533,7 @@ async fn add_duplicate_target_fails() {
         api_token: TEST_TOKEN.to_string(),
         content_generator: None,
         runtime: Mutex::new(None),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -561,6 +568,7 @@ async fn remove_target_works() {
         api_token: TEST_TOKEN.to_string(),
         content_generator: None,
         runtime: Mutex::new(None),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -615,6 +623,7 @@ async fn runtime_start_and_stop() {
         api_token: TEST_TOKEN.to_string(),
         content_generator: None,
         runtime: Mutex::new(None),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -666,6 +675,7 @@ async fn settings_get_returns_json() {
         api_token: TEST_TOKEN.to_string(),
         content_generator: None,
         runtime: Mutex::new(None),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -691,6 +701,7 @@ async fn settings_patch_round_trips() {
         api_token: TEST_TOKEN.to_string(),
         content_generator: None,
         runtime: Mutex::new(None),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 

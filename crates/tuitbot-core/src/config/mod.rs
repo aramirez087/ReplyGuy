@@ -110,6 +110,10 @@ pub struct Config {
     /// MCP mutation policy enforcement.
     #[serde(default)]
     pub mcp_policy: McpPolicyConfig,
+
+    /// Circuit breaker for X API rate-limit protection.
+    #[serde(default)]
+    pub circuit_breaker: CircuitBreakerConfig,
 }
 
 /// X API credentials.
@@ -558,6 +562,42 @@ fn default_db_path() -> String {
 }
 fn default_retention_days() -> u32 {
     90
+}
+
+fn default_cb_error_threshold() -> u32 {
+    5
+}
+fn default_cb_window_seconds() -> u64 {
+    300
+}
+fn default_cb_cooldown_seconds() -> u64 {
+    600
+}
+
+/// Circuit breaker configuration for X API rate-limit protection.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CircuitBreakerConfig {
+    /// Number of errors within the window to trip the breaker.
+    #[serde(default = "default_cb_error_threshold")]
+    pub error_threshold: u32,
+
+    /// Sliding window duration in seconds for counting errors.
+    #[serde(default = "default_cb_window_seconds")]
+    pub window_seconds: u64,
+
+    /// How long (seconds) to stay Open before allowing a probe mutation.
+    #[serde(default = "default_cb_cooldown_seconds")]
+    pub cooldown_seconds: u64,
+}
+
+impl Default for CircuitBreakerConfig {
+    fn default() -> Self {
+        Self {
+            error_threshold: default_cb_error_threshold(),
+            window_seconds: default_cb_window_seconds(),
+            cooldown_seconds: default_cb_cooldown_seconds(),
+        }
+    }
 }
 
 impl Config {
