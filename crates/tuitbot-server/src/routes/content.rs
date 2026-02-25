@@ -7,6 +7,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tuitbot_core::config::Config;
+use tuitbot_core::content::{tweet_weighted_len, MAX_TWEET_CHARS};
 use tuitbot_core::storage::{approval_queue, replies, scheduled_content, threads};
 
 use crate::error::ApiError;
@@ -334,7 +335,7 @@ pub async fn compose(
 
     match body.content_type.as_str() {
         "tweet" => {
-            if content.len() > 280 {
+            if tweet_weighted_len(&content) > MAX_TWEET_CHARS {
                 return Err(ApiError::BadRequest(
                     "tweet content must not exceed 280 characters".to_string(),
                 ));
@@ -351,7 +352,7 @@ pub async fn compose(
                 }
                 Ok(ref t) => {
                     for (i, tweet) in t.iter().enumerate() {
-                        if tweet.len() > 280 {
+                        if tweet_weighted_len(tweet) > MAX_TWEET_CHARS {
                             return Err(ApiError::BadRequest(format!(
                                 "tweet {} exceeds 280 characters",
                                 i + 1

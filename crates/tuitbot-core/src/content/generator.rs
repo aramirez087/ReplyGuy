@@ -5,6 +5,7 @@
 
 use crate::config::BusinessProfile;
 use crate::content::frameworks::{ReplyArchetype, ThreadStructure, TweetFormat};
+use crate::content::length::{truncate_at_sentence, validate_tweet_length, MAX_TWEET_CHARS};
 use crate::error::LlmError;
 use crate::llm::{GenerationParams, LlmProvider, TokenUsage};
 
@@ -33,9 +34,6 @@ pub struct ThreadGenerationOutput {
     /// The provider name.
     pub provider: String,
 }
-
-/// Maximum characters allowed in a single tweet.
-const MAX_TWEET_CHARS: usize = 280;
 
 /// Maximum retries for thread generation.
 const MAX_THREAD_RETRIES: u32 = 2;
@@ -161,7 +159,7 @@ impl ContentGenerator {
 
         tracing::debug!(chars = text.len(), "Generated reply");
 
-        if validate_length(&text, MAX_TWEET_CHARS) {
+        if validate_tweet_length(&text, MAX_TWEET_CHARS) {
             return Ok(GenerationOutput {
                 text,
                 usage,
@@ -178,7 +176,7 @@ impl ContentGenerator {
         usage.accumulate(&resp.usage);
         let text = resp.text.trim().to_string();
 
-        if validate_length(&text, MAX_TWEET_CHARS) {
+        if validate_tweet_length(&text, MAX_TWEET_CHARS) {
             return Ok(GenerationOutput {
                 text,
                 usage,
@@ -265,7 +263,7 @@ impl ContentGenerator {
         let model = resp.model.clone();
         let text = resp.text.trim().to_string();
 
-        if validate_length(&text, MAX_TWEET_CHARS) {
+        if validate_tweet_length(&text, MAX_TWEET_CHARS) {
             return Ok(GenerationOutput {
                 text,
                 usage,
@@ -282,7 +280,7 @@ impl ContentGenerator {
         usage.accumulate(&resp.usage);
         let text = resp.text.trim().to_string();
 
-        if validate_length(&text, MAX_TWEET_CHARS) {
+        if validate_tweet_length(&text, MAX_TWEET_CHARS) {
             return Ok(GenerationOutput {
                 text,
                 usage,
@@ -381,7 +379,9 @@ impl ContentGenerator {
             let tweets = parse_thread(&resp.text);
 
             if (5..=8).contains(&tweets.len())
-                && tweets.iter().all(|t| validate_length(t, MAX_TWEET_CHARS))
+                && tweets
+                    .iter()
+                    .all(|t| validate_tweet_length(t, MAX_TWEET_CHARS))
             {
                 return Ok(ThreadGenerationOutput {
                     tweets,
@@ -480,41 +480,6 @@ fn parse_thread(text: &str) -> Vec<String> {
     tweets
 }
 
-/// Check if text is within the character limit.
-fn validate_length(text: &str, max_chars: usize) -> bool {
-    text.len() <= max_chars
-}
-
-/// Truncate text at the last sentence boundary that fits within the limit.
-///
-/// Looks for the last period, exclamation mark, or question mark within the limit.
-/// Falls back to truncating at the limit with "..." if no sentence boundary is found.
-fn truncate_at_sentence(text: &str, max_chars: usize) -> String {
-    if text.len() <= max_chars {
-        return text.to_string();
-    }
-
-    let search_area = &text[..max_chars];
-
-    // Find the last sentence-ending punctuation
-    let last_sentence_end = search_area
-        .rfind('.')
-        .max(search_area.rfind('!'))
-        .max(search_area.rfind('?'));
-
-    if let Some(pos) = last_sentence_end {
-        if pos > 0 {
-            return text[..=pos].trim().to_string();
-        }
-    }
-
-    // No sentence boundary found; hard truncate with ellipsis
-    let truncate_at = max_chars.saturating_sub(3);
-    // Find a word boundary
-    let word_end = search_area[..truncate_at].rfind(' ').unwrap_or(truncate_at);
-    format!("{}...", &text[..word_end])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -588,58 +553,6 @@ mod tests {
             persona_experiences: vec![],
             content_pillars: vec![],
         }
-    }
-
-    // --- validate_length tests ---
-
-    #[test]
-    fn validate_length_under_limit() {
-        assert!(validate_length("short text", 280));
-    }
-
-    #[test]
-    fn validate_length_at_limit() {
-        let text = "a".repeat(280);
-        assert!(validate_length(&text, 280));
-    }
-
-    #[test]
-    fn validate_length_over_limit() {
-        let text = "a".repeat(281);
-        assert!(!validate_length(&text, 280));
-    }
-
-    // --- truncate_at_sentence tests ---
-
-    #[test]
-    fn truncate_at_sentence_under_limit() {
-        let text = "Short sentence.";
-        assert_eq!(truncate_at_sentence(text, 280), "Short sentence.");
-    }
-
-    #[test]
-    fn truncate_at_period() {
-        let text = "First sentence. Second sentence. Third sentence is very long and goes over the limit and more and more text.";
-        let result = truncate_at_sentence(text, 50);
-        assert!(result.len() <= 50);
-        assert!(result.ends_with('.'));
-    }
-
-    #[test]
-    fn truncate_at_question_mark() {
-        let text = "Is this working? I hope so because this text is getting very long and will exceed the character limit.";
-        let result = truncate_at_sentence(text, 20);
-        assert!(result.len() <= 20);
-        assert!(result.ends_with('?'));
-    }
-
-    #[test]
-    fn truncate_no_sentence_boundary() {
-        let text =
-            "This is a very long sentence without any punctuation that keeps going and going";
-        let result = truncate_at_sentence(text, 30);
-        assert!(result.len() <= 30);
-        assert!(result.ends_with("..."));
     }
 
     // --- parse_thread tests ---

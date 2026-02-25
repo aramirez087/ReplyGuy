@@ -452,8 +452,10 @@ impl ContentLoop {
             }
         };
 
-        // Validate length (280 char limit)
-        let content = if content.len() > 280 {
+        // Validate length (280 char limit, URL-aware)
+        let content = if crate::content::length::tweet_weighted_len(&content)
+            > crate::content::length::MAX_TWEET_CHARS
+        {
             // Retry once with explicit shorter instruction
             tracing::debug!(
                 chars = content.len(),
@@ -462,7 +464,12 @@ impl ContentLoop {
 
             let shorter_topic = format!("{topic} (IMPORTANT: keep under 280 characters)");
             match self.generator.generate_tweet(&shorter_topic).await {
-                Ok(text) if text.len() <= 280 => text,
+                Ok(text)
+                    if crate::content::length::tweet_weighted_len(&text)
+                        <= crate::content::length::MAX_TWEET_CHARS =>
+                {
+                    text
+                }
                 Ok(text) => {
                     // Truncate at word boundary
                     tracing::warn!(

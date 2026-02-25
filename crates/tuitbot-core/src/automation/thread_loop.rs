@@ -434,8 +434,11 @@ impl ThreadLoop {
                 }
             };
 
-            // Validate all tweets are <= 280 chars
-            let all_valid = tweets.iter().all(|t| t.len() <= 280);
+            // Validate all tweets are <= 280 chars (URL-aware)
+            let all_valid = tweets.iter().all(|t| {
+                crate::content::length::tweet_weighted_len(t)
+                    <= crate::content::length::MAX_TWEET_CHARS
+            });
             if all_valid {
                 return Ok(tweets);
             }
@@ -443,7 +446,10 @@ impl ThreadLoop {
             let over_limit: Vec<usize> = tweets
                 .iter()
                 .enumerate()
-                .filter(|(_, t)| t.len() > 280)
+                .filter(|(_, t)| {
+                    crate::content::length::tweet_weighted_len(t)
+                        > crate::content::length::MAX_TWEET_CHARS
+                })
                 .map(|(i, _)| i + 1)
                 .collect();
 
