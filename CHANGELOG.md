@@ -21,6 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wire scheduled content to the posting runtime.
 - Fix URL-aware tweet length calculation on client side.
 
+#### MCP Superiority Program
+
+- Add v1.0 structured response envelope with `success`, `data`, `error`, and `meta` fields for deterministic agent parsing.
+- Add 11 Direct X API tools (5 read, 6 mutation) with full error taxonomy (10 typed error codes with retryable flags).
+- Add centralized MCP mutation policy engine with configurable blocking, approval routing, dry-run mode, and hourly rate limits via `[mcp_policy]` config section.
+- Add 4 composite goal-oriented tools: `find_reply_opportunities`, `draft_replies_for_candidates`, `propose_and_queue_replies`, `generate_thread_plan`.
+- Add 3 context intelligence tools: `get_author_context`, `recommend_engagement_action`, `topic_performance_snapshot`.
+- Add MCP telemetry capture (`mcp_telemetry` table) recording tool name, category, latency, success, error code, and policy decision for every invocation.
+- Add `get_mcp_tool_metrics` and `get_mcp_error_breakdown` tools for operational observability.
+- Add eval harness with 3 scenarios and 2 quality gates (schema validation ≥ 95%, unknown errors ≤ 5%).
+- Add `get_policy_status` tool for real-time policy and rate limit introspection.
+- Add `get_capabilities` tool with structured capability map including direct tools, policy state, and mode awareness.
+- Upgrade OpenClaw plugin to v0.2.0 with 5-layer safety filtering (name allowlist, mutation gate, category allowlist, category denylist, risk ceiling), static tool catalog with 45 tools, and structured error propagation.
+- Add MCP governance dashboard page with policy editor, telemetry charts, and activity panel.
+
 ## [0.1.4](https://github.com/aramirez087/TuitBot/compare/tuitbot-cli-v0.1.3...tuitbot-cli-v0.1.4) - 2026-02-24
 
 ### Added

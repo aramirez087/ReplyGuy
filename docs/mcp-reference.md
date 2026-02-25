@@ -228,6 +228,124 @@ When dry-run mode is active:
 }
 ```
 
+## Capability Matrix: TuitBot vs Thin X MCP Wrappers
+
+The following matrix compares TuitBot's MCP server against thin X API wrappers
+(e.g. x-v2-server). All TuitBot capabilities listed below are implemented and
+tested — see `docs/roadmap/artifacts/final-mcp-superiority-report.md` for
+benchmark data.
+
+| Capability | TuitBot MCP | Thin X wrapper |
+|------------|-------------|----------------|
+| Direct X read tools (search, mentions, tweets, user lookup) | Yes (5 tools) | Yes |
+| Direct X mutation tools (post, reply, quote, like, follow, unfollow) | Yes (6 tools) | Yes |
+| Centralized mutation policy engine | Yes — per-tool blocking, approval routing, dry-run, rate limits | No |
+| Approval queue routing for high-risk mutations | Yes — configurable via `require_approval_for` | No |
+| Dry-run mode (preview without execution) | Yes — `dry_run_mutations = true` | No |
+| Hourly mutation rate limiting | Yes — `max_mutations_per_hour` | No |
+| Composite goal-oriented workflows | 4 tools (find → draft → queue, thread planning) | No |
+| Context intelligence (author profiling, recommendations) | 3 tools | No |
+| Growth analytics via MCP | Yes — `get_stats`, `get_mcp_tool_metrics`, `get_mcp_error_breakdown` | No |
+| Structured response envelope | v1.0 with `success`, `data`, `error`, `meta` | Varies |
+| Typed error taxonomy with retryable flag | 10 error codes | Limited |
+| Per-invocation telemetry capture | Yes — latency, success, error code, policy decision | No |
+| Quality gate eval harness | Yes — 3 scenarios, automated CI checks | No |
+| OpenClaw plugin with layered safety filtering | Yes — 5 filter layers, 45 tools cataloged | No |
+| Dashboard governance UI | Yes — policy editor, telemetry charts, activity panel | No |
+| Operating mode awareness (Autopilot / Composer) | Yes — mode-specific behavior and capability reporting | No |
+
+## Migrating from a Thin X MCP Wrapper
+
+If you are currently using a thin X MCP wrapper (such as x-v2-server) and want
+to migrate to TuitBot's MCP server, follow these steps.
+
+### Step 1: Install and configure TuitBot
+
+```bash
+cargo install tuitbot-cli --locked
+tuitbot init        # creates ~/.tuitbot/config.toml
+tuitbot auth        # OAuth 2.0 PKCE flow for X
+```
+
+### Step 2: Start the MCP server
+
+```bash
+tuitbot mcp serve
+```
+
+Or add to your Claude Code / agent config:
+
+```json
+{
+  "mcpServers": {
+    "tuitbot": {
+      "command": "tuitbot",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+### Step 3: Map your existing tool calls
+
+| Thin wrapper tool | TuitBot equivalent | Notes |
+|-------------------|--------------------|-------|
+| `search_tweets` | `x_search_tweets` | Same parameters; returns v1.0 envelope |
+| `post_tweet` | `x_post_tweet` | Policy-gated; may route to approval queue |
+| `reply_to_tweet` | `x_reply_to_tweet` | Policy-gated |
+| `quote_tweet` | `x_quote_tweet` | Policy-gated |
+| `like_tweet` | `x_like_tweet` | Policy-gated |
+| `follow_user` | `x_follow_user` | Policy-gated |
+| `unfollow_user` | `x_unfollow_user` | Policy-gated |
+| `get_tweet` | `get_tweet_by_id` | Direct read |
+| `get_user` | `x_get_user_by_username` | Direct read |
+| `get_mentions` | `x_get_user_mentions` | Direct read |
+| `get_user_tweets` | `x_get_user_tweets` | Direct read |
+
+### Step 4: Adopt the response envelope
+
+TuitBot's migrated tools return a v1.0 envelope. Detect it by checking for
+the top-level `"success"` key:
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "meta": { "tool_version": "1.0", "elapsed_ms": 12 }
+}
+```
+
+Error responses include a typed `error` object with `code`, `message`, and
+`retryable` fields — no need to parse unstructured strings.
+
+### Step 5: Configure safety policy (recommended)
+
+TuitBot's policy engine is enabled by default. Customize in `config.toml`:
+
+```toml
+[mcp_policy]
+enforce_for_mutations = true
+require_approval_for = ["x_post_tweet", "x_reply_to_tweet"]
+blocked_tools = []
+dry_run_mutations = false
+max_mutations_per_hour = 20
+```
+
+Start with `dry_run_mutations = true` to verify agent behavior before allowing
+real mutations.
+
+### Step 6: Upgrade to composite workflows (optional)
+
+Instead of orchestrating raw API calls, agents can use TuitBot's composite
+tools for end-to-end growth workflows:
+
+1. `find_reply_opportunities` — discover high-scoring tweets
+2. `draft_replies_for_candidates` — generate contextual replies
+3. `propose_and_queue_replies` — submit to approval queue or execute
+4. `generate_thread_plan` — plan multi-tweet threads
+
+These reduce agent reasoning steps and error surface compared to raw primitives.
+
 ## Operational notes
 
 - MCP server uses same config and DB as CLI.
