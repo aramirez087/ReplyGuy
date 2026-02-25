@@ -1,0 +1,364 @@
+//! CRUD operations for the `accounts` and `account_roles` tables.
+//!
+//! Provides multi-account registry, per-account configuration overrides,
+//! and role-based access control (admin/approver/viewer).
+
+use super::DbPool;
+use crate::error::StorageError;
+
+/// Well-known sentinel ID for the default (backward-compatible) account.
+pub const DEFAULT_ACCOUNT_ID: &str = "00000000-0000-0000-0000-000000000000";
+
+/// An account in the registry.
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct Account {
+    pub id: String,
+    pub label: String,
+    pub x_user_id: Option<String>,
+    pub x_username: Option<String>,
+    pub config_overrides: String,
+    pub token_path: Option<String>,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A role assignment for an actor on an account.
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct AccountRole {
+    pub account_id: String,
+    pub actor: String,
+    pub role: String,
+    pub created_at: String,
+}
+
+/// List all active accounts, ordered by creation date.
+pub async fn list_accounts(pool: &DbPool) -> Result<Vec<Account>, StorageError> {
+    sqlx::query_as::<_, Account>(
+        "SELECT * FROM accounts WHERE status = 'active' ORDER BY created_at",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })
+}
+
+/// Get a single account by ID.
+pub async fn get_account(pool: &DbPool, id: &str) -> Result<Option<Account>, StorageError> {
+    sqlx::query_as::<_, Account>("SELECT * FROM accounts WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })
+}
+
+/// Create a new account. Returns the account ID.
+pub async fn create_account(pool: &DbPool, id: &str, label: &str) -> Result<String, StorageError> {
+    sqlx::query(
+        "INSERT INTO accounts (id, label, updated_at) \
+         VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+    )
+    .bind(id)
+    .bind(label)
+    .execute(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    // Auto-grant admin to dashboard actor for new accounts.
+    set_role(pool, id, "dashboard", "admin").await?;
+
+    Ok(id.to_string())
+}
+
+/// Update an account's mutable fields.
+#[allow(clippy::too_many_arguments)]
+pub async fn update_account(
+    pool: &DbPool,
+    id: &str,
+    label: Option<&str>,
+    x_user_id: Option<&str>,
+    x_username: Option<&str>,
+    config_overrides: Option<&str>,
+    token_path: Option<&str>,
+    status: Option<&str>,
+) -> Result<(), StorageError> {
+    // Build SET clauses dynamically to only update provided fields.
+    let mut sets = vec!["updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')".to_string()];
+    let mut binds: Vec<String> = Vec::new();
+
+    if let Some(v) = label {
+        sets.push(format!("label = ?{}", binds.len() + 1));
+        binds.push(v.to_string());
+    }
+    if let Some(v) = x_user_id {
+        sets.push(format!("x_user_id = ?{}", binds.len() + 1));
+        binds.push(v.to_string());
+    }
+    if let Some(v) = x_username {
+        sets.push(format!("x_username = ?{}", binds.len() + 1));
+        binds.push(v.to_string());
+    }
+    if let Some(v) = config_overrides {
+        sets.push(format!("config_overrides = ?{}", binds.len() + 1));
+        binds.push(v.to_string());
+    }
+    if let Some(v) = token_path {
+        sets.push(format!("token_path = ?{}", binds.len() + 1));
+        binds.push(v.to_string());
+    }
+    if let Some(v) = status {
+        sets.push(format!("status = ?{}", binds.len() + 1));
+        binds.push(v.to_string());
+    }
+
+    let id_param = binds.len() + 1;
+    let sql = format!(
+        "UPDATE accounts SET {} WHERE id = ?{}",
+        sets.join(", "),
+        id_param
+    );
+
+    let mut query = sqlx::query(&sql);
+    for b in &binds {
+        query = query.bind(b);
+    }
+    query = query.bind(id);
+
+    query
+        .execute(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(())
+}
+
+/// Archive (soft-delete) an account by setting status to 'archived'.
+pub async fn delete_account(pool: &DbPool, id: &str) -> Result<(), StorageError> {
+    if id == DEFAULT_ACCOUNT_ID {
+        return Err(StorageError::Query {
+            source: sqlx::Error::Protocol("cannot delete the default account".into()),
+        });
+    }
+
+    sqlx::query(
+        "UPDATE accounts SET status = 'archived', \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+    )
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(())
+}
+
+/// Check whether an account exists and is active.
+pub async fn account_exists(pool: &DbPool, id: &str) -> Result<bool, StorageError> {
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT COUNT(*) FROM accounts WHERE id = ? AND status = 'active'")
+            .bind(id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(row.map(|(c,)| c > 0).unwrap_or(false))
+}
+
+// ---- Role management ----
+
+/// Get the role for an actor on an account.
+/// Returns `None` if no role is assigned.
+pub async fn get_role(
+    pool: &DbPool,
+    account_id: &str,
+    actor: &str,
+) -> Result<Option<String>, StorageError> {
+    // Default account grants admin to all actors for backward compat.
+    if account_id == DEFAULT_ACCOUNT_ID {
+        return Ok(Some("admin".to_string()));
+    }
+
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT role FROM account_roles WHERE account_id = ? AND actor = ?")
+            .bind(account_id)
+            .bind(actor)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(row.map(|(r,)| r))
+}
+
+/// Set (upsert) a role for an actor on an account.
+pub async fn set_role(
+    pool: &DbPool,
+    account_id: &str,
+    actor: &str,
+    role: &str,
+) -> Result<(), StorageError> {
+    sqlx::query(
+        "INSERT INTO account_roles (account_id, actor, role) VALUES (?, ?, ?) \
+         ON CONFLICT(account_id, actor) DO UPDATE SET role = excluded.role",
+    )
+    .bind(account_id)
+    .bind(actor)
+    .bind(role)
+    .execute(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(())
+}
+
+/// Remove a role assignment.
+pub async fn remove_role(pool: &DbPool, account_id: &str, actor: &str) -> Result<(), StorageError> {
+    sqlx::query("DELETE FROM account_roles WHERE account_id = ? AND actor = ?")
+        .bind(account_id)
+        .bind(actor)
+        .execute(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(())
+}
+
+/// List all roles for an account.
+pub async fn list_roles(pool: &DbPool, account_id: &str) -> Result<Vec<AccountRole>, StorageError> {
+    sqlx::query_as::<_, AccountRole>(
+        "SELECT * FROM account_roles WHERE account_id = ? ORDER BY actor",
+    )
+    .bind(account_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::init_test_db;
+
+    #[tokio::test]
+    async fn default_account_seeded() {
+        let pool = init_test_db().await.expect("init db");
+        let account = get_account(&pool, DEFAULT_ACCOUNT_ID)
+            .await
+            .expect("get")
+            .expect("should exist");
+        assert_eq!(account.label, "Default");
+        assert_eq!(account.status, "active");
+    }
+
+    #[tokio::test]
+    async fn create_and_list_accounts() {
+        let pool = init_test_db().await.expect("init db");
+        let id = uuid::Uuid::new_v4().to_string();
+        create_account(&pool, &id, "Test Account")
+            .await
+            .expect("create");
+
+        let accounts = list_accounts(&pool).await.expect("list");
+        assert!(accounts.iter().any(|a| a.id == id));
+    }
+
+    #[tokio::test]
+    async fn update_account_fields() {
+        let pool = init_test_db().await.expect("init db");
+        let id = uuid::Uuid::new_v4().to_string();
+        create_account(&pool, &id, "Original")
+            .await
+            .expect("create");
+
+        update_account(
+            &pool,
+            &id,
+            Some("Updated"),
+            Some("12345"),
+            Some("testuser"),
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("update");
+
+        let account = get_account(&pool, &id).await.expect("get").expect("found");
+        assert_eq!(account.label, "Updated");
+        assert_eq!(account.x_user_id.as_deref(), Some("12345"));
+        assert_eq!(account.x_username.as_deref(), Some("testuser"));
+    }
+
+    #[tokio::test]
+    async fn delete_archives_account() {
+        let pool = init_test_db().await.expect("init db");
+        let id = uuid::Uuid::new_v4().to_string();
+        create_account(&pool, &id, "ToDelete")
+            .await
+            .expect("create");
+        delete_account(&pool, &id).await.expect("delete");
+
+        // Archived accounts don't appear in list_accounts (active only)
+        let accounts = list_accounts(&pool).await.expect("list");
+        assert!(!accounts.iter().any(|a| a.id == id));
+
+        // But still exist in DB
+        let account = get_account(&pool, &id).await.expect("get").expect("found");
+        assert_eq!(account.status, "archived");
+    }
+
+    #[tokio::test]
+    async fn cannot_delete_default_account() {
+        let pool = init_test_db().await.expect("init db");
+        let result = delete_account(&pool, DEFAULT_ACCOUNT_ID).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn default_account_grants_admin_to_all() {
+        let pool = init_test_db().await.expect("init db");
+        let role = get_role(&pool, DEFAULT_ACCOUNT_ID, "anyone")
+            .await
+            .expect("get role");
+        assert_eq!(role.as_deref(), Some("admin"));
+    }
+
+    #[tokio::test]
+    async fn role_crud() {
+        let pool = init_test_db().await.expect("init db");
+        let id = uuid::Uuid::new_v4().to_string();
+        create_account(&pool, &id, "RoleTest")
+            .await
+            .expect("create");
+
+        // New account has dashboard=admin from auto-grant
+        let role = get_role(&pool, &id, "dashboard").await.expect("get");
+        assert_eq!(role.as_deref(), Some("admin"));
+
+        // Set a viewer role
+        set_role(&pool, &id, "mcp", "viewer").await.expect("set");
+        let role = get_role(&pool, &id, "mcp").await.expect("get");
+        assert_eq!(role.as_deref(), Some("viewer"));
+
+        // Upgrade to approver
+        set_role(&pool, &id, "mcp", "approver").await.expect("set");
+        let role = get_role(&pool, &id, "mcp").await.expect("get");
+        assert_eq!(role.as_deref(), Some("approver"));
+
+        // List roles
+        let roles = list_roles(&pool, &id).await.expect("list");
+        assert_eq!(roles.len(), 2);
+
+        // Remove role
+        remove_role(&pool, &id, "mcp").await.expect("remove");
+        let role = get_role(&pool, &id, "mcp").await.expect("get");
+        assert!(role.is_none());
+    }
+
+    #[tokio::test]
+    async fn account_exists_check() {
+        let pool = init_test_db().await.expect("init db");
+        assert!(account_exists(&pool, DEFAULT_ACCOUNT_ID)
+            .await
+            .expect("check"));
+        assert!(!account_exists(&pool, "nonexistent").await.expect("check"));
+    }
+}

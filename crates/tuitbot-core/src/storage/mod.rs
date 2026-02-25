@@ -3,6 +3,7 @@
 //! Provides database initialization, connection pooling, and CRUD operations
 //! for all persistent entities. Uses SQLx with WAL mode for concurrent access.
 
+pub mod accounts;
 pub mod action_log;
 pub mod analytics;
 pub mod approval_queue;
@@ -146,6 +147,8 @@ mod tests {
         .expect("query tables");
 
         let table_names: Vec<&str> = tables.iter().map(|t| t.0.as_str()).collect();
+        assert!(table_names.contains(&"accounts"));
+        assert!(table_names.contains(&"account_roles"));
         assert!(table_names.contains(&"discovered_tweets"));
         assert!(table_names.contains(&"replies_sent"));
         assert!(table_names.contains(&"original_tweets"));

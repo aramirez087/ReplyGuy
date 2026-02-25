@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use tuitbot_core::config::Config;
 use tuitbot_core::storage::{action_log, approval_queue};
 
+use crate::account::{require_approve, AccountContext};
 use crate::error::ApiError;
 use crate::state::AppState;
 use crate::ws::WsEvent;
@@ -35,6 +36,7 @@ fn default_status() -> String {
 /// `GET /api/approval` — list approval items with optional status/type/reviewer/date filters.
 pub async fn list_items(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Query(params): Query<ApprovalQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let statuses: Vec<&str> = params.status.split(',').map(|s| s.trim()).collect();
@@ -42,14 +44,24 @@ pub async fn list_items(
     let reviewed_by = params.reviewed_by.as_deref();
     let since = params.since.as_deref();
 
-    let items =
-        approval_queue::get_filtered(&state.db, &statuses, action_type, reviewed_by, since).await?;
+    let items = approval_queue::get_filtered_for(
+        &state.db,
+        &ctx.account_id,
+        &statuses,
+        action_type,
+        reviewed_by,
+        since,
+    )
+    .await?;
     Ok(Json(json!(items)))
 }
 
 /// `GET /api/approval/stats` — counts by status.
-pub async fn stats(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
-    let stats = approval_queue::get_stats(&state.db).await?;
+pub async fn stats(
+    State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
+) -> Result<Json<Value>, ApiError> {
+    let stats = approval_queue::get_stats_for(&state.db, &ctx.account_id).await?;
     Ok(Json(json!(stats)))
 }
 
@@ -72,10 +84,13 @@ fn default_editor() -> String {
 /// `PATCH /api/approval/:id` — edit content before approving.
 pub async fn edit_item(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Path(id): Path<i64>,
     Json(body): Json<EditContentRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    let item = approval_queue::get_by_id(&state.db, id).await?;
+    require_approve(&ctx)?;
+
+    let item = approval_queue::get_by_id_for(&state.db, &ctx.account_id, id).await?;
     let item = item.ok_or_else(|| ApiError::NotFound(format!("approval item {id} not found")))?;
 
     let content = body.content.trim();
@@ -83,7 +98,7 @@ pub async fn edit_item(
         return Err(ApiError::BadRequest("content cannot be empty".to_string()));
     }
 
-    // Record edit history before updating.
+    // Record edit history before updating (queries by PK, implicitly scoped).
     if content != item.generated_content {
         let _ = approval_queue::record_edit(
             &state.db,
@@ -96,7 +111,7 @@ pub async fn edit_item(
         .await;
     }
 
-    approval_queue::update_content(&state.db, id, content).await?;
+    approval_queue::update_content_for(&state.db, &ctx.account_id, id, content).await?;
 
     if let Some(media_paths) = &body.media_paths {
         let media_json = serde_json::to_string(media_paths).unwrap_or_else(|_| "[]".to_string());
@@ -114,7 +129,7 @@ pub async fn edit_item(
             .await;
         }
 
-        approval_queue::update_media_paths(&state.db, id, &media_json).await?;
+        approval_queue::update_media_paths_for(&state.db, &ctx.account_id, id, &media_json).await?;
     }
 
     // Log to action log.
@@ -123,8 +138,9 @@ pub async fn edit_item(
         "editor": body.editor,
         "field": "generated_content",
     });
-    let _ = action_log::log_action(
+    let _ = action_log::log_action_for(
         &state.db,
+        &ctx.account_id,
         "approval_edited",
         "success",
         Some(&format!("Edited approval item {id}")),
@@ -132,7 +148,7 @@ pub async fn edit_item(
     )
     .await;
 
-    let updated = approval_queue::get_by_id(&state.db, id)
+    let updated = approval_queue::get_by_id_for(&state.db, &ctx.account_id, id)
         .await?
         .expect("item was just verified to exist");
     Ok(Json(json!(updated)))
@@ -141,14 +157,24 @@ pub async fn edit_item(
 /// `POST /api/approval/:id/approve` — approve a queued item.
 pub async fn approve_item(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Path(id): Path<i64>,
     body: Option<Json<approval_queue::ReviewAction>>,
 ) -> Result<Json<Value>, ApiError> {
-    let item = approval_queue::get_by_id(&state.db, id).await?;
+    require_approve(&ctx)?;
+
+    let item = approval_queue::get_by_id_for(&state.db, &ctx.account_id, id).await?;
     let item = item.ok_or_else(|| ApiError::NotFound(format!("approval item {id} not found")))?;
 
     let review = body.map(|b| b.0).unwrap_or_default();
-    approval_queue::update_status_with_review(&state.db, id, "approved", &review).await?;
+    approval_queue::update_status_with_review_for(
+        &state.db,
+        &ctx.account_id,
+        id,
+        "approved",
+        &review,
+    )
+    .await?;
 
     // Log to action log.
     let metadata = json!({
@@ -157,8 +183,9 @@ pub async fn approve_item(
         "notes": review.notes,
         "action_type": item.action_type,
     });
-    let _ = action_log::log_action(
+    let _ = action_log::log_action_for(
         &state.db,
+        &ctx.account_id,
         "approval_approved",
         "success",
         Some(&format!("Approved item {id}")),
@@ -179,14 +206,24 @@ pub async fn approve_item(
 /// `POST /api/approval/:id/reject` — reject a queued item.
 pub async fn reject_item(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Path(id): Path<i64>,
     body: Option<Json<approval_queue::ReviewAction>>,
 ) -> Result<Json<Value>, ApiError> {
-    let item = approval_queue::get_by_id(&state.db, id).await?;
+    require_approve(&ctx)?;
+
+    let item = approval_queue::get_by_id_for(&state.db, &ctx.account_id, id).await?;
     let item = item.ok_or_else(|| ApiError::NotFound(format!("approval item {id} not found")))?;
 
     let review = body.map(|b| b.0).unwrap_or_default();
-    approval_queue::update_status_with_review(&state.db, id, "rejected", &review).await?;
+    approval_queue::update_status_with_review_for(
+        &state.db,
+        &ctx.account_id,
+        id,
+        "rejected",
+        &review,
+    )
+    .await?;
 
     // Log to action log.
     let metadata = json!({
@@ -195,8 +232,9 @@ pub async fn reject_item(
         "notes": review.notes,
         "action_type": item.action_type,
     });
-    let _ = action_log::log_action(
+    let _ = action_log::log_action_for(
         &state.db,
+        &ctx.account_id,
         "approval_rejected",
         "success",
         Some(&format!("Rejected item {id}")),
@@ -231,8 +269,11 @@ pub struct BatchApproveRequest {
 /// `POST /api/approval/approve-all` — batch-approve pending items.
 pub async fn approve_all(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     body: Option<Json<BatchApproveRequest>>,
 ) -> Result<Json<Value>, ApiError> {
+    require_approve(&ctx)?;
+
     let config = read_config(&state);
     let max_batch = config.max_batch_approve;
 
@@ -244,10 +285,18 @@ pub async fn approve_all(
         let clamped: Vec<&i64> = ids.iter().take(max_batch).collect();
         let mut approved = Vec::with_capacity(clamped.len());
         for &id in &clamped {
-            if let Ok(Some(_)) = approval_queue::get_by_id(&state.db, *id).await {
-                if approval_queue::update_status_with_review(&state.db, *id, "approved", &review)
-                    .await
-                    .is_ok()
+            if let Ok(Some(_)) =
+                approval_queue::get_by_id_for(&state.db, &ctx.account_id, *id).await
+            {
+                if approval_queue::update_status_with_review_for(
+                    &state.db,
+                    &ctx.account_id,
+                    *id,
+                    "approved",
+                    &review,
+                )
+                .await
+                .is_ok()
                 {
                     approved.push(*id);
                 }
@@ -262,7 +311,8 @@ pub async fn approve_all(
             .map(|m| m.min(max_batch))
             .unwrap_or(max_batch);
 
-        approval_queue::batch_approve(&state.db, effective_max, &review).await?
+        approval_queue::batch_approve_for(&state.db, &ctx.account_id, effective_max, &review)
+            .await?
     };
 
     let count = approved_ids.len();
@@ -274,8 +324,9 @@ pub async fn approve_all(
         "actor": review.actor,
         "max_configured": max_batch,
     });
-    let _ = action_log::log_action(
+    let _ = action_log::log_action_for(
         &state.db,
+        &ctx.account_id,
         "approval_batch_approved",
         "success",
         Some(&format!("Batch approved {count} items")),
@@ -320,6 +371,7 @@ fn default_export_status() -> String {
 /// `GET /api/approval/export` — export approval items as CSV or JSON.
 pub async fn export_items(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Query(params): Query<ExportQuery>,
 ) -> Result<axum::response::Response, ApiError> {
     use axum::response::IntoResponse;
@@ -327,7 +379,9 @@ pub async fn export_items(
     let statuses: Vec<&str> = params.status.split(',').map(|s| s.trim()).collect();
     let action_type = params.action_type.as_deref();
 
-    let items = approval_queue::get_by_statuses(&state.db, &statuses, action_type).await?;
+    let items =
+        approval_queue::get_by_statuses_for(&state.db, &ctx.account_id, &statuses, action_type)
+            .await?;
 
     if params.format == "json" {
         let body = serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string());
@@ -390,8 +444,10 @@ fn escape_csv(value: &str) -> String {
 /// `GET /api/approval/:id/history` — get edit history for an item.
 pub async fn get_edit_history(
     State(state): State<Arc<AppState>>,
+    _ctx: AccountContext,
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, ApiError> {
+    // Query by approval_id PK is already implicitly scoped.
     let history = approval_queue::get_edit_history(&state.db, id).await?;
     Ok(Json(json!(history)))
 }

@@ -1,5 +1,6 @@
 //! Shared application state for the tuitbot server.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -23,10 +24,10 @@ pub struct AppState {
     pub event_tx: broadcast::Sender<WsEvent>,
     /// Local bearer token for API authentication.
     pub api_token: String,
-    /// Optional automation runtime handle for start/stop control.
-    pub runtime: Mutex<Option<Runtime>>,
-    /// Optional content generator for AI assist endpoints.
-    pub content_generator: Option<Arc<ContentGenerator>>,
+    /// Per-account automation runtimes (keyed by account_id).
+    pub runtimes: Mutex<HashMap<String, Runtime>>,
+    /// Per-account content generators for AI assist endpoints.
+    pub content_generators: Mutex<HashMap<String, Arc<ContentGenerator>>>,
     /// Optional circuit breaker for X API rate-limit protection.
     pub circuit_breaker: Option<Arc<CircuitBreaker>>,
 }

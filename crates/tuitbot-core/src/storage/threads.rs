@@ -3,6 +3,7 @@
 //! Provides functions to insert and query original tweets and threads,
 //! supporting the content and thread automation loops.
 
+use super::accounts::DEFAULT_ACCOUNT_ID;
 use super::DbPool;
 use crate::error::StorageError;
 
@@ -61,16 +62,18 @@ pub struct ThreadTweet {
     pub created_at: String,
 }
 
-/// Insert a new original tweet. Returns the auto-generated ID.
-pub async fn insert_original_tweet(
+/// Insert a new original tweet for a specific account. Returns the auto-generated ID.
+pub async fn insert_original_tweet_for(
     pool: &DbPool,
+    account_id: &str,
     tweet: &OriginalTweet,
 ) -> Result<i64, StorageError> {
     let result = sqlx::query(
         "INSERT INTO original_tweets \
-         (tweet_id, content, topic, llm_provider, created_at, status, error_message) \
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+         (account_id, tweet_id, content, topic, llm_provider, created_at, status, error_message) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
+    .bind(account_id)
     .bind(&tweet.tweet_id)
     .bind(&tweet.content)
     .bind(&tweet.topic)
@@ -85,12 +88,24 @@ pub async fn insert_original_tweet(
     Ok(result.last_insert_rowid())
 }
 
-/// Get the timestamp of the most recent successfully posted original tweet.
-pub async fn get_last_original_tweet_time(pool: &DbPool) -> Result<Option<String>, StorageError> {
+/// Insert a new original tweet. Returns the auto-generated ID.
+pub async fn insert_original_tweet(
+    pool: &DbPool,
+    tweet: &OriginalTweet,
+) -> Result<i64, StorageError> {
+    insert_original_tweet_for(pool, DEFAULT_ACCOUNT_ID, tweet).await
+}
+
+/// Get the timestamp of the most recent successfully posted original tweet for a specific account.
+pub async fn get_last_original_tweet_time_for(
+    pool: &DbPool,
+    account_id: &str,
+) -> Result<Option<String>, StorageError> {
     let row: Option<(String,)> = sqlx::query_as(
-        "SELECT created_at FROM original_tweets WHERE status = 'sent' \
+        "SELECT created_at FROM original_tweets WHERE account_id = ? AND status = 'sent' \
          ORDER BY created_at DESC LIMIT 1",
     )
+    .bind(account_id)
     .fetch_optional(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
@@ -98,23 +113,40 @@ pub async fn get_last_original_tweet_time(pool: &DbPool) -> Result<Option<String
     Ok(row.map(|r| r.0))
 }
 
-/// Count original tweets posted today (UTC).
-pub async fn count_tweets_today(pool: &DbPool) -> Result<i64, StorageError> {
-    let row: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM original_tweets WHERE date(created_at) = date('now')")
-            .fetch_one(pool)
-            .await
-            .map_err(|e| StorageError::Query { source: e })?;
+/// Get the timestamp of the most recent successfully posted original tweet.
+pub async fn get_last_original_tweet_time(pool: &DbPool) -> Result<Option<String>, StorageError> {
+    get_last_original_tweet_time_for(pool, DEFAULT_ACCOUNT_ID).await
+}
+
+/// Count original tweets posted today (UTC) for a specific account.
+pub async fn count_tweets_today_for(pool: &DbPool, account_id: &str) -> Result<i64, StorageError> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM original_tweets WHERE account_id = ? AND date(created_at) = date('now')",
+    )
+    .bind(account_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
 
     Ok(row.0)
 }
 
-/// Insert a new thread record. Returns the auto-generated ID.
-pub async fn insert_thread(pool: &DbPool, thread: &Thread) -> Result<i64, StorageError> {
+/// Count original tweets posted today (UTC).
+pub async fn count_tweets_today(pool: &DbPool) -> Result<i64, StorageError> {
+    count_tweets_today_for(pool, DEFAULT_ACCOUNT_ID).await
+}
+
+/// Insert a new thread record for a specific account. Returns the auto-generated ID.
+pub async fn insert_thread_for(
+    pool: &DbPool,
+    account_id: &str,
+    thread: &Thread,
+) -> Result<i64, StorageError> {
     let result = sqlx::query(
-        "INSERT INTO threads (topic, tweet_count, root_tweet_id, created_at, status) \
-         VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO threads (account_id, topic, tweet_count, root_tweet_id, created_at, status) \
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
+    .bind(account_id)
     .bind(&thread.topic)
     .bind(thread.tweet_count)
     .bind(&thread.root_tweet_id)
@@ -127,11 +159,17 @@ pub async fn insert_thread(pool: &DbPool, thread: &Thread) -> Result<i64, Storag
     Ok(result.last_insert_rowid())
 }
 
-/// Insert all tweets for a thread atomically using a transaction.
+/// Insert a new thread record. Returns the auto-generated ID.
+pub async fn insert_thread(pool: &DbPool, thread: &Thread) -> Result<i64, StorageError> {
+    insert_thread_for(pool, DEFAULT_ACCOUNT_ID, thread).await
+}
+
+/// Insert all tweets for a thread atomically using a transaction for a specific account.
 ///
 /// Either all tweets are inserted or none are (rollback on failure).
-pub async fn insert_thread_tweets(
+pub async fn insert_thread_tweets_for(
     pool: &DbPool,
+    account_id: &str,
     thread_id: i64,
     tweets: &[ThreadTweet],
 ) -> Result<(), StorageError> {
@@ -142,9 +180,11 @@ pub async fn insert_thread_tweets(
 
     for tweet in tweets {
         sqlx::query(
-            "INSERT INTO thread_tweets (thread_id, position, tweet_id, content, created_at) \
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO thread_tweets \
+             (account_id, thread_id, position, tweet_id, content, created_at) \
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
+        .bind(account_id)
         .bind(thread_id)
         .bind(tweet.position)
         .bind(&tweet.tweet_id)
@@ -162,12 +202,27 @@ pub async fn insert_thread_tweets(
     Ok(())
 }
 
-/// Get the timestamp of the most recent successfully posted thread.
-pub async fn get_last_thread_time(pool: &DbPool) -> Result<Option<String>, StorageError> {
+/// Insert all tweets for a thread atomically using a transaction.
+///
+/// Either all tweets are inserted or none are (rollback on failure).
+pub async fn insert_thread_tweets(
+    pool: &DbPool,
+    thread_id: i64,
+    tweets: &[ThreadTweet],
+) -> Result<(), StorageError> {
+    insert_thread_tweets_for(pool, DEFAULT_ACCOUNT_ID, thread_id, tweets).await
+}
+
+/// Get the timestamp of the most recent successfully posted thread for a specific account.
+pub async fn get_last_thread_time_for(
+    pool: &DbPool,
+    account_id: &str,
+) -> Result<Option<String>, StorageError> {
     let row: Option<(String,)> = sqlx::query_as(
-        "SELECT created_at FROM threads WHERE status = 'sent' \
+        "SELECT created_at FROM threads WHERE account_id = ? AND status = 'sent' \
          ORDER BY created_at DESC LIMIT 1",
     )
+    .bind(account_id)
     .fetch_optional(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
@@ -175,13 +230,22 @@ pub async fn get_last_thread_time(pool: &DbPool) -> Result<Option<String>, Stora
     Ok(row.map(|r| r.0))
 }
 
-/// Get the timestamps of all successfully posted original tweets today (UTC).
-pub async fn get_todays_tweet_times(pool: &DbPool) -> Result<Vec<String>, StorageError> {
+/// Get the timestamp of the most recent successfully posted thread.
+pub async fn get_last_thread_time(pool: &DbPool) -> Result<Option<String>, StorageError> {
+    get_last_thread_time_for(pool, DEFAULT_ACCOUNT_ID).await
+}
+
+/// Get the timestamps of all successfully posted original tweets today (UTC) for a specific account.
+pub async fn get_todays_tweet_times_for(
+    pool: &DbPool,
+    account_id: &str,
+) -> Result<Vec<String>, StorageError> {
     let rows: Vec<(String,)> = sqlx::query_as(
         "SELECT created_at FROM original_tweets \
-         WHERE status = 'sent' AND date(created_at) = date('now') \
+         WHERE account_id = ? AND status = 'sent' AND date(created_at) = date('now') \
          ORDER BY created_at ASC",
     )
+    .bind(account_id)
     .fetch_all(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
@@ -189,17 +253,51 @@ pub async fn get_todays_tweet_times(pool: &DbPool) -> Result<Vec<String>, Storag
     Ok(rows.into_iter().map(|r| r.0).collect())
 }
 
-/// Count threads posted in the current ISO week (Monday-Sunday, UTC).
-pub async fn count_threads_this_week(pool: &DbPool) -> Result<i64, StorageError> {
+/// Get the timestamps of all successfully posted original tweets today (UTC).
+pub async fn get_todays_tweet_times(pool: &DbPool) -> Result<Vec<String>, StorageError> {
+    get_todays_tweet_times_for(pool, DEFAULT_ACCOUNT_ID).await
+}
+
+/// Count threads posted in the current ISO week (Monday-Sunday, UTC) for a specific account.
+pub async fn count_threads_this_week_for(
+    pool: &DbPool,
+    account_id: &str,
+) -> Result<i64, StorageError> {
     let row: (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM threads \
-         WHERE strftime('%Y-%W', created_at) = strftime('%Y-%W', 'now')",
+         WHERE account_id = ? AND strftime('%Y-%W', created_at) = strftime('%Y-%W', 'now')",
     )
+    .bind(account_id)
     .fetch_one(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
 
     Ok(row.0)
+}
+
+/// Count threads posted in the current ISO week (Monday-Sunday, UTC).
+pub async fn count_threads_this_week(pool: &DbPool) -> Result<i64, StorageError> {
+    count_threads_this_week_for(pool, DEFAULT_ACCOUNT_ID).await
+}
+
+/// Get original tweets within a date range for a specific account, ordered by creation time.
+pub async fn get_tweets_in_range_for(
+    pool: &DbPool,
+    account_id: &str,
+    from: &str,
+    to: &str,
+) -> Result<Vec<OriginalTweet>, StorageError> {
+    sqlx::query_as::<_, OriginalTweet>(
+        "SELECT * FROM original_tweets \
+         WHERE account_id = ? AND created_at BETWEEN ? AND ? \
+         ORDER BY created_at ASC",
+    )
+    .bind(account_id)
+    .bind(from)
+    .bind(to)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })
 }
 
 /// Get original tweets within a date range, ordered by creation time.
@@ -208,11 +306,22 @@ pub async fn get_tweets_in_range(
     from: &str,
     to: &str,
 ) -> Result<Vec<OriginalTweet>, StorageError> {
-    sqlx::query_as::<_, OriginalTweet>(
-        "SELECT * FROM original_tweets \
-         WHERE created_at BETWEEN ? AND ? \
+    get_tweets_in_range_for(pool, DEFAULT_ACCOUNT_ID, from, to).await
+}
+
+/// Get threads within a date range for a specific account, ordered by creation time.
+pub async fn get_threads_in_range_for(
+    pool: &DbPool,
+    account_id: &str,
+    from: &str,
+    to: &str,
+) -> Result<Vec<Thread>, StorageError> {
+    sqlx::query_as::<_, Thread>(
+        "SELECT * FROM threads \
+         WHERE account_id = ? AND created_at BETWEEN ? AND ? \
          ORDER BY created_at ASC",
     )
+    .bind(account_id)
     .bind(from)
     .bind(to)
     .fetch_all(pool)
@@ -226,13 +335,20 @@ pub async fn get_threads_in_range(
     from: &str,
     to: &str,
 ) -> Result<Vec<Thread>, StorageError> {
-    sqlx::query_as::<_, Thread>(
-        "SELECT * FROM threads \
-         WHERE created_at BETWEEN ? AND ? \
-         ORDER BY created_at ASC",
+    get_threads_in_range_for(pool, DEFAULT_ACCOUNT_ID, from, to).await
+}
+
+/// Get the most recent original tweets for a specific account, newest first.
+pub async fn get_recent_original_tweets_for(
+    pool: &DbPool,
+    account_id: &str,
+    limit: u32,
+) -> Result<Vec<OriginalTweet>, StorageError> {
+    sqlx::query_as::<_, OriginalTweet>(
+        "SELECT * FROM original_tweets WHERE account_id = ? ORDER BY created_at DESC LIMIT ?",
     )
-    .bind(from)
-    .bind(to)
+    .bind(account_id)
+    .bind(limit)
     .fetch_all(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })
@@ -243,9 +359,19 @@ pub async fn get_recent_original_tweets(
     pool: &DbPool,
     limit: u32,
 ) -> Result<Vec<OriginalTweet>, StorageError> {
-    sqlx::query_as::<_, OriginalTweet>(
-        "SELECT * FROM original_tweets ORDER BY created_at DESC LIMIT ?",
+    get_recent_original_tweets_for(pool, DEFAULT_ACCOUNT_ID, limit).await
+}
+
+/// Get the most recent threads for a specific account, newest first.
+pub async fn get_recent_threads_for(
+    pool: &DbPool,
+    account_id: &str,
+    limit: u32,
+) -> Result<Vec<Thread>, StorageError> {
+    sqlx::query_as::<_, Thread>(
+        "SELECT * FROM threads WHERE account_id = ? ORDER BY created_at DESC LIMIT ?",
     )
+    .bind(account_id)
     .bind(limit)
     .fetch_all(pool)
     .await
@@ -254,11 +380,7 @@ pub async fn get_recent_original_tweets(
 
 /// Get the most recent threads, newest first.
 pub async fn get_recent_threads(pool: &DbPool, limit: u32) -> Result<Vec<Thread>, StorageError> {
-    sqlx::query_as::<_, Thread>("SELECT * FROM threads ORDER BY created_at DESC LIMIT ?")
-        .bind(limit)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e })
+    get_recent_threads_for(pool, DEFAULT_ACCOUNT_ID, limit).await
 }
 
 #[cfg(test)]

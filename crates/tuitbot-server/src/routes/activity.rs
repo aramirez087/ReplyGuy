@@ -8,6 +8,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tuitbot_core::storage::{action_log, rate_limits};
 
+use crate::account::AccountContext;
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -34,6 +35,7 @@ fn default_limit() -> u32 {
 /// `GET /api/activity` — paginated, filterable action log.
 pub async fn list_activity(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Query(params): Query<ActivityQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let type_filter =
@@ -43,8 +45,9 @@ pub async fn list_activity(
             .and_then(|t| if t == "all" { None } else { Some(t) });
     let status_filter = params.status.as_deref();
 
-    let actions = action_log::get_actions_paginated(
+    let actions = action_log::get_actions_paginated_for(
         &state.db,
+        &ctx.account_id,
         params.limit,
         params.offset,
         type_filter,
@@ -52,7 +55,9 @@ pub async fn list_activity(
     )
     .await?;
 
-    let total = action_log::get_actions_count(&state.db, type_filter, status_filter).await?;
+    let total =
+        action_log::get_actions_count_for(&state.db, &ctx.account_id, type_filter, status_filter)
+            .await?;
 
     Ok(Json(json!({
         "actions": actions,
@@ -82,6 +87,7 @@ fn default_csv() -> String {
 /// `GET /api/activity/export` — export activity log as CSV or JSON.
 pub async fn export_activity(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Query(params): Query<ExportQuery>,
 ) -> Result<axum::response::Response, ApiError> {
     use axum::response::IntoResponse;
@@ -93,8 +99,15 @@ pub async fn export_activity(
             .and_then(|t| if t == "all" { None } else { Some(t) });
     let status_filter = params.status.as_deref();
 
-    let actions =
-        action_log::get_actions_paginated(&state.db, 10_000, 0, type_filter, status_filter).await?;
+    let actions = action_log::get_actions_paginated_for(
+        &state.db,
+        &ctx.account_id,
+        10_000,
+        0,
+        type_filter,
+        status_filter,
+    )
+    .await?;
 
     if params.format == "json" {
         let body = serde_json::to_string(&actions).unwrap_or_else(|_| "[]".to_string());
@@ -149,7 +162,10 @@ fn escape_csv(value: &str) -> String {
 }
 
 /// `GET /api/activity/rate-limits` — current daily rate limit usage.
-pub async fn rate_limit_usage(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
-    let usage = rate_limits::get_daily_usage(&state.db).await?;
+pub async fn rate_limit_usage(
+    State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
+) -> Result<Json<Value>, ApiError> {
+    let usage = rate_limits::get_daily_usage_for(&state.db, &ctx.account_id).await?;
     Ok(Json(json!(usage)))
 }

@@ -4,6 +4,7 @@
 //! and policy decisions. Provides windowed aggregation queries for
 //! observability MCP tools.
 
+use super::accounts::DEFAULT_ACCOUNT_ID;
 use super::DbPool;
 use crate::error::StorageError;
 use serde::Serialize;
@@ -34,16 +35,18 @@ pub struct TelemetryParams<'a> {
     pub metadata: Option<&'a str>,
 }
 
-/// Insert a telemetry entry.
-pub async fn log_telemetry(
+/// Insert a telemetry entry for a specific account.
+pub async fn log_telemetry_for(
     pool: &DbPool,
+    account_id: &str,
     params: &TelemetryParams<'_>,
 ) -> Result<(), StorageError> {
     sqlx::query(
         "INSERT INTO mcp_telemetry \
-         (tool_name, category, latency_ms, success, error_code, policy_decision, metadata) \
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+         (account_id, tool_name, category, latency_ms, success, error_code, policy_decision, metadata) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
+    .bind(account_id)
     .bind(params.tool_name)
     .bind(params.category)
     .bind(params.latency_ms as i64)
@@ -55,6 +58,14 @@ pub async fn log_telemetry(
     .await
     .map_err(|e| StorageError::Query { source: e })?;
     Ok(())
+}
+
+/// Insert a telemetry entry.
+pub async fn log_telemetry(
+    pool: &DbPool,
+    params: &TelemetryParams<'_>,
+) -> Result<(), StorageError> {
+    log_telemetry_for(pool, DEFAULT_ACCOUNT_ID, params).await
 }
 
 /// Aggregated metrics for a single tool.
@@ -86,9 +97,10 @@ struct MetricsAggRow {
     max_lat: i64,
 }
 
-/// Get aggregated metrics per tool in a time window.
-pub async fn get_metrics_since(
+/// Get aggregated metrics per tool in a time window for a specific account.
+pub async fn get_metrics_since_for(
     pool: &DbPool,
+    account_id: &str,
     since: &str,
 ) -> Result<Vec<ToolMetrics>, StorageError> {
     // First get basic aggregates per tool
@@ -100,10 +112,11 @@ pub async fn get_metrics_since(
          AVG(latency_ms) as avg_lat, \
          MIN(latency_ms) as min_lat, \
          MAX(latency_ms) as max_lat \
-         FROM mcp_telemetry WHERE created_at >= ? \
+         FROM mcp_telemetry WHERE created_at >= ? AND account_id = ? \
          GROUP BY tool_name, category ORDER BY total DESC",
     )
     .bind(since)
+    .bind(account_id)
     .fetch_all(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
@@ -123,10 +136,11 @@ pub async fn get_metrics_since(
         // Compute percentiles by fetching sorted latencies for this tool
         let latencies: Vec<(i64,)> = sqlx::query_as(
             "SELECT latency_ms FROM mcp_telemetry \
-             WHERE created_at >= ? AND tool_name = ? ORDER BY latency_ms ASC",
+             WHERE created_at >= ? AND tool_name = ? AND account_id = ? ORDER BY latency_ms ASC",
         )
         .bind(since)
         .bind(&tool_name)
+        .bind(account_id)
         .fetch_all(pool)
         .await
         .map_err(|e| StorageError::Query { source: e })?;
@@ -157,6 +171,14 @@ pub async fn get_metrics_since(
     Ok(results)
 }
 
+/// Get aggregated metrics per tool in a time window.
+pub async fn get_metrics_since(
+    pool: &DbPool,
+    since: &str,
+) -> Result<Vec<ToolMetrics>, StorageError> {
+    get_metrics_since_for(pool, DEFAULT_ACCOUNT_ID, since).await
+}
+
 /// Error breakdown: error_code → count, grouped by tool.
 #[derive(Debug, Clone, Serialize)]
 pub struct ErrorBreakdown {
@@ -166,20 +188,22 @@ pub struct ErrorBreakdown {
     pub latest_at: String,
 }
 
-/// Get error distribution since a timestamp.
-pub async fn get_error_breakdown(
+/// Get error distribution since a timestamp for a specific account.
+pub async fn get_error_breakdown_for(
     pool: &DbPool,
+    account_id: &str,
     since: &str,
 ) -> Result<Vec<ErrorBreakdown>, StorageError> {
     let rows: Vec<(String, String, i64, String)> = sqlx::query_as(
         "SELECT tool_name, COALESCE(error_code, 'unknown') as err, \
          COUNT(*) as cnt, MAX(created_at) as latest \
          FROM mcp_telemetry \
-         WHERE created_at >= ? AND success = 0 \
+         WHERE created_at >= ? AND success = 0 AND account_id = ? \
          GROUP BY tool_name, error_code \
          ORDER BY cnt DESC",
     )
     .bind(since)
+    .bind(account_id)
     .fetch_all(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
@@ -195,6 +219,14 @@ pub async fn get_error_breakdown(
         .collect())
 }
 
+/// Get error distribution since a timestamp.
+pub async fn get_error_breakdown(
+    pool: &DbPool,
+    since: &str,
+) -> Result<Vec<ErrorBreakdown>, StorageError> {
+    get_error_breakdown_for(pool, DEFAULT_ACCOUNT_ID, since).await
+}
+
 /// Summary statistics across all tools.
 #[derive(Debug, Clone, Serialize)]
 pub struct TelemetrySummary {
@@ -207,33 +239,41 @@ pub struct TelemetrySummary {
     pub policy_decisions: HashMap<String, i64>,
 }
 
-/// Get summary statistics since a timestamp.
-pub async fn get_summary(pool: &DbPool, since: &str) -> Result<TelemetrySummary, StorageError> {
+/// Get summary statistics since a timestamp for a specific account.
+pub async fn get_summary_for(
+    pool: &DbPool,
+    account_id: &str,
+    since: &str,
+) -> Result<TelemetrySummary, StorageError> {
     let (total, successes, failures, avg_lat): (i64, i64, i64, f64) = sqlx::query_as(
         "SELECT COUNT(*), \
          SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END), \
          SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), \
          COALESCE(AVG(latency_ms), 0.0) \
-         FROM mcp_telemetry WHERE created_at >= ?",
+         FROM mcp_telemetry WHERE created_at >= ? AND account_id = ?",
     )
     .bind(since)
+    .bind(account_id)
     .fetch_one(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
 
-    let (unique_tools,): (i64,) =
-        sqlx::query_as("SELECT COUNT(DISTINCT tool_name) FROM mcp_telemetry WHERE created_at >= ?")
-            .bind(since)
-            .fetch_one(pool)
-            .await
-            .map_err(|e| StorageError::Query { source: e })?;
+    let (unique_tools,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(DISTINCT tool_name) FROM mcp_telemetry WHERE created_at >= ? AND account_id = ?",
+    )
+    .bind(since)
+    .bind(account_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
 
     let policy_rows: Vec<(String, i64)> = sqlx::query_as(
         "SELECT COALESCE(policy_decision, 'none') as pd, COUNT(*) \
-         FROM mcp_telemetry WHERE created_at >= ? \
+         FROM mcp_telemetry WHERE created_at >= ? AND account_id = ? \
          GROUP BY policy_decision",
     )
     .bind(since)
+    .bind(account_id)
     .fetch_all(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
@@ -255,20 +295,35 @@ pub async fn get_summary(pool: &DbPool, since: &str) -> Result<TelemetrySummary,
     })
 }
 
-/// Get recent telemetry entries, ordered newest-first.
-pub async fn get_recent_entries(
+/// Get summary statistics since a timestamp.
+pub async fn get_summary(pool: &DbPool, since: &str) -> Result<TelemetrySummary, StorageError> {
+    get_summary_for(pool, DEFAULT_ACCOUNT_ID, since).await
+}
+
+/// Get recent telemetry entries for a specific account, ordered newest-first.
+pub async fn get_recent_entries_for(
     pool: &DbPool,
+    account_id: &str,
     limit: u32,
 ) -> Result<Vec<TelemetryEntry>, StorageError> {
     sqlx::query_as::<_, TelemetryEntry>(
         "SELECT id, tool_name, category, latency_ms, success, \
          error_code, policy_decision, metadata, created_at \
-         FROM mcp_telemetry ORDER BY created_at DESC LIMIT ?",
+         FROM mcp_telemetry WHERE account_id = ? ORDER BY created_at DESC LIMIT ?",
     )
+    .bind(account_id)
     .bind(limit)
     .fetch_all(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })
+}
+
+/// Get recent telemetry entries, ordered newest-first.
+pub async fn get_recent_entries(
+    pool: &DbPool,
+    limit: u32,
+) -> Result<Vec<TelemetryEntry>, StorageError> {
+    get_recent_entries_for(pool, DEFAULT_ACCOUNT_ID, limit).await
 }
 
 /// Compute a percentile from sorted latency values.

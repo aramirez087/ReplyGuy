@@ -3,6 +3,7 @@
 //! Provides functions to insert replies, check for duplicates,
 //! count daily usage, and retrieve recent reply content.
 
+use super::accounts::DEFAULT_ACCOUNT_ID;
 use super::DbPool;
 use crate::error::StorageError;
 
@@ -29,14 +30,19 @@ pub struct ReplySent {
     pub error_message: Option<String>,
 }
 
-/// Insert a new reply record. Returns the auto-generated ID.
-pub async fn insert_reply(pool: &DbPool, reply: &ReplySent) -> Result<i64, StorageError> {
+/// Insert a new reply record for a specific account. Returns the auto-generated ID.
+pub async fn insert_reply_for(
+    pool: &DbPool,
+    account_id: &str,
+    reply: &ReplySent,
+) -> Result<i64, StorageError> {
     let result = sqlx::query(
         "INSERT INTO replies_sent \
-         (target_tweet_id, reply_tweet_id, reply_content, llm_provider, llm_model, \
+         (account_id, target_tweet_id, reply_tweet_id, reply_content, llm_provider, llm_model, \
           created_at, status, error_message) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
+    .bind(account_id)
     .bind(&reply.target_tweet_id)
     .bind(&reply.reply_tweet_id)
     .bind(&reply.reply_content)
@@ -52,27 +58,71 @@ pub async fn insert_reply(pool: &DbPool, reply: &ReplySent) -> Result<i64, Stora
     Ok(result.last_insert_rowid())
 }
 
-/// Fetch all replies with `created_at >= since`.
-pub async fn get_replies_since(pool: &DbPool, since: &str) -> Result<Vec<ReplySent>, StorageError> {
+/// Insert a new reply record. Returns the auto-generated ID.
+pub async fn insert_reply(pool: &DbPool, reply: &ReplySent) -> Result<i64, StorageError> {
+    insert_reply_for(pool, DEFAULT_ACCOUNT_ID, reply).await
+}
+
+/// Fetch all replies with `created_at >= since` for a specific account.
+pub async fn get_replies_since_for(
+    pool: &DbPool,
+    account_id: &str,
+    since: &str,
+) -> Result<Vec<ReplySent>, StorageError> {
     sqlx::query_as::<_, ReplySent>(
-        "SELECT * FROM replies_sent WHERE created_at >= ? ORDER BY created_at ASC",
+        "SELECT * FROM replies_sent WHERE account_id = ? AND created_at >= ? ORDER BY created_at ASC",
     )
+    .bind(account_id)
     .bind(since)
     .fetch_all(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })
 }
 
-/// Check if a reply has already been sent to a given tweet (deduplication).
-pub async fn has_replied_to(pool: &DbPool, tweet_id: &str) -> Result<bool, StorageError> {
-    let row: (i64,) =
-        sqlx::query_as("SELECT EXISTS(SELECT 1 FROM replies_sent WHERE target_tweet_id = ?)")
-            .bind(tweet_id)
-            .fetch_one(pool)
-            .await
-            .map_err(|e| StorageError::Query { source: e })?;
+/// Fetch all replies with `created_at >= since`.
+pub async fn get_replies_since(pool: &DbPool, since: &str) -> Result<Vec<ReplySent>, StorageError> {
+    get_replies_since_for(pool, DEFAULT_ACCOUNT_ID, since).await
+}
+
+/// Check if a reply has already been sent to a given tweet for a specific account (deduplication).
+pub async fn has_replied_to_for(
+    pool: &DbPool,
+    account_id: &str,
+    tweet_id: &str,
+) -> Result<bool, StorageError> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT EXISTS(SELECT 1 FROM replies_sent WHERE account_id = ? AND target_tweet_id = ?)",
+    )
+    .bind(account_id)
+    .bind(tweet_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
 
     Ok(row.0 == 1)
+}
+
+/// Check if a reply has already been sent to a given tweet (deduplication).
+pub async fn has_replied_to(pool: &DbPool, tweet_id: &str) -> Result<bool, StorageError> {
+    has_replied_to_for(pool, DEFAULT_ACCOUNT_ID, tweet_id).await
+}
+
+/// Get recent reply contents for a specific account for phrasing deduplication.
+pub async fn get_recent_reply_contents_for(
+    pool: &DbPool,
+    account_id: &str,
+    limit: i64,
+) -> Result<Vec<String>, StorageError> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT reply_content FROM replies_sent WHERE account_id = ? ORDER BY created_at DESC LIMIT ?",
+    )
+    .bind(account_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(rows.into_iter().map(|r| r.0).collect())
 }
 
 /// Get recent reply contents for phrasing deduplication.
@@ -80,25 +130,45 @@ pub async fn get_recent_reply_contents(
     pool: &DbPool,
     limit: i64,
 ) -> Result<Vec<String>, StorageError> {
-    let rows: Vec<(String,)> =
-        sqlx::query_as("SELECT reply_content FROM replies_sent ORDER BY created_at DESC LIMIT ?")
-            .bind(limit)
-            .fetch_all(pool)
-            .await
-            .map_err(|e| StorageError::Query { source: e })?;
+    get_recent_reply_contents_for(pool, DEFAULT_ACCOUNT_ID, limit).await
+}
 
-    Ok(rows.into_iter().map(|r| r.0).collect())
+/// Count replies sent today (UTC) for a specific account.
+pub async fn count_replies_today_for(pool: &DbPool, account_id: &str) -> Result<i64, StorageError> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM replies_sent WHERE account_id = ? AND date(created_at) = date('now')",
+    )
+    .bind(account_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(row.0)
 }
 
 /// Count replies sent today (UTC).
 pub async fn count_replies_today(pool: &DbPool) -> Result<i64, StorageError> {
-    let row: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM replies_sent WHERE date(created_at) = date('now')")
-            .fetch_one(pool)
-            .await
-            .map_err(|e| StorageError::Query { source: e })?;
+    count_replies_today_for(pool, DEFAULT_ACCOUNT_ID).await
+}
 
-    Ok(row.0)
+/// Get replies within a date range for a specific account, ordered by creation time.
+pub async fn get_replies_in_range_for(
+    pool: &DbPool,
+    account_id: &str,
+    from: &str,
+    to: &str,
+) -> Result<Vec<ReplySent>, StorageError> {
+    sqlx::query_as::<_, ReplySent>(
+        "SELECT * FROM replies_sent \
+         WHERE account_id = ? AND created_at BETWEEN ? AND ? \
+         ORDER BY created_at ASC",
+    )
+    .bind(account_id)
+    .bind(from)
+    .bind(to)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })
 }
 
 /// Get replies within a date range, ordered by creation time.
@@ -107,13 +177,22 @@ pub async fn get_replies_in_range(
     from: &str,
     to: &str,
 ) -> Result<Vec<ReplySent>, StorageError> {
+    get_replies_in_range_for(pool, DEFAULT_ACCOUNT_ID, from, to).await
+}
+
+/// Get the most recent replies for a specific account, newest first, with pagination.
+pub async fn get_recent_replies_for(
+    pool: &DbPool,
+    account_id: &str,
+    limit: u32,
+    offset: u32,
+) -> Result<Vec<ReplySent>, StorageError> {
     sqlx::query_as::<_, ReplySent>(
-        "SELECT * FROM replies_sent \
-         WHERE created_at BETWEEN ? AND ? \
-         ORDER BY created_at ASC",
+        "SELECT * FROM replies_sent WHERE account_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
     )
-    .bind(from)
-    .bind(to)
+    .bind(account_id)
+    .bind(limit)
+    .bind(offset)
     .fetch_all(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })
@@ -125,14 +204,7 @@ pub async fn get_recent_replies(
     limit: u32,
     offset: u32,
 ) -> Result<Vec<ReplySent>, StorageError> {
-    sqlx::query_as::<_, ReplySent>(
-        "SELECT * FROM replies_sent ORDER BY created_at DESC LIMIT ? OFFSET ?",
-    )
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| StorageError::Query { source: e })
+    get_recent_replies_for(pool, DEFAULT_ACCOUNT_ID, limit, offset).await
 }
 
 #[cfg(test)]

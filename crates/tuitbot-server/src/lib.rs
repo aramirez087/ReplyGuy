@@ -3,6 +3,7 @@
 //! Exposes `tuitbot-core`'s storage layer as a REST API with read + write
 //! endpoints, local bearer-token auth, and a WebSocket for real-time events.
 
+pub mod account;
 pub mod auth;
 pub mod error;
 pub mod routes;
@@ -189,6 +190,23 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/runtime/status", get(routes::runtime::status))
         .route("/runtime/start", post(routes::runtime::start))
         .route("/runtime/stop", post(routes::runtime::stop))
+        // Accounts
+        .route(
+            "/accounts",
+            get(routes::accounts::list_accounts).post(routes::accounts::create_account),
+        )
+        .route(
+            "/accounts/{id}/roles",
+            get(routes::accounts::list_roles)
+                .post(routes::accounts::set_role)
+                .delete(routes::accounts::remove_role),
+        )
+        .route(
+            "/accounts/{id}",
+            get(routes::accounts::get_account)
+                .patch(routes::accounts::update_account)
+                .delete(routes::accounts::delete_account),
+        )
         // WebSocket
         .route("/ws", get(ws::ws_handler))
         // Auth middleware — applied to all routes; health is exempted internally.

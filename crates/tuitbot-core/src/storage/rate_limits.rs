@@ -3,6 +3,7 @@
 //! Rate limits are stored in SQLite so they persist across restarts.
 //! The check and reset logic uses transactions for atomicity.
 
+use super::accounts::DEFAULT_ACCOUNT_ID;
 use super::DbPool;
 use crate::config::{IntervalsConfig, LimitsConfig};
 use crate::error::StorageError;
@@ -23,12 +24,13 @@ pub struct RateLimit {
     pub period_seconds: i64,
 }
 
-/// Initialize rate limit rows from configuration.
+/// Initialize rate limit rows from configuration for a specific account.
 ///
 /// Uses `INSERT OR IGNORE` so existing counters are preserved across restarts.
 /// Only inserts rows for action types that do not already exist.
-pub async fn init_rate_limits(
+pub async fn init_rate_limits_for(
     pool: &DbPool,
+    account_id: &str,
     config: &LimitsConfig,
     intervals: &IntervalsConfig,
 ) -> Result<(), StorageError> {
@@ -46,9 +48,10 @@ pub async fn init_rate_limits(
     for (action_type, max_requests, period_seconds) in defaults {
         sqlx::query(
             "INSERT OR IGNORE INTO rate_limits \
-             (action_type, request_count, period_start, max_requests, period_seconds) \
-             VALUES (?, 0, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?, ?)",
+             (account_id, action_type, request_count, period_start, max_requests, period_seconds) \
+             VALUES (?, ?, 0, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?, ?)",
         )
+        .bind(account_id)
         .bind(action_type)
         .bind(max_requests)
         .bind(period_seconds)
@@ -60,15 +63,32 @@ pub async fn init_rate_limits(
     Ok(())
 }
 
-/// Initialize the MCP mutation rate limit row.
+/// Initialize rate limit rows from configuration.
+///
+/// Uses `INSERT OR IGNORE` so existing counters are preserved across restarts.
+/// Only inserts rows for action types that do not already exist.
+pub async fn init_rate_limits(
+    pool: &DbPool,
+    config: &LimitsConfig,
+    intervals: &IntervalsConfig,
+) -> Result<(), StorageError> {
+    init_rate_limits_for(pool, DEFAULT_ACCOUNT_ID, config, intervals).await
+}
+
+/// Initialize the MCP mutation rate limit row for a specific account.
 ///
 /// Uses `INSERT OR IGNORE` so an existing counter is preserved across restarts.
-pub async fn init_mcp_rate_limit(pool: &DbPool, max_per_hour: u32) -> Result<(), StorageError> {
+pub async fn init_mcp_rate_limit_for(
+    pool: &DbPool,
+    account_id: &str,
+    max_per_hour: u32,
+) -> Result<(), StorageError> {
     sqlx::query(
         "INSERT OR IGNORE INTO rate_limits \
-         (action_type, request_count, period_start, max_requests, period_seconds) \
-         VALUES ('mcp_mutation', 0, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?, 3600)",
+         (account_id, action_type, request_count, period_start, max_requests, period_seconds) \
+         VALUES (?, 'mcp_mutation', 0, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?, 3600)",
     )
+    .bind(account_id)
     .bind(i64::from(max_per_hour))
     .execute(pool)
     .await
@@ -77,7 +97,14 @@ pub async fn init_mcp_rate_limit(pool: &DbPool, max_per_hour: u32) -> Result<(),
     Ok(())
 }
 
-/// Check whether the rate limit for an action type allows another request.
+/// Initialize the MCP mutation rate limit row.
+///
+/// Uses `INSERT OR IGNORE` so an existing counter is preserved across restarts.
+pub async fn init_mcp_rate_limit(pool: &DbPool, max_per_hour: u32) -> Result<(), StorageError> {
+    init_mcp_rate_limit_for(pool, DEFAULT_ACCOUNT_ID, max_per_hour).await
+}
+
+/// Check whether the rate limit for an action type allows another request for a specific account.
 ///
 /// Within a single transaction:
 /// 1. Fetches the rate limit row.
@@ -85,17 +112,25 @@ pub async fn init_mcp_rate_limit(pool: &DbPool, max_per_hour: u32) -> Result<(),
 /// 3. Returns `true` if under the limit, `false` if at or over.
 ///
 /// Does NOT increment the counter -- call `increment_rate_limit` after the action succeeds.
-pub async fn check_rate_limit(pool: &DbPool, action_type: &str) -> Result<bool, StorageError> {
+pub async fn check_rate_limit_for(
+    pool: &DbPool,
+    account_id: &str,
+    action_type: &str,
+) -> Result<bool, StorageError> {
     let mut tx = pool
         .begin()
         .await
         .map_err(|e| StorageError::Connection { source: e })?;
 
-    let row = sqlx::query_as::<_, RateLimit>("SELECT * FROM rate_limits WHERE action_type = ?")
-        .bind(action_type)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| StorageError::Query { source: e })?;
+    let row = sqlx::query_as::<_, RateLimit>(
+        "SELECT action_type, request_count, period_start, max_requests, period_seconds \
+         FROM rate_limits WHERE account_id = ? AND action_type = ?",
+    )
+    .bind(account_id)
+    .bind(action_type)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
 
     let limit = match row {
         Some(l) => l,
@@ -116,8 +151,9 @@ pub async fn check_rate_limit(pool: &DbPool, action_type: &str) -> Result<bool, 
         sqlx::query(
             "UPDATE rate_limits SET request_count = 0, \
              period_start = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
-             WHERE action_type = ?",
+             WHERE account_id = ? AND action_type = ?",
         )
+        .bind(account_id)
         .bind(action_type)
         .execute(&mut *tx)
         .await
@@ -138,13 +174,26 @@ pub async fn check_rate_limit(pool: &DbPool, action_type: &str) -> Result<bool, 
     Ok(allowed)
 }
 
-/// Atomically check and increment the rate limit counter within a single transaction.
+/// Check whether the rate limit for an action type allows another request.
+///
+/// Within a single transaction:
+/// 1. Fetches the rate limit row.
+/// 2. Resets the counter if the period has expired.
+/// 3. Returns `true` if under the limit, `false` if at or over.
+///
+/// Does NOT increment the counter -- call `increment_rate_limit` after the action succeeds.
+pub async fn check_rate_limit(pool: &DbPool, action_type: &str) -> Result<bool, StorageError> {
+    check_rate_limit_for(pool, DEFAULT_ACCOUNT_ID, action_type).await
+}
+
+/// Atomically check and increment the rate limit counter for a specific account within a single transaction.
 ///
 /// Returns `Ok(true)` if the action was permitted and the counter was incremented.
 /// Returns `Ok(false)` if the rate limit was reached.
 /// Resets the period if expired before checking.
-pub async fn check_and_increment_rate_limit(
+pub async fn check_and_increment_rate_limit_for(
     pool: &DbPool,
+    account_id: &str,
     action_type: &str,
 ) -> Result<bool, StorageError> {
     let mut tx = pool
@@ -152,11 +201,15 @@ pub async fn check_and_increment_rate_limit(
         .await
         .map_err(|e| StorageError::Connection { source: e })?;
 
-    let row = sqlx::query_as::<_, RateLimit>("SELECT * FROM rate_limits WHERE action_type = ?")
-        .bind(action_type)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| StorageError::Query { source: e })?;
+    let row = sqlx::query_as::<_, RateLimit>(
+        "SELECT action_type, request_count, period_start, max_requests, period_seconds \
+         FROM rate_limits WHERE account_id = ? AND action_type = ?",
+    )
+    .bind(account_id)
+    .bind(action_type)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
 
     let limit = match row {
         Some(l) => l,
@@ -177,8 +230,9 @@ pub async fn check_and_increment_rate_limit(
         sqlx::query(
             "UPDATE rate_limits SET request_count = 0, \
              period_start = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
-             WHERE action_type = ?",
+             WHERE account_id = ? AND action_type = ?",
         )
+        .bind(account_id)
         .bind(action_type)
         .execute(&mut *tx)
         .await
@@ -190,8 +244,10 @@ pub async fn check_and_increment_rate_limit(
 
     if current_count < limit.max_requests {
         sqlx::query(
-            "UPDATE rate_limits SET request_count = request_count + 1 WHERE action_type = ?",
+            "UPDATE rate_limits SET request_count = request_count + 1 \
+             WHERE account_id = ? AND action_type = ?",
         )
+        .bind(account_id)
         .bind(action_type)
         .execute(&mut *tx)
         .await
@@ -209,17 +265,44 @@ pub async fn check_and_increment_rate_limit(
     }
 }
 
+/// Atomically check and increment the rate limit counter within a single transaction.
+///
+/// Returns `Ok(true)` if the action was permitted and the counter was incremented.
+/// Returns `Ok(false)` if the rate limit was reached.
+/// Resets the period if expired before checking.
+pub async fn check_and_increment_rate_limit(
+    pool: &DbPool,
+    action_type: &str,
+) -> Result<bool, StorageError> {
+    check_and_increment_rate_limit_for(pool, DEFAULT_ACCOUNT_ID, action_type).await
+}
+
+/// Increment the request counter for an action type for a specific account.
+///
+/// Called after a successful action to record usage.
+pub async fn increment_rate_limit_for(
+    pool: &DbPool,
+    account_id: &str,
+    action_type: &str,
+) -> Result<(), StorageError> {
+    sqlx::query(
+        "UPDATE rate_limits SET request_count = request_count + 1 \
+         WHERE account_id = ? AND action_type = ?",
+    )
+    .bind(account_id)
+    .bind(action_type)
+    .execute(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(())
+}
+
 /// Increment the request counter for an action type.
 ///
 /// Called after a successful action to record usage.
 pub async fn increment_rate_limit(pool: &DbPool, action_type: &str) -> Result<(), StorageError> {
-    sqlx::query("UPDATE rate_limits SET request_count = request_count + 1 WHERE action_type = ?")
-        .bind(action_type)
-        .execute(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e })?;
-
-    Ok(())
+    increment_rate_limit_for(pool, DEFAULT_ACCOUNT_ID, action_type).await
 }
 
 /// Usage count for a single action type.
@@ -237,12 +320,15 @@ pub struct DailyUsage {
     pub threads: ActionUsage,
 }
 
-/// Get daily usage counts for reply, tweet, and thread actions.
+/// Get daily usage counts for reply, tweet, and thread actions for a specific account.
 ///
 /// Reads from the rate limits table and extracts only the three
 /// user-facing action types.
-pub async fn get_daily_usage(pool: &DbPool) -> Result<DailyUsage, StorageError> {
-    let limits = get_all_rate_limits(pool).await?;
+pub async fn get_daily_usage_for(
+    pool: &DbPool,
+    account_id: &str,
+) -> Result<DailyUsage, StorageError> {
+    let limits = get_all_rate_limits_for(pool, account_id).await?;
 
     let mut usage = DailyUsage {
         replies: ActionUsage { used: 0, max: 0 },
@@ -264,14 +350,36 @@ pub async fn get_daily_usage(pool: &DbPool) -> Result<DailyUsage, StorageError> 
     Ok(usage)
 }
 
+/// Get daily usage counts for reply, tweet, and thread actions.
+///
+/// Reads from the rate limits table and extracts only the three
+/// user-facing action types.
+pub async fn get_daily_usage(pool: &DbPool) -> Result<DailyUsage, StorageError> {
+    get_daily_usage_for(pool, DEFAULT_ACCOUNT_ID).await
+}
+
+/// Fetch all rate limit entries for a specific account, ordered by action type.
+///
+/// Used for status reporting and debugging.
+pub async fn get_all_rate_limits_for(
+    pool: &DbPool,
+    account_id: &str,
+) -> Result<Vec<RateLimit>, StorageError> {
+    sqlx::query_as::<_, RateLimit>(
+        "SELECT action_type, request_count, period_start, max_requests, period_seconds \
+         FROM rate_limits WHERE account_id = ? ORDER BY action_type",
+    )
+    .bind(account_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })
+}
+
 /// Fetch all rate limit entries, ordered by action type.
 ///
 /// Used for status reporting and debugging.
 pub async fn get_all_rate_limits(pool: &DbPool) -> Result<Vec<RateLimit>, StorageError> {
-    sqlx::query_as::<_, RateLimit>("SELECT * FROM rate_limits ORDER BY action_type")
-        .fetch_all(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e })
+    get_all_rate_limits_for(pool, DEFAULT_ACCOUNT_ID).await
 }
 
 // ---------------------------------------------------------------------------
@@ -280,19 +388,21 @@ pub async fn get_all_rate_limits(pool: &DbPool) -> Result<Vec<RateLimit>, Storag
 
 use crate::mcp_policy::types::{PolicyRateLimit, RateLimitDimension};
 
-/// Initialize rate limit rows for v2 policy rate limits.
+/// Initialize rate limit rows for v2 policy rate limits for a specific account.
 ///
 /// Uses `INSERT OR IGNORE` so existing counters are preserved.
-pub async fn init_policy_rate_limits(
+pub async fn init_policy_rate_limits_for(
     pool: &DbPool,
+    account_id: &str,
     limits: &[PolicyRateLimit],
 ) -> Result<(), StorageError> {
     for limit in limits {
         sqlx::query(
             "INSERT OR IGNORE INTO rate_limits \
-             (action_type, request_count, period_start, max_requests, period_seconds) \
-             VALUES (?, 0, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?, ?)",
+             (account_id, action_type, request_count, period_start, max_requests, period_seconds) \
+             VALUES (?, ?, 0, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?, ?)",
         )
+        .bind(account_id)
         .bind(&limit.key)
         .bind(i64::from(limit.max_count))
         .bind(limit.period_seconds as i64)
@@ -303,11 +413,22 @@ pub async fn init_policy_rate_limits(
     Ok(())
 }
 
-/// Check all applicable rate limits for a tool invocation.
+/// Initialize rate limit rows for v2 policy rate limits.
+///
+/// Uses `INSERT OR IGNORE` so existing counters are preserved.
+pub async fn init_policy_rate_limits(
+    pool: &DbPool,
+    limits: &[PolicyRateLimit],
+) -> Result<(), StorageError> {
+    init_policy_rate_limits_for(pool, DEFAULT_ACCOUNT_ID, limits).await
+}
+
+/// Check all applicable rate limits for a tool invocation for a specific account.
 ///
 /// Returns the key of the first exceeded limit, or `None` if all pass.
-pub async fn check_policy_rate_limits(
+pub async fn check_policy_rate_limits_for(
     pool: &DbPool,
+    account_id: &str,
     tool_name: &str,
     category: &str,
     limits: &[PolicyRateLimit],
@@ -324,7 +445,7 @@ pub async fn check_policy_rate_limits(
             continue;
         }
 
-        let allowed = check_rate_limit(pool, &limit.key).await?;
+        let allowed = check_rate_limit_for(pool, account_id, &limit.key).await?;
         if !allowed {
             return Ok(Some(limit.key.clone()));
         }
@@ -332,9 +453,22 @@ pub async fn check_policy_rate_limits(
     Ok(None)
 }
 
-/// Increment all applicable rate limit counters after a successful mutation.
-pub async fn record_policy_rate_limits(
+/// Check all applicable rate limits for a tool invocation.
+///
+/// Returns the key of the first exceeded limit, or `None` if all pass.
+pub async fn check_policy_rate_limits(
     pool: &DbPool,
+    tool_name: &str,
+    category: &str,
+    limits: &[PolicyRateLimit],
+) -> Result<Option<String>, StorageError> {
+    check_policy_rate_limits_for(pool, DEFAULT_ACCOUNT_ID, tool_name, category, limits).await
+}
+
+/// Increment all applicable rate limit counters for a specific account after a successful mutation.
+pub async fn record_policy_rate_limits_for(
+    pool: &DbPool,
+    account_id: &str,
     tool_name: &str,
     category: &str,
     limits: &[PolicyRateLimit],
@@ -349,10 +483,20 @@ pub async fn record_policy_rate_limits(
 
         if matches {
             // Best-effort: if the row doesn't exist yet, skip it
-            let _ = increment_rate_limit(pool, &limit.key).await;
+            let _ = increment_rate_limit_for(pool, account_id, &limit.key).await;
         }
     }
     Ok(())
+}
+
+/// Increment all applicable rate limit counters after a successful mutation.
+pub async fn record_policy_rate_limits(
+    pool: &DbPool,
+    tool_name: &str,
+    category: &str,
+    limits: &[PolicyRateLimit],
+) -> Result<(), StorageError> {
+    record_policy_rate_limits_for(pool, DEFAULT_ACCOUNT_ID, tool_name, category, limits).await
 }
 
 #[cfg(test)]

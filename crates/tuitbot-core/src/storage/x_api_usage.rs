@@ -2,6 +2,7 @@
 
 use crate::error::StorageError;
 
+use super::accounts::DEFAULT_ACCOUNT_ID;
 use super::DbPool;
 
 /// Known per-call costs for X API endpoints (pay-per-use pricing, Feb 2026).
@@ -76,18 +77,20 @@ pub struct EndpointBreakdown {
     pub error_count: i64,
 }
 
-/// Insert a new X API usage record.
-pub async fn insert_x_api_usage(
+/// Insert a new X API usage record for a specific account.
+pub async fn insert_x_api_usage_for(
     pool: &DbPool,
+    account_id: &str,
     endpoint: &str,
     method: &str,
     status_code: i32,
     cost_usd: f64,
 ) -> Result<(), StorageError> {
     sqlx::query(
-        "INSERT INTO x_api_usage (endpoint, method, status_code, cost_usd)
-         VALUES (?1, ?2, ?3, ?4)",
+        "INSERT INTO x_api_usage (account_id, endpoint, method, status_code, cost_usd)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
     )
+    .bind(account_id)
     .bind(endpoint)
     .bind(method)
     .bind(status_code)
@@ -98,8 +101,30 @@ pub async fn insert_x_api_usage(
     Ok(())
 }
 
-/// Get usage summary across time windows.
-pub async fn get_usage_summary(pool: &DbPool) -> Result<XApiUsageSummary, StorageError> {
+/// Insert a new X API usage record.
+pub async fn insert_x_api_usage(
+    pool: &DbPool,
+    endpoint: &str,
+    method: &str,
+    status_code: i32,
+    cost_usd: f64,
+) -> Result<(), StorageError> {
+    insert_x_api_usage_for(
+        pool,
+        DEFAULT_ACCOUNT_ID,
+        endpoint,
+        method,
+        status_code,
+        cost_usd,
+    )
+    .await
+}
+
+/// Get usage summary across time windows for a specific account.
+pub async fn get_usage_summary_for(
+    pool: &DbPool,
+    account_id: &str,
+) -> Result<XApiUsageSummary, StorageError> {
     let row: (f64, i64, f64, i64, f64, i64, f64, i64) = sqlx::query_as(
         "SELECT
             COALESCE(SUM(CASE WHEN created_at >= date('now') THEN cost_usd ELSE 0.0 END), 0.0),
@@ -110,8 +135,10 @@ pub async fn get_usage_summary(pool: &DbPool) -> Result<XApiUsageSummary, Storag
             COALESCE(SUM(CASE WHEN created_at >= date('now', '-30 days') THEN 1 ELSE 0 END), 0),
             COALESCE(SUM(cost_usd), 0.0),
             COUNT(*)
-        FROM x_api_usage",
+        FROM x_api_usage
+        WHERE account_id = ?",
     )
+    .bind(account_id)
     .fetch_one(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
@@ -128,9 +155,15 @@ pub async fn get_usage_summary(pool: &DbPool) -> Result<XApiUsageSummary, Storag
     })
 }
 
-/// Get daily usage aggregation for chart data.
-pub async fn get_daily_usage(
+/// Get usage summary across time windows.
+pub async fn get_usage_summary(pool: &DbPool) -> Result<XApiUsageSummary, StorageError> {
+    get_usage_summary_for(pool, DEFAULT_ACCOUNT_ID).await
+}
+
+/// Get daily usage aggregation for chart data for a specific account.
+pub async fn get_daily_usage_for(
     pool: &DbPool,
+    account_id: &str,
     days: u32,
 ) -> Result<Vec<DailyXApiUsage>, StorageError> {
     let rows: Vec<(String, i64, f64)> = sqlx::query_as(
@@ -139,10 +172,11 @@ pub async fn get_daily_usage(
             COUNT(*),
             COALESCE(SUM(cost_usd), 0.0)
         FROM x_api_usage
-        WHERE created_at >= date('now', '-' || ?1 || ' days')
+        WHERE account_id = ? AND created_at >= date('now', '-' || ? || ' days')
         GROUP BY day
         ORDER BY day",
     )
+    .bind(account_id)
     .bind(days)
     .fetch_all(pool)
     .await
@@ -154,9 +188,18 @@ pub async fn get_daily_usage(
         .collect())
 }
 
-/// Get usage breakdown by endpoint + method.
-pub async fn get_endpoint_breakdown(
+/// Get daily usage aggregation for chart data.
+pub async fn get_daily_usage(
     pool: &DbPool,
+    days: u32,
+) -> Result<Vec<DailyXApiUsage>, StorageError> {
+    get_daily_usage_for(pool, DEFAULT_ACCOUNT_ID, days).await
+}
+
+/// Get usage breakdown by endpoint + method for a specific account.
+pub async fn get_endpoint_breakdown_for(
+    pool: &DbPool,
+    account_id: &str,
     days: u32,
 ) -> Result<Vec<EndpointBreakdown>, StorageError> {
     let rows: Vec<(String, String, i64, f64, i64)> = sqlx::query_as(
@@ -167,10 +210,11 @@ pub async fn get_endpoint_breakdown(
             COALESCE(SUM(cost_usd), 0.0),
             COALESCE(SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END), 0)
         FROM x_api_usage
-        WHERE created_at >= date('now', '-' || ?1 || ' days')
+        WHERE account_id = ? AND created_at >= date('now', '-' || ? || ' days')
         GROUP BY endpoint, method
         ORDER BY COUNT(*) DESC",
     )
+    .bind(account_id)
     .bind(days)
     .fetch_all(pool)
     .await
@@ -188,6 +232,14 @@ pub async fn get_endpoint_breakdown(
             },
         )
         .collect())
+}
+
+/// Get usage breakdown by endpoint + method.
+pub async fn get_endpoint_breakdown(
+    pool: &DbPool,
+    days: u32,
+) -> Result<Vec<EndpointBreakdown>, StorageError> {
+    get_endpoint_breakdown_for(pool, DEFAULT_ACCOUNT_ID, days).await
 }
 
 #[cfg(test)]

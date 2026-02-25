@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use tuitbot_core::config::Config;
 use tuitbot_core::storage::strategy;
 
+use crate::account::{require_mutate, AccountContext};
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -24,8 +25,12 @@ fn default_history_limit() -> u32 {
 }
 
 /// `GET /api/strategy/current` — current week's report (computed on-the-fly if missing).
-pub async fn current(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
+pub async fn current(
+    State(state): State<Arc<AppState>>,
+    _ctx: AccountContext,
+) -> Result<Json<Value>, ApiError> {
     let config = load_config(&state)?;
+    // TODO: account-scope strategy computation (strategy metrics lack `_for` variants)
     let report = tuitbot_core::strategy::report::get_or_compute_current(&state.db, &config).await?;
     Ok(Json(report_to_json(report)))
 }
@@ -33,26 +38,39 @@ pub async fn current(State(state): State<Arc<AppState>>) -> Result<Json<Value>, 
 /// `GET /api/strategy/history` — recent weekly reports for trend view.
 pub async fn history(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Query(params): Query<HistoryQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let reports = strategy::get_recent_reports(&state.db, params.limit).await?;
+    let reports =
+        strategy::get_recent_reports_for(&state.db, &ctx.account_id, params.limit).await?;
     let items: Vec<Value> = reports.into_iter().map(report_to_json).collect();
     Ok(Json(json!(items)))
 }
 
 /// `POST /api/strategy/refresh` — force recompute the current week's report.
-pub async fn refresh(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
+pub async fn refresh(
+    State(state): State<Arc<AppState>>,
+    _ctx: AccountContext,
+) -> Result<Json<Value>, ApiError> {
+    require_mutate(&_ctx)?;
     let config = load_config(&state)?;
+    // TODO: account-scope strategy computation (strategy metrics lack `_for` variants)
     let report = tuitbot_core::strategy::report::refresh_current(&state.db, &config).await?;
     Ok(Json(report_to_json(report)))
 }
 
 /// `GET /api/strategy/inputs` — current strategy inputs (pillars, keywords, targets, topics).
-pub async fn inputs(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
+pub async fn inputs(
+    State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
+) -> Result<Json<Value>, ApiError> {
     let config = load_config(&state)?;
 
-    let targets =
-        tuitbot_core::storage::target_accounts::get_active_target_accounts(&state.db).await?;
+    let targets = tuitbot_core::storage::target_accounts::get_active_target_accounts_for(
+        &state.db,
+        &ctx.account_id,
+    )
+    .await?;
     let target_usernames: Vec<String> = targets.into_iter().map(|t| t.username).collect();
 
     Ok(Json(json!({

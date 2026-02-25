@@ -1,5 +1,6 @@
 const BASE_URL = 'http://localhost:3001';
 let token: string = '';
+let accountId: string = '00000000-0000-0000-0000-000000000000';
 
 export function setToken(t: string) {
 	token = t;
@@ -9,12 +10,21 @@ export function getToken(): string {
 	return token;
 }
 
+export function setAccountId(id: string) {
+	accountId = id;
+}
+
+export function getAccountId(): string {
+	return accountId;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
 	const res = await fetch(`${BASE_URL}${path}`, {
 		...options,
 		headers: {
 			'Content-Type': 'application/json',
 			Authorization: `Bearer ${token}`,
+			'X-Account-Id': accountId,
 			...options?.headers
 		}
 	});
@@ -565,7 +575,8 @@ async function uploadFile(path: string, file: File): Promise<MediaUploadResponse
 	const res = await fetch(`${BASE_URL}${path}`, {
 		method: 'POST',
 		headers: {
-			Authorization: `Bearer ${token}`
+			Authorization: `Bearer ${token}`,
+			'X-Account-Id': accountId
 			// No Content-Type — browser sets multipart boundary automatically.
 		},
 		body: formData
@@ -579,8 +590,38 @@ async function uploadFile(path: string, file: File): Promise<MediaUploadResponse
 
 // --- API client ---
 
+// --- Account types ---
+
+export interface Account {
+	id: string;
+	label: string;
+	x_username: string | null;
+	x_user_id: string | null;
+	config_overrides: string | null;
+	status: string;
+	created_at: string;
+	updated_at: string;
+}
+
 export const api = {
 	health: () => request<HealthResponse>('/api/health'),
+
+	accounts: {
+		list: () => request<Account[]>('/api/accounts'),
+		get: (id: string) => request<Account>(`/api/accounts/${id}`),
+		create: (label: string) =>
+			request<Account>('/api/accounts', {
+				method: 'POST',
+				body: JSON.stringify({ label })
+			}),
+		update: (id: string, data: { label?: string; config_overrides?: string }) =>
+			request<Account>(`/api/accounts/${id}`, {
+				method: 'PATCH',
+				body: JSON.stringify(data)
+			}),
+		delete: (id: string) =>
+			request<{ status: string }>(`/api/accounts/${id}`, { method: 'DELETE' })
+	},
 
 	analytics: {
 		summary: () => request<AnalyticsSummary>('/api/analytics/summary'),

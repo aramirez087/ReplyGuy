@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use tauri::Manager;
@@ -67,8 +68,8 @@ pub fn run() {
                     data_dir: dir,
                     event_tx,
                     api_token,
-                    runtime: Mutex::new(None),
-                    content_generator: None,
+                    runtimes: Mutex::new(HashMap::new()),
+                    content_generators: Mutex::new(HashMap::new()),
                     circuit_breaker: None,
                 })
             });

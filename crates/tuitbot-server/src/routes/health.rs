@@ -22,11 +22,11 @@ pub async fn health_detailed(State(state): State<Arc<AppState>>) -> Json<Value> 
     let db_health = tuitbot_core::storage::health::check_db_health(&state.db).await;
     let db_healthy = db_health.reachable && db_health.wal_mode;
 
-    // Runtime status
-    let runtime_guard = state.runtime.lock().await;
-    let runtime_running = runtime_guard.is_some();
-    let runtime_tasks = runtime_guard.as_ref().map(|r| r.task_count()).unwrap_or(0);
-    drop(runtime_guard);
+    // Runtime status (aggregate across all accounts)
+    let runtimes_guard = state.runtimes.lock().await;
+    let runtime_running = !runtimes_guard.is_empty();
+    let runtime_tasks: usize = runtimes_guard.values().map(|r| r.task_count()).sum();
+    drop(runtimes_guard);
 
     // Circuit breaker
     let (cb_state, cb_error_count, cb_cooldown) = if let Some(ref cb) = state.circuit_breaker {

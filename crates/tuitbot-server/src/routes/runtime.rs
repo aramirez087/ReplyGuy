@@ -7,15 +7,20 @@ use axum::Json;
 use serde_json::{json, Value};
 use tuitbot_core::automation::Runtime;
 
+use crate::account::{require_mutate, AccountContext};
 use crate::error::ApiError;
 use crate::state::AppState;
 use crate::ws::WsEvent;
 
 /// `GET /api/runtime/status` — check if the automation runtime is running.
-pub async fn status(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
-    let runtime = state.runtime.lock().await;
+pub async fn status(
+    State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
+) -> Result<Json<Value>, ApiError> {
+    let runtimes = state.runtimes.lock().await;
+    let runtime = runtimes.get(&ctx.account_id);
     let running = runtime.is_some();
-    let task_count = runtime.as_ref().map_or(0, |r| r.task_count());
+    let task_count = runtime.map_or(0, |r| r.task_count());
 
     Ok(Json(json!({
         "running": running,
@@ -27,14 +32,18 @@ pub async fn status(State(state): State<Arc<AppState>>) -> Result<Json<Value>, A
 ///
 /// Creates an empty `Runtime` (no loops spawned yet — full loop setup requires
 /// X API client and LLM provider which are not available in the server context).
-pub async fn start(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
-    let mut runtime = state.runtime.lock().await;
+pub async fn start(
+    State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
+) -> Result<Json<Value>, ApiError> {
+    require_mutate(&ctx)?;
+    let mut runtimes = state.runtimes.lock().await;
 
-    if runtime.is_some() {
+    if runtimes.contains_key(&ctx.account_id) {
         return Err(ApiError::Conflict("runtime is already running".to_string()));
     }
 
-    *runtime = Some(Runtime::new());
+    runtimes.insert(ctx.account_id.clone(), Runtime::new());
 
     // Publish runtime status event.
     let _ = state.event_tx.send(WsEvent::RuntimeStatus {
@@ -46,10 +55,14 @@ pub async fn start(State(state): State<Arc<AppState>>) -> Result<Json<Value>, Ap
 }
 
 /// `POST /api/runtime/stop` — gracefully stop the automation runtime.
-pub async fn stop(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
-    let mut runtime_guard = state.runtime.lock().await;
+pub async fn stop(
+    State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
+) -> Result<Json<Value>, ApiError> {
+    require_mutate(&ctx)?;
+    let mut runtimes = state.runtimes.lock().await;
 
-    match runtime_guard.take() {
+    match runtimes.remove(&ctx.account_id) {
         Some(mut rt) => {
             rt.shutdown().await;
 

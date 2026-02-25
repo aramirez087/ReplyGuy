@@ -3,6 +3,7 @@
 //! Stores weekly strategy reports that aggregate engagement metrics,
 //! follower growth, top/bottom topics, and actionable recommendations.
 
+use super::accounts::DEFAULT_ACCOUNT_ID;
 use super::DbPool;
 use crate::error::StorageError;
 
@@ -35,20 +36,21 @@ pub struct StrategyReportRow {
     pub created_at: String,
 }
 
-/// Insert a new strategy report (or replace if the same `week_start` exists).
+/// Insert a new strategy report (or replace if the same `week_start` exists) for a specific account.
 ///
 /// Returns the row id of the inserted report.
-pub async fn insert_strategy_report(
+pub async fn insert_strategy_report_for(
     pool: &DbPool,
+    account_id: &str,
     report: &StrategyReportRow,
 ) -> Result<i64, StorageError> {
     let result = sqlx::query(
         "INSERT INTO strategy_reports \
-         (week_start, week_end, replies_sent, tweets_posted, threads_posted, target_replies, \
+         (account_id, week_start, week_end, replies_sent, tweets_posted, threads_posted, target_replies, \
           follower_start, follower_end, follower_delta, \
           avg_reply_score, avg_tweet_score, reply_acceptance_rate, estimated_follow_conversion, \
           top_topics_json, bottom_topics_json, top_content_json, recommendations_json) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
          ON CONFLICT(week_start) DO UPDATE SET \
          week_end = excluded.week_end, \
          replies_sent = excluded.replies_sent, \
@@ -67,6 +69,7 @@ pub async fn insert_strategy_report(
          top_content_json = excluded.top_content_json, \
          recommendations_json = excluded.recommendations_json",
     )
+    .bind(account_id)
     .bind(&report.week_start)
     .bind(&report.week_end)
     .bind(report.replies_sent)
@@ -91,16 +94,54 @@ pub async fn insert_strategy_report(
     Ok(result.last_insert_rowid())
 }
 
+/// Insert a new strategy report (or replace if the same `week_start` exists).
+///
+/// Returns the row id of the inserted report.
+pub async fn insert_strategy_report(
+    pool: &DbPool,
+    report: &StrategyReportRow,
+) -> Result<i64, StorageError> {
+    insert_strategy_report_for(pool, DEFAULT_ACCOUNT_ID, report).await
+}
+
+/// Get a strategy report by its `week_start` date for a specific account.
+pub async fn get_strategy_report_for(
+    pool: &DbPool,
+    account_id: &str,
+    week_start: &str,
+) -> Result<Option<StrategyReportRow>, StorageError> {
+    sqlx::query_as::<_, StrategyReportRow>(
+        "SELECT * FROM strategy_reports WHERE week_start = ? AND account_id = ?",
+    )
+    .bind(week_start)
+    .bind(account_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })
+}
+
 /// Get a strategy report by its `week_start` date (ISO date string, e.g. "2026-02-24").
 pub async fn get_strategy_report(
     pool: &DbPool,
     week_start: &str,
 ) -> Result<Option<StrategyReportRow>, StorageError> {
-    sqlx::query_as::<_, StrategyReportRow>("SELECT * FROM strategy_reports WHERE week_start = ?")
-        .bind(week_start)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e })
+    get_strategy_report_for(pool, DEFAULT_ACCOUNT_ID, week_start).await
+}
+
+/// Get recent strategy reports for a specific account, newest first.
+pub async fn get_recent_reports_for(
+    pool: &DbPool,
+    account_id: &str,
+    limit: u32,
+) -> Result<Vec<StrategyReportRow>, StorageError> {
+    sqlx::query_as::<_, StrategyReportRow>(
+        "SELECT * FROM strategy_reports WHERE account_id = ? ORDER BY week_start DESC LIMIT ?",
+    )
+    .bind(account_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })
 }
 
 /// Get recent strategy reports, newest first.
@@ -108,23 +149,27 @@ pub async fn get_recent_reports(
     pool: &DbPool,
     limit: u32,
 ) -> Result<Vec<StrategyReportRow>, StorageError> {
-    sqlx::query_as::<_, StrategyReportRow>(
-        "SELECT * FROM strategy_reports ORDER BY week_start DESC LIMIT ?",
-    )
-    .bind(limit)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| StorageError::Query { source: e })
+    get_recent_reports_for(pool, DEFAULT_ACCOUNT_ID, limit).await
 }
 
-/// Delete a strategy report by `week_start` (used for refresh/recompute).
-pub async fn delete_strategy_report(pool: &DbPool, week_start: &str) -> Result<(), StorageError> {
-    sqlx::query("DELETE FROM strategy_reports WHERE week_start = ?")
+/// Delete a strategy report by `week_start` for a specific account.
+pub async fn delete_strategy_report_for(
+    pool: &DbPool,
+    account_id: &str,
+    week_start: &str,
+) -> Result<(), StorageError> {
+    sqlx::query("DELETE FROM strategy_reports WHERE week_start = ? AND account_id = ?")
         .bind(week_start)
+        .bind(account_id)
         .execute(pool)
         .await
         .map_err(|e| StorageError::Query { source: e })?;
     Ok(())
+}
+
+/// Delete a strategy report by `week_start` (used for refresh/recompute).
+pub async fn delete_strategy_report(pool: &DbPool, week_start: &str) -> Result<(), StorageError> {
+    delete_strategy_report_for(pool, DEFAULT_ACCOUNT_ID, week_start).await
 }
 
 #[cfg(test)]

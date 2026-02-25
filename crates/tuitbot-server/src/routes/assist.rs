@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use tuitbot_core::content::ContentGenerator;
 use tuitbot_core::storage;
 
+use crate::account::AccountContext;
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -20,10 +21,17 @@ use crate::state::AppState;
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn get_generator(state: &AppState) -> Result<&Arc<ContentGenerator>, ApiError> {
-    state.content_generator.as_ref().ok_or(ApiError::BadRequest(
-        "LLM not configured — set llm.provider and llm.api_key in config.toml".to_string(),
-    ))
+async fn get_generator(
+    state: &AppState,
+    account_id: &str,
+) -> Result<Arc<ContentGenerator>, ApiError> {
+    let generators = state.content_generators.lock().await;
+    generators
+        .get(account_id)
+        .cloned()
+        .ok_or(ApiError::BadRequest(
+            "LLM not configured — set llm.provider and llm.api_key in config.toml".to_string(),
+        ))
 }
 
 // ---------------------------------------------------------------------------
@@ -43,9 +51,10 @@ pub struct AssistTweetResponse {
 
 pub async fn assist_tweet(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Json(body): Json<AssistTweetRequest>,
 ) -> Result<Json<AssistTweetResponse>, ApiError> {
-    let gen = get_generator(&state)?;
+    let gen = get_generator(&state, &ctx.account_id).await?;
 
     let output = gen
         .generate_tweet(&body.topic)
@@ -77,9 +86,10 @@ pub struct AssistReplyResponse {
 
 pub async fn assist_reply(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Json(body): Json<AssistReplyRequest>,
 ) -> Result<Json<AssistReplyResponse>, ApiError> {
-    let gen = get_generator(&state)?;
+    let gen = get_generator(&state, &ctx.account_id).await?;
 
     let output = gen
         .generate_reply(&body.tweet_text, &body.tweet_author, body.mention_product)
@@ -108,9 +118,10 @@ pub struct AssistThreadResponse {
 
 pub async fn assist_thread(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Json(body): Json<AssistThreadRequest>,
 ) -> Result<Json<AssistThreadResponse>, ApiError> {
-    let gen = get_generator(&state)?;
+    let gen = get_generator(&state, &ctx.account_id).await?;
 
     let output = gen
         .generate_thread(&body.topic)
@@ -141,9 +152,10 @@ pub struct AssistImproveResponse {
 
 pub async fn assist_improve(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Json(body): Json<AssistImproveRequest>,
 ) -> Result<Json<AssistImproveResponse>, ApiError> {
-    let gen = get_generator(&state)?;
+    let gen = get_generator(&state, &ctx.account_id).await?;
 
     // Use the tweet generation path with the draft as the "topic",
     // rephrased as an improvement request.
@@ -186,8 +198,9 @@ pub struct TopicRecommendation {
 
 pub async fn assist_topics(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
 ) -> Result<Json<AssistTopicsResponse>, ApiError> {
-    let top = storage::analytics::get_top_topics(&state.db, 10).await?;
+    let top = storage::analytics::get_top_topics_for(&state.db, &ctx.account_id, 10).await?;
 
     let topics = top
         .into_iter()
@@ -218,8 +231,10 @@ pub struct OptimalTime {
 
 pub async fn assist_optimal_times(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
 ) -> Result<Json<OptimalTimesResponse>, ApiError> {
-    let rows = storage::analytics::get_optimal_posting_times(&state.db).await?;
+    let rows =
+        storage::analytics::get_optimal_posting_times_for(&state.db, &ctx.account_id).await?;
 
     let times = rows
         .into_iter()
@@ -245,6 +260,7 @@ pub struct ModeResponse {
 
 pub async fn get_mode(
     State(state): State<Arc<AppState>>,
+    _ctx: AccountContext,
 ) -> Result<(StatusCode, Json<ModeResponse>), ApiError> {
     // Read mode from config file.
     let config = tuitbot_core::config::Config::load(Some(&state.config_path.to_string_lossy()))

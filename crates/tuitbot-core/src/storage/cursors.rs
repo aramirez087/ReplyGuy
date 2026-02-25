@@ -3,26 +3,40 @@
 //! Used by automation loops to persist pagination cursors (e.g., `since_id`)
 //! and by the MCP layer to store metadata like the detected API tier.
 
+use super::accounts::DEFAULT_ACCOUNT_ID;
 use super::DbPool;
 use crate::error::StorageError;
 
-/// Read a cursor value by key. Returns `None` if the key does not exist.
-pub async fn get_cursor(pool: &DbPool, key: &str) -> Result<Option<String>, StorageError> {
-    let row: Option<(String,)> = sqlx::query_as("SELECT value FROM cursors WHERE key = ?1")
-        .bind(key)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e })?;
+/// Read a cursor value by key for a specific account. Returns `None` if the key does not exist.
+pub async fn get_cursor_for(
+    pool: &DbPool,
+    account_id: &str,
+    key: &str,
+) -> Result<Option<String>, StorageError> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT value FROM cursors WHERE account_id = ?1 AND key = ?2")
+            .bind(account_id)
+            .bind(key)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| StorageError::Query { source: e })?;
     Ok(row.map(|(v,)| v))
 }
 
-/// Read a cursor value and its `updated_at` timestamp. Returns `None` if missing.
-pub async fn get_cursor_with_timestamp(
+/// Read a cursor value by key. Returns `None` if the key does not exist.
+pub async fn get_cursor(pool: &DbPool, key: &str) -> Result<Option<String>, StorageError> {
+    get_cursor_for(pool, DEFAULT_ACCOUNT_ID, key).await
+}
+
+/// Read a cursor value and its `updated_at` timestamp for a specific account. Returns `None` if missing.
+pub async fn get_cursor_with_timestamp_for(
     pool: &DbPool,
+    account_id: &str,
     key: &str,
 ) -> Result<Option<(String, String)>, StorageError> {
     let row: Option<(String, String)> =
-        sqlx::query_as("SELECT value, updated_at FROM cursors WHERE key = ?1")
+        sqlx::query_as("SELECT value, updated_at FROM cursors WHERE account_id = ?1 AND key = ?2")
+            .bind(account_id)
             .bind(key)
             .fetch_optional(pool)
             .await
@@ -30,18 +44,37 @@ pub async fn get_cursor_with_timestamp(
     Ok(row)
 }
 
-/// Write a cursor value, creating or updating the row atomically.
-pub async fn set_cursor(pool: &DbPool, key: &str, value: &str) -> Result<(), StorageError> {
+/// Read a cursor value and its `updated_at` timestamp. Returns `None` if missing.
+pub async fn get_cursor_with_timestamp(
+    pool: &DbPool,
+    key: &str,
+) -> Result<Option<(String, String)>, StorageError> {
+    get_cursor_with_timestamp_for(pool, DEFAULT_ACCOUNT_ID, key).await
+}
+
+/// Write a cursor value for a specific account, creating or updating the row atomically.
+pub async fn set_cursor_for(
+    pool: &DbPool,
+    account_id: &str,
+    key: &str,
+    value: &str,
+) -> Result<(), StorageError> {
     sqlx::query(
-        "INSERT INTO cursors (key, value, updated_at) VALUES (?1, ?2, datetime('now')) \
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')",
+        "INSERT INTO cursors (account_id, key, value, updated_at) VALUES (?1, ?2, ?3, datetime('now')) \
+         ON CONFLICT(account_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')",
     )
+    .bind(account_id)
     .bind(key)
     .bind(value)
     .execute(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
     Ok(())
+}
+
+/// Write a cursor value, creating or updating the row atomically.
+pub async fn set_cursor(pool: &DbPool, key: &str, value: &str) -> Result<(), StorageError> {
+    set_cursor_for(pool, DEFAULT_ACCOUNT_ID, key, value).await
 }
 
 #[cfg(test)]
