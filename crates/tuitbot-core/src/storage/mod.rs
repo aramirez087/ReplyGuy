@@ -10,6 +10,7 @@ pub mod author_interactions;
 pub mod cleanup;
 pub mod cursors;
 pub mod llm_usage;
+pub mod media;
 pub mod rate_limits;
 pub mod replies;
 pub mod scheduled_content;

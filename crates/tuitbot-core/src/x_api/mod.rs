@@ -6,6 +6,7 @@
 
 pub mod auth;
 pub mod client;
+pub mod media;
 pub mod tier;
 pub mod types;
 
@@ -65,4 +66,40 @@ pub trait XApiClient: Send + Sync {
 
     /// Look up a user by their username.
     async fn get_user_by_username(&self, username: &str) -> Result<User, XApiError>;
+
+    /// Upload media to X API for attaching to tweets.
+    ///
+    /// Default implementation returns an error — override in concrete clients.
+    async fn upload_media(
+        &self,
+        _data: &[u8],
+        _media_type: MediaType,
+    ) -> Result<MediaId, XApiError> {
+        Err(XApiError::MediaUploadError {
+            message: "upload_media not implemented".to_string(),
+        })
+    }
+
+    /// Post a new tweet with media attachments.
+    ///
+    /// Default delegates to `post_tweet` (ignoring media) for backward compat.
+    async fn post_tweet_with_media(
+        &self,
+        text: &str,
+        _media_ids: &[String],
+    ) -> Result<PostedTweet, XApiError> {
+        self.post_tweet(text).await
+    }
+
+    /// Reply to an existing tweet with media attachments.
+    ///
+    /// Default delegates to `reply_to_tweet` (ignoring media) for backward compat.
+    async fn reply_to_tweet_with_media(
+        &self,
+        text: &str,
+        in_reply_to_id: &str,
+        _media_ids: &[String],
+    ) -> Result<PostedTweet, XApiError> {
+        self.reply_to_tweet(text, in_reply_to_id).await
+    }
 }

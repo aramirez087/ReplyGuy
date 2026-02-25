@@ -121,6 +121,13 @@ export interface ApprovalItem {
 	score: number;
 	status: string;
 	created_at: string;
+	media_paths: string[];
+}
+
+export interface MediaUploadResponse {
+	path: string;
+	media_type: string;
+	size: number;
 }
 
 export interface ApprovalStats {
@@ -154,6 +161,7 @@ export interface ComposeRequest {
 	content_type: string;
 	content: string;
 	scheduled_for?: string;
+	media_paths?: string[];
 }
 
 export interface ScheduledContentItem {
@@ -411,6 +419,27 @@ export interface EndpointBreakdown {
 	error_count: number;
 }
 
+// --- File upload helper ---
+
+async function uploadFile(path: string, file: File): Promise<MediaUploadResponse> {
+	const formData = new FormData();
+	formData.append('file', file);
+
+	const res = await fetch(`${BASE_URL}${path}`, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`
+			// No Content-Type — browser sets multipart boundary automatically.
+		},
+		body: formData
+	});
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({ error: res.statusText }));
+		throw new Error(body.error || res.statusText);
+	}
+	return res.json();
+}
+
 // --- API client ---
 
 export const api = {
@@ -543,6 +572,12 @@ export const api = {
 		}
 	},
 
+	media: {
+		upload: (file: File) => uploadFile('/api/media/upload', file),
+		fileUrl: (path: string) =>
+			`${BASE_URL}/api/media/file?path=${encodeURIComponent(path)}`
+	},
+
 	approval: {
 		list: (params: { status?: string; type?: string } = {}) => {
 			const query = new URLSearchParams();
@@ -556,10 +591,10 @@ export const api = {
 			request<{ status: string; id: number }>(`/api/approval/${id}/approve`, { method: 'POST' }),
 		reject: (id: number) =>
 			request<{ status: string; id: number }>(`/api/approval/${id}/reject`, { method: 'POST' }),
-		edit: (id: number, content: string) =>
+		edit: (id: number, content: string, media_paths?: string[]) =>
 			request<ApprovalItem>(`/api/approval/${id}`, {
 				method: 'PATCH',
-				body: JSON.stringify({ content })
+				body: JSON.stringify({ content, ...(media_paths !== undefined && { media_paths }) })
 			}),
 		approveAll: () =>
 			request<{ status: string; count: number }>('/api/approval/approve-all', { method: 'POST' })

@@ -59,9 +59,12 @@ async fn main() -> Result<()> {
     // Create the broadcast channel for WebSocket events.
     let (event_tx, _) = tokio::sync::broadcast::channel::<WsEvent>(256);
 
+    let data_dir = db_dir.to_path_buf();
+
     let state = Arc::new(AppState {
         db: pool,
         config_path,
+        data_dir,
         event_tx,
         api_token,
         runtime: Mutex::new(None),

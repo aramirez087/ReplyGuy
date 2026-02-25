@@ -14,6 +14,8 @@ pub struct AppState {
     pub db: DbPool,
     /// Path to the configuration file.
     pub config_path: PathBuf,
+    /// Data directory for media storage (parent of config file).
+    pub data_dir: PathBuf,
     /// Broadcast channel sender for real-time WebSocket events.
     pub event_tx: broadcast::Sender<WsEvent>,
     /// Local bearer token for API authentication.

@@ -6,6 +6,7 @@ pub mod approval;
 pub mod content;
 pub mod costs;
 pub mod health;
+pub mod media;
 pub mod replies;
 pub mod runtime;
 pub mod settings;

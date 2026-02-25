@@ -120,6 +120,72 @@ pub struct SearchMeta {
 /// Structurally identical to `SearchResponse`.
 pub type MentionResponse = SearchResponse;
 
+/// Supported image formats for media upload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageFormat {
+    Jpeg,
+    Png,
+    Webp,
+}
+
+/// Media type for upload to X API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaType {
+    Image(ImageFormat),
+    Gif,
+    Video,
+}
+
+impl MediaType {
+    /// Returns the MIME type string for this media type.
+    pub fn mime_type(&self) -> &'static str {
+        match self {
+            MediaType::Image(ImageFormat::Jpeg) => "image/jpeg",
+            MediaType::Image(ImageFormat::Png) => "image/png",
+            MediaType::Image(ImageFormat::Webp) => "image/webp",
+            MediaType::Gif => "image/gif",
+            MediaType::Video => "video/mp4",
+        }
+    }
+
+    /// Returns the maximum file size in bytes allowed by X API.
+    pub fn max_size(&self) -> u64 {
+        match self {
+            MediaType::Image(_) => 5 * 1024 * 1024, // 5 MB
+            MediaType::Gif => 15 * 1024 * 1024,     // 15 MB
+            MediaType::Video => 512 * 1024 * 1024,  // 512 MB
+        }
+    }
+
+    /// Returns the media_category string for X API upload.
+    pub fn media_category(&self) -> &'static str {
+        match self {
+            MediaType::Image(_) => "tweet_image",
+            MediaType::Gif => "tweet_gif",
+            MediaType::Video => "tweet_video",
+        }
+    }
+
+    /// Whether this media type requires chunked upload for the given size.
+    pub fn requires_chunked(&self, size: u64) -> bool {
+        match self {
+            MediaType::Image(_) => size > 5 * 1024 * 1024,
+            MediaType::Gif | MediaType::Video => true,
+        }
+    }
+}
+
+/// A media ID returned by the X API upload endpoint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaId(pub String);
+
+/// Media attachment payload for tweet requests.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaPayload {
+    /// List of media IDs to attach to the tweet.
+    pub media_ids: Vec<String>,
+}
+
 /// Request body for posting a tweet via X API v2.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostTweetRequest {
@@ -128,6 +194,9 @@ pub struct PostTweetRequest {
     /// Optional reply configuration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reply: Option<ReplyTo>,
+    /// Optional media attachments.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media: Option<MediaPayload>,
 }
 
 /// Specifies which tweet this is a reply to.
@@ -300,19 +369,56 @@ mod tests {
         let req = PostTweetRequest {
             text: "Hello!".to_string(),
             reply: None,
+            media: None,
         };
         let json = serde_json::to_string(&req).expect("serialize");
         assert!(!json.contains("reply"));
+        assert!(!json.contains("media"));
 
         let req_reply = PostTweetRequest {
             text: "Nice!".to_string(),
             reply: Some(ReplyTo {
                 in_reply_to_tweet_id: "999".to_string(),
             }),
+            media: None,
         };
         let json = serde_json::to_string(&req_reply).expect("serialize");
         assert!(json.contains("in_reply_to_tweet_id"));
         assert!(json.contains("999"));
+    }
+
+    #[test]
+    fn serialize_post_tweet_request_with_media() {
+        let req = PostTweetRequest {
+            text: "Check this out!".to_string(),
+            reply: None,
+            media: Some(MediaPayload {
+                media_ids: vec!["12345".to_string(), "67890".to_string()],
+            }),
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        assert!(json.contains("media_ids"));
+        assert!(json.contains("12345"));
+        assert!(json.contains("67890"));
+    }
+
+    #[test]
+    fn media_type_properties() {
+        let jpeg = MediaType::Image(ImageFormat::Jpeg);
+        assert_eq!(jpeg.mime_type(), "image/jpeg");
+        assert_eq!(jpeg.max_size(), 5 * 1024 * 1024);
+        assert_eq!(jpeg.media_category(), "tweet_image");
+        assert!(!jpeg.requires_chunked(1024));
+
+        let gif = MediaType::Gif;
+        assert_eq!(gif.mime_type(), "image/gif");
+        assert_eq!(gif.max_size(), 15 * 1024 * 1024);
+        assert!(gif.requires_chunked(1024));
+
+        let video = MediaType::Video;
+        assert_eq!(video.mime_type(), "video/mp4");
+        assert_eq!(video.max_size(), 512 * 1024 * 1024);
+        assert!(video.requires_chunked(1024));
     }
 
     #[test]

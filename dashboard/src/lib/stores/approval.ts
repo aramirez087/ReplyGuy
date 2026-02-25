@@ -81,9 +81,9 @@ export async function rejectItem(id: number) {
 	}
 }
 
-export async function editItem(id: number, content: string) {
+export async function editItem(id: number, content: string, media_paths?: string[]) {
 	try {
-		const updated = await api.approval.edit(id, content);
+		const updated = await api.approval.edit(id, content, media_paths);
 		items.update(($items) => $items.map((i) => (i.id === id ? updated : i)));
 	} catch (e) {
 		error.set(e instanceof Error ? e.message : 'Failed to edit item');

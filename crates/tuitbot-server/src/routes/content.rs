@@ -88,7 +88,7 @@ pub async fn compose_tweet(
             "", // no target author
             text, "", // no topic
             "", // no archetype
-            0.0,
+            0.0, "[]",
         )
         .await?;
 
@@ -96,6 +96,7 @@ pub async fn compose_tweet(
             id,
             action_type: "tweet".to_string(),
             content: text.to_string(),
+            media_paths: vec![],
         });
 
         Ok(Json(json!({
@@ -136,13 +137,14 @@ pub async fn compose_thread(
     let combined = body.tweets.join("\n---\n");
 
     if approval_mode {
-        let id =
-            approval_queue::enqueue(&state.db, "thread", "", "", &combined, "", "", 0.0).await?;
+        let id = approval_queue::enqueue(&state.db, "thread", "", "", &combined, "", "", 0.0, "[]")
+            .await?;
 
         let _ = state.event_tx.send(WsEvent::ApprovalQueued {
             id,
             action_type: "thread".to_string(),
             content: combined,
+            media_paths: vec![],
         });
 
         Ok(Json(json!({
@@ -321,6 +323,9 @@ pub struct ComposeRequest {
     pub content: String,
     /// Optional ISO 8601 timestamp to schedule the content.
     pub scheduled_for: Option<String>,
+    /// Optional local media file paths to attach.
+    #[serde(default)]
+    pub media_paths: Option<Vec<String>>,
 }
 
 /// `POST /api/content/compose` — compose manual content (tweet or thread).
@@ -377,14 +382,26 @@ pub async fn compose(
     let approval_mode = read_approval_mode(&state)?;
 
     if approval_mode {
-        let id =
-            approval_queue::enqueue(&state.db, &body.content_type, "", "", &content, "", "", 0.0)
-                .await?;
+        let media_paths = body.media_paths.as_deref().unwrap_or(&[]);
+        let media_json = serde_json::to_string(media_paths).unwrap_or_else(|_| "[]".to_string());
+        let id = approval_queue::enqueue(
+            &state.db,
+            &body.content_type,
+            "",
+            "",
+            &content,
+            "",
+            "",
+            0.0,
+            &media_json,
+        )
+        .await?;
 
         let _ = state.event_tx.send(WsEvent::ApprovalQueued {
             id,
             action_type: body.content_type,
             content: content.clone(),
+            media_paths: media_paths.to_vec(),
         });
 
         Ok(Json(json!({

@@ -53,6 +53,10 @@ pub fn tweet_weighted_len(text: &str) -> usize {
 }
 
 /// Check if text is within the tweet character limit, accounting for t.co URLs.
+///
+/// Media attachments (images, GIFs, videos) do **not** affect the character
+/// count — X attaches them via `media_ids` outside the tweet text, so this
+/// function only considers the text content.
 pub fn validate_tweet_length(text: &str, max_chars: usize) -> bool {
     tweet_weighted_len(text) <= max_chars
 }
@@ -230,6 +234,22 @@ mod tests {
         let result = truncate_at_sentence(text, 30);
         assert!(tweet_weighted_len(&result) <= 30);
         assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn media_does_not_affect_length() {
+        // Media is attached via media_ids in the API request, not in the tweet
+        // text body. The character counter should only look at text content.
+        // This test documents that media_paths/media_ids are a separate field
+        // and do not contribute to the weighted length calculation.
+        let text = "Check out this photo!";
+        let len = tweet_weighted_len(text);
+        assert_eq!(len, text.len());
+        assert!(validate_tweet_length(text, MAX_TWEET_CHARS));
+
+        // Even at exactly 280 chars, adding media should still be valid.
+        let text_280 = "a".repeat(280);
+        assert!(validate_tweet_length(&text_280, MAX_TWEET_CHARS));
     }
 
     #[test]

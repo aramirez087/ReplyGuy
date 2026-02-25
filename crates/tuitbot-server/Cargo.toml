@@ -12,7 +12,7 @@ keywords = ["x-api", "twitter", "api-server", "automation", "dashboard"]
 
 [dependencies]
 tuitbot-core = { version = "0.1.4", path = "../tuitbot-core" }
-axum = { version = "0.8", features = ["ws"] }
+axum = { version = "0.8", features = ["ws", "multipart"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 serde = { version = "1", features = ["derive"] }

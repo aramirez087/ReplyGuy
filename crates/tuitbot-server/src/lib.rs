@@ -103,6 +103,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/costs/x-api/by-endpoint",
             get(routes::costs::x_api_by_endpoint),
         )
+        // Media
+        .route("/media/upload", post(routes::media::upload))
+        .route("/media/file", get(routes::media::serve_file))
         // Settings
         .route("/settings/status", get(routes::settings::config_status))
         .route("/settings/init", post(routes::settings::init_settings))

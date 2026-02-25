@@ -11,13 +11,17 @@ use crate::error::XApiError;
 use crate::storage::{self, DbPool};
 
 use super::types::{
-    MentionResponse, PostTweetRequest, PostTweetResponse, PostedTweet, RateLimitInfo, ReplyTo,
-    SearchResponse, SingleTweetResponse, Tweet, User, UserResponse, XApiErrorResponse,
+    MediaId, MediaPayload, MediaType, MentionResponse, PostTweetRequest, PostTweetResponse,
+    PostedTweet, RateLimitInfo, ReplyTo, SearchResponse, SingleTweetResponse, Tweet, User,
+    UserResponse, XApiErrorResponse,
 };
 use super::XApiClient;
 
 /// Default X API v2 base URL.
 const DEFAULT_BASE_URL: &str = "https://api.x.com/2";
+
+/// Default X API v1.1 media upload base URL.
+const DEFAULT_UPLOAD_BASE_URL: &str = "https://upload.twitter.com/1.1";
 
 /// Standard tweet fields requested on every query.
 const TWEET_FIELDS: &str = "public_metrics,created_at,author_id,conversation_id";
@@ -36,6 +40,7 @@ const USER_FIELDS: &str = "username,public_metrics";
 pub struct XApiHttpClient {
     client: reqwest::Client,
     base_url: String,
+    upload_base_url: String,
     access_token: Arc<RwLock<String>>,
     pool: Arc<RwLock<Option<DbPool>>>,
 }
@@ -46,6 +51,7 @@ impl XApiHttpClient {
         Self {
             client: reqwest::Client::new(),
             base_url: DEFAULT_BASE_URL.to_string(),
+            upload_base_url: DEFAULT_UPLOAD_BASE_URL.to_string(),
             access_token: Arc::new(RwLock::new(access_token)),
             pool: Arc::new(RwLock::new(None)),
         }
@@ -53,9 +59,11 @@ impl XApiHttpClient {
 
     /// Create a new client with a custom base URL (for testing with wiremock).
     pub fn with_base_url(access_token: String, base_url: String) -> Self {
+        let upload_base_url = base_url.clone();
         Self {
             client: reqwest::Client::new(),
             base_url,
+            upload_base_url,
             access_token: Arc::new(RwLock::new(access_token)),
             pool: Arc::new(RwLock::new(None)),
         }
@@ -291,6 +299,7 @@ impl XApiClient for XApiHttpClient {
         let body = PostTweetRequest {
             text: text.to_string(),
             reply: None,
+            media: None,
         };
 
         let response = self.post_json("/tweets", &body).await?;
@@ -311,6 +320,69 @@ impl XApiClient for XApiHttpClient {
             text: text.to_string(),
             reply: Some(ReplyTo {
                 in_reply_to_tweet_id: in_reply_to_id.to_string(),
+            }),
+            media: None,
+        };
+
+        let response = self.post_json("/tweets", &body).await?;
+        let resp: PostTweetResponse = response
+            .json()
+            .await
+            .map_err(|e| XApiError::Network { source: e })?;
+        Ok(resp.data)
+    }
+
+    async fn upload_media(&self, data: &[u8], media_type: MediaType) -> Result<MediaId, XApiError> {
+        super::media::upload_media(
+            &self.client,
+            &self.upload_base_url,
+            &self.access_token.read().await,
+            data,
+            media_type,
+        )
+        .await
+    }
+
+    async fn post_tweet_with_media(
+        &self,
+        text: &str,
+        media_ids: &[String],
+    ) -> Result<PostedTweet, XApiError> {
+        tracing::debug!(
+            chars = text.len(),
+            media_count = media_ids.len(),
+            "Posting tweet with media"
+        );
+        let body = PostTweetRequest {
+            text: text.to_string(),
+            reply: None,
+            media: Some(MediaPayload {
+                media_ids: media_ids.to_vec(),
+            }),
+        };
+
+        let response = self.post_json("/tweets", &body).await?;
+        let resp: PostTweetResponse = response
+            .json()
+            .await
+            .map_err(|e| XApiError::Network { source: e })?;
+        Ok(resp.data)
+    }
+
+    async fn reply_to_tweet_with_media(
+        &self,
+        text: &str,
+        in_reply_to_id: &str,
+        media_ids: &[String],
+    ) -> Result<PostedTweet, XApiError> {
+        tracing::debug!(in_reply_to = %in_reply_to_id, chars = text.len(), media_count = media_ids.len(), "Posting reply with media");
+        let body = PostTweetRequest {
+            text: text.to_string(),
+            reply: Some(ReplyTo {
+                in_reply_to_tweet_id: in_reply_to_id.to_string(),
+            }),
+            media: Some(MediaPayload {
+                media_ids: media_ids.to_vec(),
             }),
         };
 

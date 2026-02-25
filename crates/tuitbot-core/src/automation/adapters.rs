@@ -281,20 +281,41 @@ impl XApiPostExecutorAdapter {
 
 #[async_trait::async_trait]
 impl PostExecutor for XApiPostExecutorAdapter {
-    async fn execute_reply(&self, tweet_id: &str, content: &str) -> Result<String, String> {
-        self.client
-            .reply_to_tweet(content, tweet_id)
-            .await
-            .map(|posted| posted.id)
-            .map_err(|e| e.to_string())
+    async fn execute_reply(
+        &self,
+        tweet_id: &str,
+        content: &str,
+        media_ids: &[String],
+    ) -> Result<String, String> {
+        if media_ids.is_empty() {
+            self.client
+                .reply_to_tweet(content, tweet_id)
+                .await
+                .map(|posted| posted.id)
+                .map_err(|e| e.to_string())
+        } else {
+            self.client
+                .reply_to_tweet_with_media(content, tweet_id, media_ids)
+                .await
+                .map(|posted| posted.id)
+                .map_err(|e| e.to_string())
+        }
     }
 
-    async fn execute_tweet(&self, content: &str) -> Result<String, String> {
-        self.client
-            .post_tweet(content)
-            .await
-            .map(|posted| posted.id)
-            .map_err(|e| e.to_string())
+    async fn execute_tweet(&self, content: &str, media_ids: &[String]) -> Result<String, String> {
+        if media_ids.is_empty() {
+            self.client
+                .post_tweet(content)
+                .await
+                .map(|posted| posted.id)
+                .map_err(|e| e.to_string())
+        } else {
+            self.client
+                .post_tweet_with_media(content, media_ids)
+                .await
+                .map(|posted| posted.id)
+                .map_err(|e| e.to_string())
+        }
     }
 }
 
@@ -737,6 +758,7 @@ impl ContentStorage for ContentStorageAdapter {
         self.post_tx
             .send(PostAction::Tweet {
                 content: content.to_string(),
+                media_ids: vec![],
                 result_tx: Some(result_tx),
             })
             .await
@@ -1121,6 +1143,7 @@ impl PostSender for PostSenderAdapter {
             .send(PostAction::Reply {
                 tweet_id: tweet_id.to_string(),
                 content: content.to_string(),
+                media_ids: vec![],
                 result_tx: Some(result_tx),
             })
             .await
@@ -1148,24 +1171,40 @@ impl ApprovalQueueAdapter {
 
 #[async_trait::async_trait]
 impl ApprovalQueue for ApprovalQueueAdapter {
-    async fn queue_reply(&self, tweet_id: &str, content: &str) -> Result<i64, String> {
+    async fn queue_reply(
+        &self,
+        tweet_id: &str,
+        content: &str,
+        media_paths: &[String],
+    ) -> Result<i64, String> {
+        let media_json = serde_json::to_string(media_paths).unwrap_or_else(|_| "[]".to_string());
         storage::approval_queue::enqueue(
-            &self.pool, "reply", tweet_id, "", // target_author not available here
-            content, "",  // topic
+            &self.pool,
+            "reply",
+            tweet_id,
+            "", // target_author not available here
+            content,
+            "",  // topic
             "",  // archetype
             0.0, // score
+            &media_json,
         )
         .await
         .map_err(|e| e.to_string())
     }
 
-    async fn queue_tweet(&self, content: &str) -> Result<i64, String> {
+    async fn queue_tweet(&self, content: &str, media_paths: &[String]) -> Result<i64, String> {
+        let media_json = serde_json::to_string(media_paths).unwrap_or_else(|_| "[]".to_string());
         storage::approval_queue::enqueue(
-            &self.pool, "tweet", "", // no target tweet
+            &self.pool,
+            "tweet",
+            "", // no target tweet
             "", // no target author
-            content, "",  // topic
+            content,
+            "",  // topic
             "",  // archetype
             0.0, // score
+            &media_json,
         )
         .await
         .map_err(|e| e.to_string())

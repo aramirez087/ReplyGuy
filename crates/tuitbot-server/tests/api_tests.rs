@@ -23,6 +23,7 @@ async fn test_router() -> axum::Router {
     let state = Arc::new(AppState {
         db: pool,
         config_path: std::path::PathBuf::from("/tmp/test-config.toml"),
+        data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
         runtime: Mutex::new(None),
@@ -227,6 +228,7 @@ async fn approval_stats_returns_counts() {
     let state = Arc::new(AppState {
         db: pool.clone(),
         config_path: std::path::PathBuf::from("/tmp/test-config.toml"),
+        data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
         runtime: Mutex::new(None),
@@ -234,11 +236,13 @@ async fn approval_stats_returns_counts() {
     let router = tuitbot_server::build_router(state);
 
     // Seed data.
-    tuitbot_core::storage::approval_queue::enqueue(&pool, "tweet", "", "", "A", "General", "", 0.0)
-        .await
-        .expect("enqueue");
+    tuitbot_core::storage::approval_queue::enqueue(
+        &pool, "tweet", "", "", "A", "General", "", 0.0, "[]",
+    )
+    .await
+    .expect("enqueue");
     let id2 = tuitbot_core::storage::approval_queue::enqueue(
-        &pool, "reply", "t1", "@u", "B", "Rust", "", 50.0,
+        &pool, "reply", "t1", "@u", "B", "Rust", "", 50.0, "[]",
     )
     .await
     .expect("enqueue");
@@ -260,6 +264,7 @@ async fn approval_list_with_status_filter() {
     let state = Arc::new(AppState {
         db: pool.clone(),
         config_path: std::path::PathBuf::from("/tmp/test-config.toml"),
+        data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
         runtime: Mutex::new(None),
@@ -268,12 +273,12 @@ async fn approval_list_with_status_filter() {
 
     // Seed: one pending, one approved.
     tuitbot_core::storage::approval_queue::enqueue(
-        &pool, "tweet", "", "", "Pending", "General", "", 0.0,
+        &pool, "tweet", "", "", "Pending", "General", "", 0.0, "[]",
     )
     .await
     .expect("enqueue");
     let id2 = tuitbot_core::storage::approval_queue::enqueue(
-        &pool, "tweet", "", "", "Approved", "General", "", 0.0,
+        &pool, "tweet", "", "", "Approved", "General", "", 0.0, "[]",
     )
     .await
     .expect("enqueue");
@@ -305,6 +310,7 @@ async fn approval_edit_content() {
     let state = Arc::new(AppState {
         db: pool.clone(),
         config_path: std::path::PathBuf::from("/tmp/test-config.toml"),
+        data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
         runtime: Mutex::new(None),
@@ -312,7 +318,7 @@ async fn approval_edit_content() {
     let router = tuitbot_server::build_router(state);
 
     let id = tuitbot_core::storage::approval_queue::enqueue(
-        &pool, "tweet", "", "", "Original", "General", "", 0.0,
+        &pool, "tweet", "", "", "Original", "General", "", 0.0, "[]",
     )
     .await
     .expect("enqueue");
@@ -348,6 +354,7 @@ async fn approval_edit_empty_content() {
     let state = Arc::new(AppState {
         db: pool.clone(),
         config_path: std::path::PathBuf::from("/tmp/test-config.toml"),
+        data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
         runtime: Mutex::new(None),
@@ -355,7 +362,7 @@ async fn approval_edit_empty_content() {
     let router = tuitbot_server::build_router(state);
 
     let id = tuitbot_core::storage::approval_queue::enqueue(
-        &pool, "tweet", "", "", "Original", "General", "", 0.0,
+        &pool, "tweet", "", "", "Original", "General", "", 0.0, "[]",
     )
     .await
     .expect("enqueue");
@@ -477,6 +484,7 @@ async fn add_and_list_target() {
     let state = Arc::new(AppState {
         db: pool,
         config_path: std::path::PathBuf::from("/tmp/test-config.toml"),
+        data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
         runtime: Mutex::new(None),
@@ -508,6 +516,7 @@ async fn add_duplicate_target_fails() {
     let state = Arc::new(AppState {
         db: pool,
         config_path: std::path::PathBuf::from("/tmp/test-config.toml"),
+        data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
         runtime: Mutex::new(None),
@@ -540,6 +549,7 @@ async fn remove_target_works() {
     let state = Arc::new(AppState {
         db: pool,
         config_path: std::path::PathBuf::from("/tmp/test-config.toml"),
+        data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
         runtime: Mutex::new(None),
@@ -592,6 +602,7 @@ async fn runtime_start_and_stop() {
     let state = Arc::new(AppState {
         db: pool,
         config_path: std::path::PathBuf::from("/tmp/test-config.toml"),
+        data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
         runtime: Mutex::new(None),
@@ -640,6 +651,7 @@ async fn settings_get_returns_json() {
 
     let state = Arc::new(AppState {
         db: pool,
+        data_dir: std::path::PathBuf::from("/tmp"),
         config_path,
         event_tx,
         api_token: TEST_TOKEN.to_string(),
@@ -663,6 +675,7 @@ async fn settings_patch_round_trips() {
 
     let state = Arc::new(AppState {
         db: pool,
+        data_dir: std::path::PathBuf::from("/tmp"),
         config_path,
         event_tx,
         api_token: TEST_TOKEN.to_string(),
