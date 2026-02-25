@@ -122,6 +122,20 @@ export interface ApprovalItem {
 	status: string;
 	created_at: string;
 	media_paths: string[];
+	reviewed_by?: string;
+	review_notes?: string;
+	reason?: string;
+	detected_risks: string[];
+}
+
+export interface EditHistoryEntry {
+	id: number;
+	approval_id: number;
+	editor: string;
+	field: string;
+	old_value: string;
+	new_value: string;
+	created_at: string;
 }
 
 export interface MediaUploadResponse {
@@ -703,17 +717,39 @@ export const api = {
 			return request<ApprovalItem[]>(`/api/approval${qs ? `?${qs}` : ''}`);
 		},
 		stats: () => request<ApprovalStats>('/api/approval/stats'),
-		approve: (id: number) =>
-			request<{ status: string; id: number }>(`/api/approval/${id}/approve`, { method: 'POST' }),
-		reject: (id: number) =>
-			request<{ status: string; id: number }>(`/api/approval/${id}/reject`, { method: 'POST' }),
-		edit: (id: number, content: string, media_paths?: string[]) =>
+		approve: (id: number, actor?: string, notes?: string) =>
+			request<{ status: string; id: number }>(`/api/approval/${id}/approve`, {
+				method: 'POST',
+				body: JSON.stringify({ actor, notes })
+			}),
+		reject: (id: number, actor?: string, notes?: string) =>
+			request<{ status: string; id: number }>(`/api/approval/${id}/reject`, {
+				method: 'POST',
+				body: JSON.stringify({ actor, notes })
+			}),
+		edit: (id: number, content: string, media_paths?: string[], editor?: string) =>
 			request<ApprovalItem>(`/api/approval/${id}`, {
 				method: 'PATCH',
-				body: JSON.stringify({ content, ...(media_paths !== undefined && { media_paths }) })
+				body: JSON.stringify({
+					content,
+					...(media_paths !== undefined && { media_paths }),
+					...(editor !== undefined && { editor })
+				})
 			}),
-		approveAll: () =>
-			request<{ status: string; count: number }>('/api/approval/approve-all', { method: 'POST' })
+		approveAll: (max?: number, ids?: number[]) =>
+			request<{ status: string; count: number; ids: number[]; max_batch: number }>(
+				'/api/approval/approve-all',
+				{
+					method: 'POST',
+					body: JSON.stringify({
+						...(max !== undefined && { max }),
+						...(ids !== undefined && { ids }),
+						review: { actor: 'dashboard' }
+					})
+				}
+			),
+		editHistory: (id: number) =>
+			request<EditHistoryEntry[]>(`/api/approval/${id}/history`)
 	},
 
 	assist: {

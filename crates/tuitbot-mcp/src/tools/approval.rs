@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use tuitbot_core::config::Config;
 use tuitbot_core::storage;
+use tuitbot_core::storage::approval_queue::ReviewAction;
 use tuitbot_core::storage::DbPool;
 
 use super::response::{ToolMeta, ToolResponse};
@@ -22,6 +23,10 @@ struct ApprovalItemOut {
     score: f64,
     status: String,
     created_at: String,
+    reviewed_by: Option<String>,
+    review_notes: Option<String>,
+    reason: Option<String>,
+    detected_risks: String,
 }
 
 fn item_to_out(item: &storage::approval_queue::ApprovalItem) -> ApprovalItemOut {
@@ -36,6 +41,10 @@ fn item_to_out(item: &storage::approval_queue::ApprovalItem) -> ApprovalItemOut 
         score: item.score,
         status: item.status.clone(),
         created_at: item.created_at.clone(),
+        reviewed_by: item.reviewed_by.clone(),
+        review_notes: item.review_notes.clone(),
+        reason: item.reason.clone(),
+        detected_risks: item.detected_risks.clone(),
     }
 }
 
@@ -90,7 +99,11 @@ pub async fn get_pending_count(pool: &DbPool, config: &Config) -> String {
 pub async fn approve_item(pool: &DbPool, id: i64, config: &Config) -> String {
     let start = Instant::now();
 
-    match storage::approval_queue::update_status(pool, id, "approved").await {
+    let review = ReviewAction {
+        actor: Some("mcp_agent".to_string()),
+        notes: None,
+    };
+    match storage::approval_queue::update_status_with_review(pool, id, "approved", &review).await {
         Ok(()) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
@@ -114,7 +127,11 @@ pub async fn approve_item(pool: &DbPool, id: i64, config: &Config) -> String {
 pub async fn reject_item(pool: &DbPool, id: i64, config: &Config) -> String {
     let start = Instant::now();
 
-    match storage::approval_queue::update_status(pool, id, "rejected").await {
+    let review = ReviewAction {
+        actor: Some("mcp_agent".to_string()),
+        notes: None,
+    };
+    match storage::approval_queue::update_status_with_review(pool, id, "rejected", &review).await {
         Ok(()) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
@@ -134,27 +151,24 @@ pub async fn reject_item(pool: &DbPool, id: i64, config: &Config) -> String {
     }
 }
 
-/// Approve all pending items.
+/// Approve all pending items (clamped by max_batch_approve).
 pub async fn approve_all(pool: &DbPool, config: &Config) -> String {
     let start = Instant::now();
 
-    match storage::approval_queue::get_pending(pool).await {
-        Ok(items) => {
-            let mut approved = 0i64;
-            let mut errors = 0i64;
-            for item in &items {
-                match storage::approval_queue::update_status(pool, item.id, "approved").await {
-                    Ok(()) => approved += 1,
-                    Err(_) => errors += 1,
-                }
-            }
+    let review = ReviewAction {
+        actor: Some("mcp_agent".to_string()),
+        notes: None,
+    };
+    match storage::approval_queue::batch_approve(pool, config.max_batch_approve, &review).await {
+        Ok(ids) => {
+            let approved = ids.len() as i64;
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
                 .with_mode(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(serde_json::json!({
                 "approved": approved,
-                "errors": errors,
-                "total": items.len(),
+                "ids": ids,
+                "max_batch": config.max_batch_approve,
             }))
             .with_meta(meta)
             .to_json()
@@ -163,7 +177,7 @@ pub async fn approve_all(pool: &DbPool, config: &Config) -> String {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
                 .with_mode(config.mode.to_string(), config.effective_approval_mode());
-            ToolResponse::db_error(format!("Error fetching pending approvals: {e}"))
+            ToolResponse::db_error(format!("Error batch approving: {e}"))
                 .with_meta(meta)
                 .to_json()
         }

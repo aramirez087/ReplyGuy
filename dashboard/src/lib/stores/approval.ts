@@ -55,7 +55,7 @@ export async function loadStats() {
 
 export async function approveItem(id: number) {
 	try {
-		await api.approval.approve(id);
+		await api.approval.approve(id, 'dashboard');
 		items.update(($items) => $items.filter((i) => i.id !== id));
 		focusedIndex.update(($idx) => {
 			const len = get(items).length;
@@ -67,9 +67,9 @@ export async function approveItem(id: number) {
 	}
 }
 
-export async function rejectItem(id: number) {
+export async function rejectItem(id: number, notes?: string) {
 	try {
-		await api.approval.reject(id);
+		await api.approval.reject(id, 'dashboard', notes);
 		items.update(($items) => $items.filter((i) => i.id !== id));
 		focusedIndex.update(($idx) => {
 			const len = get(items).length;

@@ -38,6 +38,8 @@ pub enum WsEvent {
         id: i64,
         status: String,
         action_type: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        actor: Option<String>,
     },
     /// Follower count changed.
     FollowerUpdate { count: i64, change: i64 },

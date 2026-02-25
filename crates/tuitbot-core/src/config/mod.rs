@@ -19,6 +19,10 @@ fn default_approval_mode() -> bool {
     true
 }
 
+fn default_max_batch_approve() -> usize {
+    25
+}
+
 /// Operating mode controlling how autonomous Tuitbot is.
 ///
 /// - **Autopilot**: Full autonomous operation — discovers, generates, and posts content.
@@ -86,6 +90,10 @@ pub struct Config {
     /// Enable approval mode: queue posts for human review instead of posting.
     #[serde(default = "default_approval_mode")]
     pub approval_mode: bool,
+
+    /// Maximum items that can be batch-approved at once.
+    #[serde(default = "default_max_batch_approve")]
+    pub max_batch_approve: usize,
 
     /// Data storage configuration.
     #[serde(default)]

@@ -108,7 +108,7 @@
 			<p class="subtitle">Review and approve queued actions</p>
 		</div>
 		{#if $selectedStatus === 'pending' && $pendingCount > 0}
-			<BulkActions pendingCount={$pendingCount} onApproveAll={approveAllItems} />
+			<BulkActions pendingCount={$pendingCount} maxBatch={25} onApproveAll={approveAllItems} />
 		{/if}
 	</div>
 	<div class="page-header-stats">

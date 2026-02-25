@@ -8,16 +8,19 @@
 		XCircle,
 		Pencil,
 		X,
-		Film
+		Film,
+		ShieldAlert
 	} from 'lucide-svelte';
 	import { api, type ApprovalItem } from '$lib/api';
+	import ApprovalEditHistory from './ApprovalEditHistory.svelte';
+	import ApprovalRejectDialog from './ApprovalRejectDialog.svelte';
 
 	interface Props {
 		item: ApprovalItem;
 		focused: boolean;
 		editing: boolean;
 		onApprove: (id: number) => void;
-		onReject: (id: number) => void;
+		onReject: (id: number, notes?: string) => void;
 		onStartEdit: (id: number) => void;
 		onSaveEdit: (id: number, content: string) => void;
 		onCancelEdit: () => void;
@@ -36,6 +39,7 @@
 
 	let editContent = $state('');
 	let textareaEl: HTMLTextAreaElement | undefined = $state();
+	let showRejectDialog = $state(false);
 
 	const charCount = $derived(editing ? editContent.length : item.generated_content.length);
 	const isOverLimit = $derived(charCount > 280);
@@ -53,6 +57,11 @@
 
 	// Media paths from the approval item.
 	const mediaPaths = $derived(item.media_paths ?? []);
+
+	// Detected risks parsed from the item.
+	const risks = $derived(
+		Array.isArray(item.detected_risks) ? item.detected_risks : []
+	);
 
 	const statusClass = $derived(
 		item.status === 'pending'
@@ -175,16 +184,50 @@
 			{#if item.archetype}
 				<span class="meta-tag archetype">{item.archetype}</span>
 			{/if}
+			{#if item.reason}
+				<span class="meta-tag reason">{item.reason}</span>
+			{/if}
 		</div>
 
-		{#if item.status === 'pending' && !editing}
+		{#if risks.length > 0}
+			<div class="card-risks">
+				<ShieldAlert size={11} />
+				{#each risks as risk}
+					<span class="risk-chip">{risk}</span>
+				{/each}
+			</div>
+		{/if}
+
+		{#if item.status !== 'pending' && (item.reviewed_by || item.review_notes)}
+			<div class="card-review-info">
+				{#if item.reviewed_by}
+					<span class="review-by">by {item.reviewed_by}</span>
+				{/if}
+				{#if item.review_notes}
+					<span class="review-notes">{item.review_notes}</span>
+				{/if}
+			</div>
+		{/if}
+
+		<ApprovalEditHistory approvalId={item.id} />
+
+		{#if showRejectDialog && item.status === 'pending'}
+			<ApprovalRejectDialog
+				itemId={item.id}
+				onConfirm={(id, notes) => {
+					showRejectDialog = false;
+					onReject(id, notes || undefined);
+				}}
+				onCancel={() => (showRejectDialog = false)}
+			/>
+		{:else if item.status === 'pending' && !editing}
 			<div class="card-actions">
 				<button class="action-btn approve" onclick={() => onApprove(item.id)}>
 					<CheckCircle size={14} />
 					Approve
 					<kbd>a</kbd>
 				</button>
-				<button class="action-btn reject" onclick={() => onReject(item.id)}>
+				<button class="action-btn reject" onclick={() => (showRejectDialog = true)}>
 					<XCircle size={14} />
 					Reject
 					<kbd>r</kbd>
@@ -478,6 +521,47 @@
 	.meta-tag.archetype {
 		background-color: color-mix(in srgb, var(--color-text-subtle) 15%, transparent);
 		color: var(--color-text-muted);
+	}
+
+	.meta-tag.reason {
+		background-color: color-mix(in srgb, var(--color-warning) 12%, transparent);
+		color: var(--color-warning);
+	}
+
+	.card-risks {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		margin-bottom: 8px;
+		color: var(--color-warning);
+		flex-wrap: wrap;
+	}
+
+	.risk-chip {
+		font-size: 10px;
+		font-weight: 500;
+		padding: 1px 6px;
+		border-radius: 3px;
+		background-color: color-mix(in srgb, var(--color-warning) 10%, transparent);
+		color: var(--color-warning);
+	}
+
+	.card-review-info {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 6px;
+		font-size: 11px;
+	}
+
+	.review-by {
+		color: var(--color-text-subtle);
+		font-weight: 500;
+	}
+
+	.review-notes {
+		color: var(--color-text-muted);
+		font-style: italic;
 	}
 
 	.card-actions {

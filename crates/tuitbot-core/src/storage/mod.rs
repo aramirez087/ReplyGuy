@@ -144,6 +144,7 @@ mod tests {
         assert!(table_names.contains(&"llm_usage"));
         assert!(table_names.contains(&"x_api_usage"));
         assert!(table_names.contains(&"mcp_telemetry"));
+        assert!(table_names.contains(&"approval_edit_history"));
     }
 
     #[tokio::test]

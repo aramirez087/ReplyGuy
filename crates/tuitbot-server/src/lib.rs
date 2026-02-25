@@ -39,6 +39,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/approval", get(routes::approval::list_items))
         .route("/approval/stats", get(routes::approval::stats))
         .route("/approval/approve-all", post(routes::approval::approve_all))
+        .route(
+            "/approval/{id}/history",
+            get(routes::approval::get_edit_history),
+        )
         .route("/approval/{id}", patch(routes::approval::edit_item))
         .route(
             "/approval/{id}/approve",

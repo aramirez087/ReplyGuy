@@ -66,8 +66,13 @@ pub async fn check_policy(
         } => {
             let reason = reason.clone();
             let matched_rule_id = rule_id.clone();
-            // Enqueue into approval queue
-            let enqueue_result = tuitbot_core::storage::approval_queue::enqueue(
+            // Build detected_risks JSON from rule_id.
+            let detected_risks = match &rule_id {
+                Some(rid) => format!(r#"["policy_rule:{rid}"]"#),
+                None => "[]".to_string(),
+            };
+            // Enqueue into approval queue with context.
+            let enqueue_result = tuitbot_core::storage::approval_queue::enqueue_with_context(
                 &state.pool,
                 tool_name,
                 "", // no target tweet ID for generic mutations
@@ -77,6 +82,8 @@ pub async fn check_policy(
                 tool_name,
                 0.0,
                 "[]",
+                Some(&reason),
+                Some(&detected_risks),
             )
             .await;
 

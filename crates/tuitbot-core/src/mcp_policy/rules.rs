@@ -29,9 +29,7 @@ pub fn conditions_match(conditions: &RuleConditions, ctx: &EvalContext) -> bool 
     }
 
     // Category filter (OR within)
-    if !conditions.categories.is_empty()
-        && !conditions.categories.contains(&ctx.category)
-    {
+    if !conditions.categories.is_empty() && !conditions.categories.contains(&ctx.category) {
         return false;
     }
 
