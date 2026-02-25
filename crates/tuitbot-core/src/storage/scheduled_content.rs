@@ -25,6 +25,31 @@ pub struct ScheduledContent {
     pub created_at: String,
     /// ISO-8601 UTC timestamp when last updated.
     pub updated_at: String,
+    /// Full QA report payload as JSON.
+    #[serde(serialize_with = "serialize_json_string")]
+    pub qa_report: String,
+    /// JSON-encoded hard QA flags.
+    #[serde(serialize_with = "serialize_json_string")]
+    pub qa_hard_flags: String,
+    /// JSON-encoded soft QA flags.
+    #[serde(serialize_with = "serialize_json_string")]
+    pub qa_soft_flags: String,
+    /// JSON-encoded QA recommendations.
+    #[serde(serialize_with = "serialize_json_string")]
+    pub qa_recommendations: String,
+    /// QA score summary (0-100).
+    pub qa_score: f64,
+}
+
+/// Serialize a JSON-encoded string as a raw JSON value.
+fn serialize_json_string<S: serde::Serializer>(
+    value: &str,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::Serialize;
+    let parsed: serde_json::Value =
+        serde_json::from_str(value).unwrap_or(serde_json::Value::Array(vec![]));
+    parsed.serialize(serializer)
 }
 
 /// Insert a new scheduled content item. Returns the auto-generated ID.
@@ -148,6 +173,34 @@ pub async fn update_content(
     )
     .bind(content)
     .bind(scheduled_for)
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(())
+}
+
+/// Update QA fields for a content item.
+#[allow(clippy::too_many_arguments)]
+pub async fn update_qa_fields(
+    pool: &DbPool,
+    id: i64,
+    qa_report: &str,
+    qa_hard_flags: &str,
+    qa_soft_flags: &str,
+    qa_recommendations: &str,
+    qa_score: f64,
+) -> Result<(), StorageError> {
+    sqlx::query(
+        "UPDATE scheduled_content SET qa_report = ?, qa_hard_flags = ?, qa_soft_flags = ?, \
+         qa_recommendations = ?, qa_score = ?, updated_at = datetime('now') WHERE id = ?",
+    )
+    .bind(qa_report)
+    .bind(qa_hard_flags)
+    .bind(qa_soft_flags)
+    .bind(qa_recommendations)
+    .bind(qa_score)
     .bind(id)
     .execute(pool)
     .await

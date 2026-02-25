@@ -28,6 +28,15 @@ type ApprovalRow = (
     Option<String>,
     Option<String>,
     String,
+    String,
+    String,
+    String,
+    String,
+    f64,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
 );
 
 /// A pending item in the approval queue.
@@ -52,6 +61,28 @@ pub struct ApprovalItem {
     /// JSON-encoded list of detected risks.
     #[serde(serialize_with = "serialize_json_string")]
     pub detected_risks: String,
+    /// Full QA report payload as JSON.
+    #[serde(serialize_with = "serialize_json_string")]
+    pub qa_report: String,
+    /// JSON-encoded hard QA flags.
+    #[serde(serialize_with = "serialize_json_string")]
+    pub qa_hard_flags: String,
+    /// JSON-encoded soft QA flags.
+    #[serde(serialize_with = "serialize_json_string")]
+    pub qa_soft_flags: String,
+    /// JSON-encoded QA recommendations.
+    #[serde(serialize_with = "serialize_json_string")]
+    pub qa_recommendations: String,
+    /// QA score summary (0-100).
+    pub qa_score: f64,
+    /// Whether approval requires explicit hard-flag override.
+    pub qa_requires_override: bool,
+    /// Actor who performed override.
+    pub qa_override_by: Option<String>,
+    /// Required override note.
+    pub qa_override_note: Option<String>,
+    /// Timestamp of override action.
+    pub qa_override_at: Option<String>,
 }
 
 /// Serialize a JSON-encoded string as a raw JSON value.
@@ -86,6 +117,15 @@ impl From<ApprovalRow> for ApprovalItem {
             review_notes: r.12,
             reason: r.13,
             detected_risks: r.14,
+            qa_report: r.15,
+            qa_hard_flags: r.16,
+            qa_soft_flags: r.17,
+            qa_recommendations: r.18,
+            qa_score: r.19,
+            qa_requires_override: r.20 != 0,
+            qa_override_by: r.21,
+            qa_override_note: r.22,
+            qa_override_at: r.23,
         }
     }
 }

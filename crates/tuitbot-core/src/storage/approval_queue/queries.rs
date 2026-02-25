@@ -8,7 +8,10 @@ use crate::storage::DbPool;
 const SELECT_COLS: &str = "id, action_type, target_tweet_id, target_author, \
     generated_content, topic, archetype, score, status, created_at, \
     COALESCE(media_paths, '[]'), reviewed_by, review_notes, reason, \
-    COALESCE(detected_risks, '[]')";
+    COALESCE(detected_risks, '[]'), COALESCE(qa_report, '{}'), \
+    COALESCE(qa_hard_flags, '[]'), COALESCE(qa_soft_flags, '[]'), \
+    COALESCE(qa_recommendations, '[]'), COALESCE(qa_score, 0), \
+    COALESCE(qa_requires_override, 0), qa_override_by, qa_override_note, qa_override_at";
 
 /// Insert a new item into the approval queue.
 #[allow(clippy::too_many_arguments)]
@@ -256,6 +259,71 @@ pub async fn update_media_paths(
         .execute(pool)
         .await
         .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(())
+}
+
+/// Update QA fields for an approval item.
+#[allow(clippy::too_many_arguments)]
+pub async fn update_qa_fields(
+    pool: &DbPool,
+    id: i64,
+    qa_report: &str,
+    qa_hard_flags: &str,
+    qa_soft_flags: &str,
+    qa_recommendations: &str,
+    qa_score: f64,
+    qa_requires_override: bool,
+) -> Result<(), StorageError> {
+    sqlx::query(
+        "UPDATE approval_queue SET qa_report = ?, qa_hard_flags = ?, qa_soft_flags = ?, \
+         qa_recommendations = ?, qa_score = ?, qa_requires_override = ? WHERE id = ?",
+    )
+    .bind(qa_report)
+    .bind(qa_hard_flags)
+    .bind(qa_soft_flags)
+    .bind(qa_recommendations)
+    .bind(qa_score)
+    .bind(if qa_requires_override { 1 } else { 0 })
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(())
+}
+
+/// Record an explicit QA override action.
+pub async fn set_qa_override(
+    pool: &DbPool,
+    id: i64,
+    actor: &str,
+    note: &str,
+) -> Result<(), StorageError> {
+    sqlx::query(
+        "UPDATE approval_queue SET qa_override_by = ?, qa_override_note = ?, \
+         qa_override_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+    )
+    .bind(actor)
+    .bind(note)
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(())
+}
+
+/// Clear QA override metadata (used when content changes and QA is re-run).
+pub async fn clear_qa_override(pool: &DbPool, id: i64) -> Result<(), StorageError> {
+    sqlx::query(
+        "UPDATE approval_queue SET qa_override_by = NULL, qa_override_note = NULL, \
+         qa_override_at = NULL WHERE id = ?",
+    )
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
 
     Ok(())
 }

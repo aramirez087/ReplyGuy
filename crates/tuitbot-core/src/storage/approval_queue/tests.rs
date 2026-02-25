@@ -31,6 +31,15 @@ async fn enqueue_and_get_pending() {
     assert!(pending[0].reviewed_by.is_none());
     assert!(pending[0].reason.is_none());
     assert_eq!(pending[0].detected_risks, "[]");
+    assert_eq!(pending[0].qa_report, "{}");
+    assert_eq!(pending[0].qa_hard_flags, "[]");
+    assert_eq!(pending[0].qa_soft_flags, "[]");
+    assert_eq!(pending[0].qa_recommendations, "[]");
+    assert_eq!(pending[0].qa_score, 0.0);
+    assert!(!pending[0].qa_requires_override);
+    assert!(pending[0].qa_override_by.is_none());
+    assert!(pending[0].qa_override_note.is_none());
+    assert!(pending[0].qa_override_at.is_none());
 }
 
 #[tokio::test]
@@ -295,6 +304,54 @@ async fn enqueue_with_context_stores_reason_and_risks() {
     let item = get_by_id(&pool, id).await.expect("get").expect("found");
     assert_eq!(item.reason.as_deref(), Some("policy_gate"));
     assert_eq!(item.detected_risks, r#"["policy_rule:no_after_hours"]"#);
+    assert_eq!(item.qa_report, "{}");
+    assert_eq!(item.qa_hard_flags, "[]");
+    assert_eq!(item.qa_soft_flags, "[]");
+    assert_eq!(item.qa_recommendations, "[]");
+    assert_eq!(item.qa_score, 0.0);
+    assert!(!item.qa_requires_override);
+}
+
+#[tokio::test]
+async fn update_qa_fields_and_override_roundtrip() {
+    let pool = init_test_db().await.expect("init db");
+
+    let id = enqueue(&pool, "tweet", "", "", "Draft", "General", "", 0.0, "[]")
+        .await
+        .expect("enqueue");
+
+    update_qa_fields(
+        &pool,
+        id,
+        r#"{"score":{"overall":55.0}}"#,
+        r#"[{"code":"language_mismatch"}]"#,
+        r#"[{"code":"length_near_limit"}]"#,
+        r#"["Regenerate in Spanish"]"#,
+        55.0,
+        true,
+    )
+    .await
+    .expect("update qa");
+
+    set_qa_override(&pool, id, "reviewer_1", "Manually validated context")
+        .await
+        .expect("override");
+
+    let item = get_by_id(&pool, id).await.expect("get").expect("found");
+    assert_eq!(item.qa_score, 55.0);
+    assert!(item.qa_requires_override);
+    assert_eq!(item.qa_override_by.as_deref(), Some("reviewer_1"));
+    assert_eq!(
+        item.qa_override_note.as_deref(),
+        Some("Manually validated context")
+    );
+    assert!(item.qa_override_at.is_some());
+
+    clear_qa_override(&pool, id).await.expect("clear override");
+    let item = get_by_id(&pool, id).await.expect("get").expect("found");
+    assert!(item.qa_override_by.is_none());
+    assert!(item.qa_override_note.is_none());
+    assert!(item.qa_override_at.is_none());
 }
 
 #[tokio::test]
