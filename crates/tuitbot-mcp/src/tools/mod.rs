@@ -15,6 +15,7 @@ pub mod replies;
 pub mod response;
 pub mod scoring;
 pub mod targets;
+pub mod x_actions;
 
 #[cfg(test)]
 mod benchmark;

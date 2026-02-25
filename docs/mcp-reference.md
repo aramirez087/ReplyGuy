@@ -105,6 +105,84 @@ envelope schema. If absent, treat it as a legacy (non-migrated) response.
 | `get_stats` | `db_error` |
 | `list_pending_approvals` | `db_error` |
 | `get_discovery_feed` | `db_error` |
+| All Direct X API tools | `x_not_configured`, `x_rate_limited`, `x_auth_expired`, `x_forbidden`, `x_account_restricted`, `x_network_error`, `x_api_error` |
+
+## Direct X API Tools
+
+These tools give agents direct access to X API v2 endpoints. They require
+the MCP server to have valid OAuth tokens (`tuitbot auth`). Check availability
+via `get_capabilities` → `direct_tools`.
+
+### Read Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `get_tweet_by_id` | Fetch a single tweet by ID | `tweet_id` (required) |
+| `x_get_user_by_username` | Look up a user profile by @username | `username` (required) |
+| `x_search_tweets` | Search recent tweets (Basic/Pro tier) | `query` (required), `max_results` (optional, 10-100), `since_id` (optional) |
+| `x_get_user_mentions` | Get mentions of the authenticated user | `since_id` (optional) |
+| `x_get_user_tweets` | Get recent tweets from a user | `user_id` (required), `max_results` (optional, 5-100) |
+
+### Mutation Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `x_post_tweet` | Post a new tweet | `text` (required) |
+| `x_reply_to_tweet` | Reply to an existing tweet | `text` (required), `in_reply_to_id` (required) |
+| `x_quote_tweet` | Post a quote tweet | `text` (required), `quoted_tweet_id` (required) |
+| `x_like_tweet` | Like a tweet | `tweet_id` (required) |
+| `x_follow_user` | Follow a user | `target_user_id` (required) |
+| `x_unfollow_user` | Unfollow a user | `target_user_id` (required) |
+
+### Error Codes
+
+| Code | Meaning | Retryable |
+|------|---------|-----------|
+| `x_not_configured` | X API client not available (no tokens) | No |
+| `x_rate_limited` | X API rate limit hit (HTTP 429) | Yes |
+| `x_auth_expired` | OAuth token expired (HTTP 401) | No |
+| `x_forbidden` | Forbidden / tier restriction (HTTP 403) | No |
+| `x_account_restricted` | Account suspended or limited | No |
+| `x_network_error` | Network connectivity issue | Yes |
+| `x_api_error` | Other X API errors | No |
+
+### Example: Get a tweet
+
+```json
+// Request
+{ "tweet_id": "1234567890" }
+
+// Response
+{
+  "success": true,
+  "data": {
+    "id": "1234567890",
+    "text": "Hello world",
+    "author_id": "987654321",
+    "created_at": "2026-02-24T12:00:00.000Z",
+    "public_metrics": {
+      "retweet_count": 5,
+      "reply_count": 2,
+      "like_count": 10
+    }
+  },
+  "meta": { "tool_version": "1.0", "elapsed_ms": 245 }
+}
+```
+
+### Example: Like a tweet
+
+```json
+// Request
+{ "tweet_id": "1234567890" }
+
+// Response
+{
+  "success": true,
+  "data": { "liked": true, "tweet_id": "1234567890" },
+  "meta": { "tool_version": "1.0", "elapsed_ms": 312 }
+}
+```
 
 ## Operational notes
 

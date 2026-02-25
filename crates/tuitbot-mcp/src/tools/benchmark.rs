@@ -103,7 +103,8 @@ async fn generate_baseline_benchmark() {
         let mut times = Vec::new();
         for _ in 0..ITERATIONS {
             let start = Instant::now();
-            let result = super::capabilities::get_capabilities(&pool, &config, true).await;
+            let result =
+                super::capabilities::get_capabilities(&pool, &config, true, false, None).await;
             times.push(start.elapsed().as_secs_f64() * 1000.0);
             validate_envelope(&result, "get_capabilities");
         }

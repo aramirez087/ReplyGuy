@@ -15,7 +15,9 @@ use rmcp::ServiceExt;
 
 use tuitbot_core::config::Config;
 use tuitbot_core::llm;
+use tuitbot_core::startup;
 use tuitbot_core::storage;
+use tuitbot_core::x_api::{XApiClient, XApiHttpClient};
 
 use server::TuitbotMcpServer;
 use state::AppState;
@@ -43,10 +45,49 @@ pub async fn run_stdio_server(config: Config) -> anyhow::Result<()> {
         }
     };
 
+    // Try to initialize X API client (optional — direct X tools won't work without it)
+    let (x_client, authenticated_user_id): (Option<Box<dyn XApiClient>>, Option<String>) =
+        match startup::load_tokens_from_file() {
+            Ok(tokens) if !tokens.is_expired() => {
+                let client = XApiHttpClient::new(tokens.access_token);
+                client.set_pool(pool.clone()).await;
+                match client.get_me().await {
+                    Ok(user) => {
+                        tracing::info!(
+                            username = %user.username,
+                            user_id = %user.id,
+                            "X API client initialized"
+                        );
+                        (Some(Box::new(client)), Some(user.id))
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "X API client created but get_me() failed: {e}. \
+                             Direct X tools will be disabled."
+                        );
+                        (Some(Box::new(client)), None)
+                    }
+                }
+            }
+            Ok(_) => {
+                tracing::warn!(
+                    "X API tokens expired. Direct X tools will be disabled. \
+                     Run `tuitbot auth` to re-authenticate."
+                );
+                (None, None)
+            }
+            Err(e) => {
+                tracing::warn!("X API tokens not available: {e}. Direct X tools will be disabled.");
+                (None, None)
+            }
+        };
+
     let state = Arc::new(AppState {
         pool: pool.clone(),
         config,
         llm_provider,
+        x_client,
+        authenticated_user_id,
     });
 
     let server = TuitbotMcpServer::new(state);

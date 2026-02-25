@@ -122,6 +122,84 @@ struct DiscoveryFeedRequest {
     limit: Option<u32>,
 }
 
+// --- Direct X API request structs ---
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct TweetIdRequest {
+    /// The tweet ID to look up.
+    tweet_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct UsernameRequest {
+    /// The X username (without @) to look up.
+    username: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct SearchTweetsRequest {
+    /// Search query string.
+    query: String,
+    /// Maximum number of results (10-100, default: 10).
+    max_results: Option<u32>,
+    /// Only return tweets newer than this tweet ID.
+    since_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct GetUserMentionsRequest {
+    /// Only return mentions newer than this tweet ID.
+    since_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct GetUserTweetsRequest {
+    /// The user ID whose tweets to fetch.
+    user_id: String,
+    /// Maximum number of results (5-100, default: 10).
+    max_results: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PostTweetTextRequest {
+    /// The tweet text content (max 280 characters).
+    text: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ReplyToTweetRequest {
+    /// The reply text content.
+    text: String,
+    /// The tweet ID to reply to.
+    in_reply_to_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct QuoteTweetRequest {
+    /// The quote tweet text content.
+    text: String,
+    /// The tweet ID to quote.
+    quoted_tweet_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct LikeTweetMcpRequest {
+    /// The tweet ID to like.
+    tweet_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct FollowUserMcpRequest {
+    /// The user ID to follow.
+    target_user_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct UnfollowUserMcpRequest {
+    /// The user ID to unfollow.
+    target_user_id: String,
+}
+
 #[tool_router]
 impl TuitbotMcpServer {
     // --- Analytics ---
@@ -371,10 +449,13 @@ impl TuitbotMcpServer {
     #[tool]
     async fn get_capabilities(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let llm_available = self.state.llm_provider.is_some();
+        let x_available = self.state.x_client.is_some();
         let result = tools::capabilities::get_capabilities(
             &self.state.pool,
             &self.state.config,
             llm_available,
+            x_available,
+            self.state.authenticated_user_id.as_deref(),
         )
         .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
@@ -478,6 +559,125 @@ impl TuitbotMcpServer {
     #[tool]
     async fn suggest_topics(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = tools::analytics::get_top_topics(&self.state.pool, 10).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    // --- Direct X API ---
+
+    /// Get a single tweet by its ID. Returns full tweet data with metrics.
+    #[tool]
+    async fn get_tweet_by_id(
+        &self,
+        Parameters(req): Parameters<TweetIdRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::x_actions::get_tweet_by_id(&self.state, &req.tweet_id).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Look up an X user profile by username. Returns user data with public metrics.
+    #[tool]
+    async fn x_get_user_by_username(
+        &self,
+        Parameters(req): Parameters<UsernameRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::x_actions::get_user_by_username(&self.state, &req.username).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Search recent tweets matching a query. Returns up to max_results tweets.
+    #[tool]
+    async fn x_search_tweets(
+        &self,
+        Parameters(req): Parameters<SearchTweetsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let max = req.max_results.unwrap_or(10).clamp(10, 100);
+        let result =
+            tools::x_actions::search_tweets(&self.state, &req.query, max, req.since_id.as_deref())
+                .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Get recent mentions of the authenticated user.
+    #[tool]
+    async fn x_get_user_mentions(
+        &self,
+        Parameters(req): Parameters<GetUserMentionsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result =
+            tools::x_actions::get_user_mentions(&self.state, req.since_id.as_deref()).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Get recent tweets from a specific user by user ID.
+    #[tool]
+    async fn x_get_user_tweets(
+        &self,
+        Parameters(req): Parameters<GetUserTweetsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let max = req.max_results.unwrap_or(10).clamp(5, 100);
+        let result = tools::x_actions::get_user_tweets(&self.state, &req.user_id, max).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Post a new tweet to X. Returns the posted tweet data.
+    #[tool]
+    async fn x_post_tweet(
+        &self,
+        Parameters(req): Parameters<PostTweetTextRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::x_actions::post_tweet(&self.state, &req.text).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Reply to an existing tweet. Returns the posted reply data.
+    #[tool]
+    async fn x_reply_to_tweet(
+        &self,
+        Parameters(req): Parameters<ReplyToTweetRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result =
+            tools::x_actions::reply_to_tweet(&self.state, &req.text, &req.in_reply_to_id).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Post a quote tweet referencing another tweet. Returns the posted tweet data.
+    #[tool]
+    async fn x_quote_tweet(
+        &self,
+        Parameters(req): Parameters<QuoteTweetRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result =
+            tools::x_actions::quote_tweet(&self.state, &req.text, &req.quoted_tweet_id).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Like a tweet on behalf of the authenticated user.
+    #[tool]
+    async fn x_like_tweet(
+        &self,
+        Parameters(req): Parameters<LikeTweetMcpRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::x_actions::like_tweet(&self.state, &req.tweet_id).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Follow an X user by user ID.
+    #[tool]
+    async fn x_follow_user(
+        &self,
+        Parameters(req): Parameters<FollowUserMcpRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::x_actions::follow_user(&self.state, &req.target_user_id).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Unfollow an X user by user ID.
+    #[tool]
+    async fn x_unfollow_user(
+        &self,
+        Parameters(req): Parameters<UnfollowUserMcpRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::x_actions::unfollow_user(&self.state, &req.target_user_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 }

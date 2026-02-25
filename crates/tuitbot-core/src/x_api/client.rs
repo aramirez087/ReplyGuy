@@ -11,9 +11,9 @@ use crate::error::XApiError;
 use crate::storage::{self, DbPool};
 
 use super::types::{
-    MediaId, MediaPayload, MediaType, MentionResponse, PostTweetRequest, PostTweetResponse,
-    PostedTweet, RateLimitInfo, ReplyTo, SearchResponse, SingleTweetResponse, Tweet, User,
-    UserResponse, XApiErrorResponse,
+    ActionResultResponse, FollowUserRequest, LikeTweetRequest, MediaId, MediaPayload, MediaType,
+    MentionResponse, PostTweetRequest, PostTweetResponse, PostedTweet, RateLimitInfo, ReplyTo,
+    SearchResponse, SingleTweetResponse, Tweet, User, UserResponse, XApiErrorResponse,
 };
 use super::XApiClient;
 
@@ -195,6 +195,37 @@ impl XApiHttpClient {
         }
     }
 
+    /// Send a DELETE request and handle common error patterns.
+    async fn delete(&self, path: &str) -> Result<reqwest::Response, XApiError> {
+        let token = self.access_token.read().await;
+        let url = format!("{}{}", self.base_url, path);
+
+        let response = self
+            .client
+            .delete(&url)
+            .bearer_auth(&*token)
+            .send()
+            .await
+            .map_err(|e| XApiError::Network { source: e })?;
+
+        let status_code = response.status().as_u16();
+        let rate_info = Self::parse_rate_limit_headers(response.headers());
+        tracing::debug!(
+            path,
+            remaining = ?rate_info.remaining,
+            reset_at = ?rate_info.reset_at,
+            "X API response"
+        );
+
+        self.record_usage(path, "DELETE", status_code);
+
+        if response.status().is_success() {
+            Ok(response)
+        } else {
+            Err(Self::map_error_response(response).await)
+        }
+    }
+
     /// Send a POST request with JSON body and handle common error patterns.
     async fn post_json<T: serde::Serialize>(
         &self,
@@ -300,6 +331,7 @@ impl XApiClient for XApiHttpClient {
             text: text.to_string(),
             reply: None,
             media: None,
+            quote_tweet_id: None,
         };
 
         let response = self.post_json("/tweets", &body).await?;
@@ -322,6 +354,7 @@ impl XApiClient for XApiHttpClient {
                 in_reply_to_tweet_id: in_reply_to_id.to_string(),
             }),
             media: None,
+            quote_tweet_id: None,
         };
 
         let response = self.post_json("/tweets", &body).await?;
@@ -359,6 +392,7 @@ impl XApiClient for XApiHttpClient {
             media: Some(MediaPayload {
                 media_ids: media_ids.to_vec(),
             }),
+            quote_tweet_id: None,
         };
 
         let response = self.post_json("/tweets", &body).await?;
@@ -384,6 +418,7 @@ impl XApiClient for XApiHttpClient {
             media: Some(MediaPayload {
                 media_ids: media_ids.to_vec(),
             }),
+            quote_tweet_id: None,
         };
 
         let response = self.post_json("/tweets", &body).await?;
@@ -452,6 +487,69 @@ impl XApiClient for XApiHttpClient {
             .await
             .map_err(|e| XApiError::Network { source: e })?;
         Ok(resp.data)
+    }
+
+    async fn quote_tweet(
+        &self,
+        text: &str,
+        quoted_tweet_id: &str,
+    ) -> Result<PostedTweet, XApiError> {
+        tracing::debug!(chars = text.len(), quoted = %quoted_tweet_id, "Posting quote tweet");
+        let body = PostTweetRequest {
+            text: text.to_string(),
+            reply: None,
+            media: None,
+            quote_tweet_id: Some(quoted_tweet_id.to_string()),
+        };
+
+        let response = self.post_json("/tweets", &body).await?;
+        let resp: PostTweetResponse = response
+            .json()
+            .await
+            .map_err(|e| XApiError::Network { source: e })?;
+        Ok(resp.data)
+    }
+
+    async fn like_tweet(&self, user_id: &str, tweet_id: &str) -> Result<bool, XApiError> {
+        tracing::debug!(user_id = %user_id, tweet_id = %tweet_id, "Liking tweet");
+        let path = format!("/users/{user_id}/likes");
+        let body = LikeTweetRequest {
+            tweet_id: tweet_id.to_string(),
+        };
+
+        let response = self.post_json(&path, &body).await?;
+        let resp: ActionResultResponse = response
+            .json()
+            .await
+            .map_err(|e| XApiError::Network { source: e })?;
+        Ok(resp.data.result)
+    }
+
+    async fn follow_user(&self, user_id: &str, target_user_id: &str) -> Result<bool, XApiError> {
+        tracing::debug!(user_id = %user_id, target = %target_user_id, "Following user");
+        let path = format!("/users/{user_id}/following");
+        let body = FollowUserRequest {
+            target_user_id: target_user_id.to_string(),
+        };
+
+        let response = self.post_json(&path, &body).await?;
+        let resp: ActionResultResponse = response
+            .json()
+            .await
+            .map_err(|e| XApiError::Network { source: e })?;
+        Ok(resp.data.result)
+    }
+
+    async fn unfollow_user(&self, user_id: &str, target_user_id: &str) -> Result<bool, XApiError> {
+        tracing::debug!(user_id = %user_id, target = %target_user_id, "Unfollowing user");
+        let path = format!("/users/{user_id}/following/{target_user_id}");
+
+        let response = self.delete(&path).await?;
+        let resp: ActionResultResponse = response
+            .json()
+            .await
+            .map_err(|e| XApiError::Network { source: e })?;
+        Ok(resp.data.result)
     }
 }
 
@@ -708,5 +806,117 @@ mod tests {
 
         let resp = client.get_mentions("u1", None).await.expect("mentions");
         assert_eq!(resp.data.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn quote_tweet_success() {
+        let server = MockServer::start().await;
+        let client = setup_client(&server).await;
+
+        Mock::given(method("POST"))
+            .and(path("/tweets"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+                "data": {"id": "qt_1", "text": "Great thread! https://x.com/user/status/999"}
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client.quote_tweet("Great thread!", "999").await;
+        let tweet = result.expect("quote tweet");
+        assert_eq!(tweet.id, "qt_1");
+    }
+
+    #[tokio::test]
+    async fn like_tweet_success() {
+        let server = MockServer::start().await;
+        let client = setup_client(&server).await;
+
+        Mock::given(method("POST"))
+            .and(path("/users/u1/likes"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": {"liked": true}
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client.like_tweet("u1", "t1").await.expect("like");
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn follow_user_success() {
+        let server = MockServer::start().await;
+        let client = setup_client(&server).await;
+
+        Mock::given(method("POST"))
+            .and(path("/users/u1/following"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": {"following": true}
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client.follow_user("u1", "target1").await.expect("follow");
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn unfollow_user_success() {
+        let server = MockServer::start().await;
+        let client = setup_client(&server).await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/users/u1/following/target1"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": {"following": false}
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client
+            .unfollow_user("u1", "target1")
+            .await
+            .expect("unfollow");
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn like_tweet_rate_limited() {
+        let server = MockServer::start().await;
+        let client = setup_client(&server).await;
+
+        Mock::given(method("POST"))
+            .and(path("/users/u1/likes"))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .set_body_json(serde_json::json!({"detail": "Too Many Requests"})),
+            )
+            .mount(&server)
+            .await;
+
+        let result = client.like_tweet("u1", "t1").await;
+        assert!(matches!(result, Err(XApiError::RateLimited { .. })));
+    }
+
+    #[tokio::test]
+    async fn unfollow_user_auth_expired() {
+        let server = MockServer::start().await;
+        let client = setup_client(&server).await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/users/u1/following/target1"))
+            .respond_with(
+                ResponseTemplate::new(401)
+                    .set_body_json(serde_json::json!({"detail": "Unauthorized"})),
+            )
+            .mount(&server)
+            .await;
+
+        let result = client.unfollow_user("u1", "target1").await;
+        assert!(matches!(result, Err(XApiError::AuthExpired)));
     }
 }

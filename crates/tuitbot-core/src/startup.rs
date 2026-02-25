@@ -25,7 +25,7 @@ pub const X_TOKEN_URL: &str = "https://api.twitter.com/2/oauth2/token";
 pub const X_USERS_ME_URL: &str = "https://api.twitter.com/2/users/me";
 
 /// OAuth scopes required by Tuitbot.
-pub const OAUTH_SCOPES: &str = "tweet.read tweet.write users.read offline.access";
+pub const OAUTH_SCOPES: &str = "tweet.read tweet.write users.read follows.read follows.write like.read like.write offline.access";
 
 // ============================================================================
 // API Tier

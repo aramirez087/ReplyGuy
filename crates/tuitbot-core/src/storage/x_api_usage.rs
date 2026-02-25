@@ -32,6 +32,14 @@ pub fn estimate_cost(endpoint: &str, method: &str) -> f64 {
         // Post creation (tweet or reply)
         ("POST", "/tweets") => 0.010,
 
+        // Like/unlike a tweet
+        ("POST", e) if e.contains("/likes") => 0.010,
+        ("DELETE", e) if e.contains("/likes") => 0.010,
+
+        // Follow/unfollow a user
+        ("POST", e) if e.contains("/following") => 0.010,
+        ("DELETE", e) if e.contains("/following") => 0.010,
+
         // Unknown — default to zero until pricing is published
         _ => 0.0,
     }

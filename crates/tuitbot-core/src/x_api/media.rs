@@ -410,6 +410,7 @@ mod tests {
             media: Some(MediaPayload {
                 media_ids: vec!["111".to_string(), "222".to_string()],
             }),
+            quote_tweet_id: None,
         };
 
         let json = serde_json::to_string(&req).expect("serialize");

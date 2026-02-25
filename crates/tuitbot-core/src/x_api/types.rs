@@ -197,6 +197,9 @@ pub struct PostTweetRequest {
     /// Optional media attachments.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media: Option<MediaPayload>,
+    /// Optional tweet ID to quote.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quote_tweet_id: Option<String>,
 }
 
 /// Specifies which tweet this is a reply to.
@@ -263,6 +266,35 @@ pub struct SingleTweetResponse {
 pub struct UserResponse {
     /// The user data.
     pub data: User,
+}
+
+/// Request body for liking a tweet via X API v2.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LikeTweetRequest {
+    /// The tweet ID to like.
+    pub tweet_id: String,
+}
+
+/// Request body for following a user via X API v2.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FollowUserRequest {
+    /// The target user ID to follow.
+    pub target_user_id: String,
+}
+
+/// Response from action endpoints (like, follow, unfollow) via X API v2.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionResultResponse {
+    /// The action result data.
+    pub data: ActionResultData,
+}
+
+/// Data from an action endpoint (like, follow, unfollow).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionResultData {
+    /// Whether the action was successful (liked/following).
+    #[serde(alias = "liked", alias = "following")]
+    pub result: bool,
 }
 
 #[cfg(test)]
@@ -370,10 +402,12 @@ mod tests {
             text: "Hello!".to_string(),
             reply: None,
             media: None,
+            quote_tweet_id: None,
         };
         let json = serde_json::to_string(&req).expect("serialize");
         assert!(!json.contains("reply"));
         assert!(!json.contains("media"));
+        assert!(!json.contains("quote_tweet_id"));
 
         let req_reply = PostTweetRequest {
             text: "Nice!".to_string(),
@@ -381,10 +415,25 @@ mod tests {
                 in_reply_to_tweet_id: "999".to_string(),
             }),
             media: None,
+            quote_tweet_id: None,
         };
         let json = serde_json::to_string(&req_reply).expect("serialize");
         assert!(json.contains("in_reply_to_tweet_id"));
         assert!(json.contains("999"));
+    }
+
+    #[test]
+    fn serialize_post_tweet_request_with_quote() {
+        let req = PostTweetRequest {
+            text: "Great thread!".to_string(),
+            reply: None,
+            media: None,
+            quote_tweet_id: Some("qt_123".to_string()),
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        assert!(json.contains("quote_tweet_id"));
+        assert!(json.contains("qt_123"));
+        assert!(!json.contains("reply"));
     }
 
     #[test]
@@ -395,6 +444,7 @@ mod tests {
             media: Some(MediaPayload {
                 media_ids: vec!["12345".to_string(), "67890".to_string()],
             }),
+            quote_tweet_id: None,
         };
         let json = serde_json::to_string(&req).expect("serialize");
         assert!(json.contains("media_ids"));

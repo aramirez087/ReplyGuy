@@ -102,4 +102,44 @@ pub trait XApiClient: Send + Sync {
     ) -> Result<PostedTweet, XApiError> {
         self.reply_to_tweet(text, in_reply_to_id).await
     }
+
+    /// Post a quote tweet referencing another tweet.
+    async fn quote_tweet(
+        &self,
+        _text: &str,
+        _quoted_tweet_id: &str,
+    ) -> Result<PostedTweet, XApiError> {
+        Err(XApiError::ApiError {
+            status: 0,
+            message: "not implemented".to_string(),
+        })
+    }
+
+    /// Like a tweet on behalf of the authenticated user.
+    async fn like_tweet(&self, _user_id: &str, _tweet_id: &str) -> Result<bool, XApiError> {
+        Err(XApiError::ApiError {
+            status: 0,
+            message: "not implemented".to_string(),
+        })
+    }
+
+    /// Follow a user on behalf of the authenticated user.
+    async fn follow_user(&self, _user_id: &str, _target_user_id: &str) -> Result<bool, XApiError> {
+        Err(XApiError::ApiError {
+            status: 0,
+            message: "not implemented".to_string(),
+        })
+    }
+
+    /// Unfollow a user on behalf of the authenticated user.
+    async fn unfollow_user(
+        &self,
+        _user_id: &str,
+        _target_user_id: &str,
+    ) -> Result<bool, XApiError> {
+        Err(XApiError::ApiError {
+            status: 0,
+            message: "not implemented".to_string(),
+        })
+    }
 }
