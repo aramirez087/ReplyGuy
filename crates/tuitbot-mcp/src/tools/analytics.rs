@@ -1,10 +1,15 @@
 //! Analytics tools: stats dashboard and follower trend.
 
+use std::time::Instant;
+
 use serde::Serialize;
 
+use tuitbot_core::config::Config;
 use tuitbot_core::storage;
 use tuitbot_core::storage::analytics::ContentScore;
 use tuitbot_core::storage::DbPool;
+
+use super::response::{ToolMeta, ToolResponse};
 
 #[derive(Serialize)]
 struct FollowerSnapshotOut {
@@ -47,11 +52,24 @@ fn topics_to_out(topics: Vec<ContentScore>) -> Vec<TopicOut> {
 }
 
 /// Collect analytics stats using the consolidated summary from storage.
-pub async fn get_stats(pool: &DbPool, days: u32) -> String {
+pub async fn get_stats(pool: &DbPool, days: u32, config: &Config) -> String {
+    let start = Instant::now();
+
     // Use the consolidated summary to avoid data drift with the dashboard
     let summary = match storage::analytics::get_analytics_summary(pool).await {
         Ok(s) => s,
-        Err(e) => return format!("Error loading analytics summary: {e}"),
+        Err(e) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let meta = ToolMeta::new(elapsed)
+                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+            return ToolResponse::error(
+                "db_error",
+                format!("Error loading analytics summary: {e}"),
+                true,
+            )
+            .with_meta(meta)
+            .to_json();
+        }
     };
 
     let snapshots = storage::analytics::get_follower_snapshots(pool, days)
@@ -80,7 +98,11 @@ pub async fn get_stats(pool: &DbPool, days: u32) -> String {
         tweets_measured: summary.engagement.total_tweets_posted,
     };
 
-    serde_json::to_string_pretty(&out).unwrap_or_else(|e| format!("Error serializing stats: {e}"))
+    let elapsed = start.elapsed().as_millis() as u64;
+    let meta =
+        ToolMeta::new(elapsed).with_mode(config.mode.to_string(), config.effective_approval_mode());
+
+    ToolResponse::success(out).with_meta(meta).to_json()
 }
 
 /// Get follower snapshots over time.

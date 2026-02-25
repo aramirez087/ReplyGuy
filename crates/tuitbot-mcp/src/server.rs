@@ -133,7 +133,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetStatsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let days = req.days.unwrap_or(7);
-        let result = tools::analytics::get_stats(&self.state.pool, days).await;
+        let result = tools::analytics::get_stats(&self.state.pool, days, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -251,7 +251,7 @@ impl TuitbotMcpServer {
     /// List all pending approval queue items (posts waiting for human review).
     #[tool]
     async fn list_pending_approvals(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::approval::list_pending(&self.state.pool).await;
+        let result = tools::approval::list_pending(&self.state.pool, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -400,7 +400,8 @@ impl TuitbotMcpServer {
     #[tool]
     async fn health_check(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let provider = self.state.llm_provider.as_deref();
-        let result = tools::health::health_check(&self.state.pool, provider).await;
+        let result =
+            tools::health::health_check(&self.state.pool, provider, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -463,9 +464,13 @@ impl TuitbotMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let threshold = req.min_score.unwrap_or(50.0);
         let limit = req.limit.unwrap_or(10);
-        let result =
-            tools::discovery::list_unreplied_tweets_with_limit(&self.state.pool, threshold, limit)
-                .await;
+        let result = tools::discovery::list_unreplied_tweets_with_limit(
+            &self.state.pool,
+            threshold,
+            limit,
+            &self.state.config,
+        )
+        .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 

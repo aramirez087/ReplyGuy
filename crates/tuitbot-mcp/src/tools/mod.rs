@@ -12,5 +12,9 @@ pub mod discovery;
 pub mod health;
 pub mod rate_limits;
 pub mod replies;
+pub mod response;
 pub mod scoring;
 pub mod targets;
+
+#[cfg(test)]
+mod benchmark;

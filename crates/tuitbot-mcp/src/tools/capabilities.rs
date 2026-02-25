@@ -4,12 +4,16 @@
 //! remaining counts, and recommended max actions so agents can plan
 //! before taking actions.
 
+use std::time::Instant;
+
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use tuitbot_core::config::Config;
 use tuitbot_core::storage;
 use tuitbot_core::storage::DbPool;
+
+use super::response::{ToolMeta, ToolResponse};
 
 #[derive(Serialize)]
 struct Capabilities {
@@ -42,6 +46,8 @@ struct RecommendedMax {
 
 /// Build a capabilities JSON response.
 pub async fn get_capabilities(pool: &DbPool, config: &Config, llm_available: bool) -> String {
+    let start = Instant::now();
+
     // 1. Read persisted tier and its timestamp.
     let (tier_str, tier_detected_at) =
         match storage::cursors::get_cursor_with_timestamp(pool, "api_tier").await {
@@ -107,8 +113,11 @@ pub async fn get_capabilities(pool: &DbPool, config: &Config, llm_available: boo
         },
     };
 
-    serde_json::to_string_pretty(&out)
-        .unwrap_or_else(|e| format!("Error serializing capabilities: {e}"))
+    let elapsed = start.elapsed().as_millis() as u64;
+    let meta =
+        ToolMeta::new(elapsed).with_mode(config.mode.to_string(), config.effective_approval_mode());
+
+    ToolResponse::success(out).with_meta(meta).to_json()
 }
 
 #[cfg(test)]
@@ -148,9 +157,10 @@ mod tests {
         let config = Config::default();
         let result = get_capabilities(&pool, &config, true).await;
         let parsed: serde_json::Value = serde_json::from_str(&result).expect("valid JSON");
-        assert_eq!(parsed["tier"], "unknown");
-        assert_eq!(parsed["can_post_tweets"], true);
-        assert_eq!(parsed["llm_available"], true);
+        assert_eq!(parsed["success"], true);
+        assert_eq!(parsed["data"]["tier"], "unknown");
+        assert_eq!(parsed["data"]["can_post_tweets"], true);
+        assert_eq!(parsed["data"]["llm_available"], true);
     }
 
     #[tokio::test]
@@ -162,11 +172,12 @@ mod tests {
         let config = Config::default();
         let result = get_capabilities(&pool, &config, false).await;
         let parsed: serde_json::Value = serde_json::from_str(&result).expect("valid JSON");
-        assert_eq!(parsed["tier"], "Basic");
-        assert_eq!(parsed["can_reply"], true);
-        assert_eq!(parsed["can_search"], true);
-        assert_eq!(parsed["can_discover"], true);
-        assert_eq!(parsed["llm_available"], false);
+        assert_eq!(parsed["success"], true);
+        assert_eq!(parsed["data"]["tier"], "Basic");
+        assert_eq!(parsed["data"]["can_reply"], true);
+        assert_eq!(parsed["data"]["can_search"], true);
+        assert_eq!(parsed["data"]["can_discover"], true);
+        assert_eq!(parsed["data"]["llm_available"], false);
     }
 
     #[tokio::test]
@@ -178,9 +189,10 @@ mod tests {
         let config = Config::default();
         let result = get_capabilities(&pool, &config, true).await;
         let parsed: serde_json::Value = serde_json::from_str(&result).expect("valid JSON");
-        assert_eq!(parsed["can_reply"], false);
-        assert_eq!(parsed["can_search"], false);
-        assert_eq!(parsed["can_discover"], false);
+        assert_eq!(parsed["success"], true);
+        assert_eq!(parsed["data"]["can_reply"], false);
+        assert_eq!(parsed["data"]["can_search"], false);
+        assert_eq!(parsed["data"]["can_discover"], false);
     }
 
     #[tokio::test]
@@ -189,10 +201,13 @@ mod tests {
         let config = Config::default();
         let result = get_capabilities(&pool, &config, true).await;
         let parsed: serde_json::Value = serde_json::from_str(&result).expect("valid JSON");
-        let rate_limits = parsed["rate_limits"].as_array().expect("rate_limits array");
+        assert_eq!(parsed["success"], true);
+        let rate_limits = parsed["data"]["rate_limits"]
+            .as_array()
+            .expect("rate_limits array");
         assert_eq!(rate_limits.len(), 5);
-        assert_eq!(parsed["recommended_max_actions"]["replies"], 5);
-        assert_eq!(parsed["recommended_max_actions"]["tweets"], 6);
-        assert_eq!(parsed["recommended_max_actions"]["threads"], 1);
+        assert_eq!(parsed["data"]["recommended_max_actions"]["replies"], 5);
+        assert_eq!(parsed["data"]["recommended_max_actions"]["tweets"], 6);
+        assert_eq!(parsed["data"]["recommended_max_actions"]["threads"], 1);
     }
 }
