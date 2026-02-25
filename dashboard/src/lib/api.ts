@@ -384,6 +384,33 @@ export interface TypeCostBreakdown {
 	avg_cost: number;
 }
 
+// --- X API cost types ---
+
+export interface XApiUsageSummary {
+	cost_today: number;
+	cost_7d: number;
+	cost_30d: number;
+	cost_all_time: number;
+	calls_today: number;
+	calls_7d: number;
+	calls_30d: number;
+	calls_all_time: number;
+}
+
+export interface DailyXApiUsage {
+	date: string;
+	calls: number;
+	cost: number;
+}
+
+export interface EndpointBreakdown {
+	endpoint: string;
+	method: string;
+	calls: number;
+	cost: number;
+	error_count: number;
+}
+
 // --- API client ---
 
 export const api = {
@@ -506,7 +533,14 @@ export const api = {
 		byModel: (days: number = 30) =>
 			request<ModelCostBreakdown[]>(`/api/costs/by-model?days=${days}`),
 		byType: (days: number = 30) =>
-			request<TypeCostBreakdown[]>(`/api/costs/by-type?days=${days}`)
+			request<TypeCostBreakdown[]>(`/api/costs/by-type?days=${days}`),
+		xApi: {
+			summary: () => request<XApiUsageSummary>('/api/costs/x-api/summary'),
+			daily: (days: number = 30) =>
+				request<DailyXApiUsage[]>(`/api/costs/x-api/daily?days=${days}`),
+			byEndpoint: (days: number = 30) =>
+				request<EndpointBreakdown[]>(`/api/costs/x-api/by-endpoint?days=${days}`)
+		}
 	},
 
 	approval: {

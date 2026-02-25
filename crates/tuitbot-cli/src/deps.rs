@@ -148,6 +148,9 @@ impl RuntimeDeps {
             .map_err(|e| anyhow::anyhow!("Database initialization failed: {e}"))?;
         tracing::info!("Database initialized");
 
+        // 4b. Inject DB pool into X API client for usage tracking.
+        x_client.set_pool(pool.clone()).await;
+
         // 5. Initialize rate limits.
         storage::rate_limits::init_rate_limits(&pool, &config.limits, &config.intervals)
             .await

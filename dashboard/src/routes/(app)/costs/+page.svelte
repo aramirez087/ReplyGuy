@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { DollarSign, BarChart3, Cpu, Hash } from 'lucide-svelte';
+	import { DollarSign, BarChart3, Cpu, Hash, Globe, AlertTriangle } from 'lucide-svelte';
 	import StatCard from '$lib/components/StatCard.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import {
@@ -8,12 +8,16 @@
 		dailyCosts,
 		modelBreakdown,
 		typeBreakdown,
+		xApiSummary,
+		xApiDailyCalls,
+		xApiEndpoints,
 		loading,
 		error,
 		loadCosts
 	} from '$lib/stores/costs';
 
 	let days = $state(30);
+	let activeTab = $state<'llm' | 'xapi'>('llm');
 
 	onMount(() => {
 		loadCosts(days);
@@ -36,30 +40,54 @@
 		return value.toString();
 	}
 
+	function formatNumber(value: number): string {
+		if (value >= 1_000_000) return (value / 1_000_000).toFixed(1) + 'M';
+		if (value >= 1_000) return (value / 1_000).toFixed(1) + 'K';
+		return value.toLocaleString();
+	}
+
 	const maxDailyCost = $derived(
 		$dailyCosts.length > 0 ? Math.max(...$dailyCosts.map((d) => d.cost), 0.001) : 1
+	);
+
+	const maxDailyXApiCost = $derived(
+		$xApiDailyCalls.length > 0 ? Math.max(...$xApiDailyCalls.map((d) => d.cost), 0.001) : 1
 	);
 </script>
 
 <div class="page">
 	<div class="page-header">
-		<h1>LLM Costs</h1>
-		<div class="period-selector">
-			<button
-				class="period-btn"
-				class:active={days === 7}
-				onclick={() => handleDaysChange(7)}
-			>7d</button>
-			<button
-				class="period-btn"
-				class:active={days === 30}
-				onclick={() => handleDaysChange(30)}
-			>30d</button>
-			<button
-				class="period-btn"
-				class:active={days === 90}
-				onclick={() => handleDaysChange(90)}
-			>90d</button>
+		<h1>Costs</h1>
+		<div class="header-controls">
+			<div class="tab-switcher">
+				<button
+					class="tab-btn"
+					class:active={activeTab === 'llm'}
+					onclick={() => (activeTab = 'llm')}
+				>LLM</button>
+				<button
+					class="tab-btn"
+					class:active={activeTab === 'xapi'}
+					onclick={() => (activeTab = 'xapi')}
+				>X API</button>
+			</div>
+			<div class="period-selector">
+				<button
+					class="period-btn"
+					class:active={days === 7}
+					onclick={() => handleDaysChange(7)}
+				>7d</button>
+				<button
+					class="period-btn"
+					class:active={days === 30}
+					onclick={() => handleDaysChange(30)}
+				>30d</button>
+				<button
+					class="period-btn"
+					class:active={days === 90}
+					onclick={() => handleDaysChange(90)}
+				>90d</button>
+			</div>
 		</div>
 	</div>
 
@@ -67,8 +95,8 @@
 		<ErrorState message={$error} onretry={() => loadCosts(days)} />
 	{:else if $loading}
 		<div class="loading">Loading cost data...</div>
-	{:else}
-		<!-- Summary Cards -->
+	{:else if activeTab === 'llm'}
+		<!-- LLM Tab -->
 		<div class="stat-grid">
 			<StatCard label="Cost Today" value={formatCost($summary?.cost_today ?? 0)}>
 				{#snippet icon()}<DollarSign size={18} />{/snippet}
@@ -84,7 +112,6 @@
 			</StatCard>
 		</div>
 
-		<!-- Daily Cost Chart -->
 		{#if $dailyCosts.length > 0}
 			<section class="card">
 				<h2>Daily Cost</h2>
@@ -102,7 +129,6 @@
 			</section>
 		{/if}
 
-		<!-- By Type Table -->
 		{#if $typeBreakdown.length > 0}
 			<section class="card">
 				<h2>By Generation Type</h2>
@@ -131,7 +157,6 @@
 			</section>
 		{/if}
 
-		<!-- By Model Table -->
 		{#if $modelBreakdown.length > 0}
 			<section class="card">
 				<h2>By Model</h2>
@@ -163,6 +188,81 @@
 				</div>
 			</section>
 		{/if}
+	{:else}
+		<!-- X API Tab -->
+		<div class="stat-grid">
+			<StatCard label="Cost Today" value={formatCost($xApiSummary?.cost_today ?? 0)}>
+				{#snippet icon()}<DollarSign size={18} />{/snippet}
+			</StatCard>
+			<StatCard label="Cost (7 days)" value={formatCost($xApiSummary?.cost_7d ?? 0)}>
+				{#snippet icon()}<BarChart3 size={18} />{/snippet}
+			</StatCard>
+			<StatCard label="Calls (30 days)" value={formatNumber($xApiSummary?.calls_30d ?? 0)}>
+				{#snippet icon()}<Globe size={18} />{/snippet}
+			</StatCard>
+			<StatCard label="Total Calls" value={formatNumber($xApiSummary?.calls_all_time ?? 0)}>
+				{#snippet icon()}<Hash size={18} />{/snippet}
+			</StatCard>
+		</div>
+
+		{#if $xApiDailyCalls.length > 0}
+			<section class="card">
+				<h2>Daily Cost</h2>
+				<div class="chart">
+					{#each $xApiDailyCalls as day}
+						<div class="chart-bar-group" title="{day.date}: {formatCost(day.cost)} ({day.calls} calls)">
+							<div
+								class="chart-bar xapi"
+								style="height: {Math.max((day.cost / maxDailyXApiCost) * 100, 2)}%"
+							></div>
+							<span class="chart-label">{day.date.slice(5)}</span>
+						</div>
+					{/each}
+				</div>
+			</section>
+		{/if}
+
+		{#if $xApiEndpoints.length > 0}
+			<section class="card">
+				<h2>By Endpoint</h2>
+				<div class="table-wrapper">
+					<table>
+						<thead>
+							<tr>
+								<th>Endpoint</th>
+								<th>Method</th>
+								<th class="right">Calls</th>
+								<th class="right">Cost</th>
+								<th class="right">Errors</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each $xApiEndpoints as row}
+								<tr>
+									<td class="endpoint-name">{row.endpoint}</td>
+									<td><span class="method-badge" class:post={row.method === 'POST'}>{row.method}</span></td>
+									<td class="right">{formatNumber(row.calls)}</td>
+									<td class="right">{formatCost(row.cost)}</td>
+									<td class="right">
+										{#if row.error_count > 0}
+											<span class="error-count">{row.error_count}</span>
+										{:else}
+											<span class="text-muted">0</span>
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</section>
+		{/if}
+
+		<section class="card info-card">
+			<p class="info-text">
+				Costs estimated using X API pay-per-use pricing: $0.005/post read, $0.010/user lookup, $0.010/post write. Failed requests (4xx/5xx) are tracked but not billed.
+			</p>
+		</section>
 	{/if}
 </div>
 
@@ -178,6 +278,12 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+	}
+
+	.header-controls {
+		display: flex;
+		gap: 8px;
+		align-items: center;
 	}
 
 	h1 {
@@ -204,6 +310,12 @@
 		.stat-grid {
 			grid-template-columns: repeat(2, 1fr);
 		}
+
+		.page-header {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 12px;
+		}
 	}
 
 	.card {
@@ -211,6 +323,36 @@
 		background-color: var(--color-surface);
 		border: 1px solid var(--color-border-subtle);
 		border-radius: 8px;
+	}
+
+	.tab-switcher {
+		display: flex;
+		gap: 4px;
+		background-color: var(--color-surface);
+		border: 1px solid var(--color-border-subtle);
+		border-radius: 6px;
+		padding: 3px;
+	}
+
+	.tab-btn {
+		padding: 4px 14px;
+		border: none;
+		border-radius: 4px;
+		background: transparent;
+		color: var(--color-text-muted);
+		font-size: 12px;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.tab-btn.active {
+		background-color: var(--color-surface-active);
+		color: var(--color-text);
+	}
+
+	.tab-btn:hover:not(.active) {
+		color: var(--color-text);
 	}
 
 	.period-selector {
@@ -270,6 +412,10 @@
 		min-height: 2px;
 	}
 
+	.chart-bar.xapi {
+		background-color: var(--color-info, #3b82f6);
+	}
+
 	.chart-label {
 		font-size: 9px;
 		color: var(--color-text-subtle);
@@ -316,9 +462,47 @@
 		font-weight: 500;
 	}
 
-	.model-name {
+	.model-name,
+	.endpoint-name {
 		font-family: var(--font-mono, monospace);
 		font-size: 12px;
+	}
+
+	.method-badge {
+		display: inline-block;
+		padding: 2px 8px;
+		border-radius: 3px;
+		font-size: 11px;
+		font-weight: 600;
+		font-family: var(--font-mono, monospace);
+		background-color: var(--color-surface-active);
+		color: var(--color-text-muted);
+	}
+
+	.method-badge.post {
+		background-color: color-mix(in srgb, var(--color-accent) 15%, transparent);
+		color: var(--color-accent);
+	}
+
+	.error-count {
+		color: var(--color-error, #ef4444);
+		font-weight: 600;
+	}
+
+	.text-muted {
+		color: var(--color-text-subtle);
+	}
+
+	.info-card {
+		background-color: color-mix(in srgb, var(--color-info, #3b82f6) 5%, var(--color-surface));
+		border-color: color-mix(in srgb, var(--color-info, #3b82f6) 20%, var(--color-border-subtle));
+	}
+
+	.info-text {
+		margin: 0;
+		font-size: 12px;
+		color: var(--color-text-muted);
+		line-height: 1.5;
 	}
 
 	.loading {

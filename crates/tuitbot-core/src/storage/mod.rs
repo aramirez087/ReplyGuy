@@ -17,6 +17,7 @@ pub mod strategy;
 pub mod target_accounts;
 pub mod threads;
 pub mod tweets;
+pub mod x_api_usage;
 
 use crate::error::StorageError;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
@@ -139,6 +140,7 @@ mod tests {
         assert!(table_names.contains(&"approval_queue"));
         assert!(table_names.contains(&"scheduled_content"));
         assert!(table_names.contains(&"llm_usage"));
+        assert!(table_names.contains(&"x_api_usage"));
     }
 
     #[tokio::test]

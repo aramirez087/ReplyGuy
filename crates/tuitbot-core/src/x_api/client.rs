@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::error::XApiError;
+use crate::storage::{self, DbPool};
 
 use super::types::{
     MentionResponse, PostTweetRequest, PostTweetResponse, PostedTweet, RateLimitInfo, ReplyTo,
@@ -36,6 +37,7 @@ pub struct XApiHttpClient {
     client: reqwest::Client,
     base_url: String,
     access_token: Arc<RwLock<String>>,
+    pool: Arc<RwLock<Option<DbPool>>>,
 }
 
 impl XApiHttpClient {
@@ -45,6 +47,7 @@ impl XApiHttpClient {
             client: reqwest::Client::new(),
             base_url: DEFAULT_BASE_URL.to_string(),
             access_token: Arc::new(RwLock::new(access_token)),
+            pool: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -54,7 +57,17 @@ impl XApiHttpClient {
             client: reqwest::Client::new(),
             base_url,
             access_token: Arc::new(RwLock::new(access_token)),
+            pool: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Set the database pool for usage tracking.
+    ///
+    /// Called after DB initialization to enable fire-and-forget recording
+    /// of every X API call.
+    pub async fn set_pool(&self, pool: DbPool) {
+        let mut lock = self.pool.write().await;
+        *lock = Some(pool);
     }
 
     /// Get a shared reference to the access token lock for token manager integration.
@@ -113,6 +126,31 @@ impl XApiHttpClient {
         }
     }
 
+    /// Record an API call in the usage tracking table (fire-and-forget).
+    fn record_usage(&self, path: &str, method: &str, status_code: u16) {
+        let pool_lock = self.pool.clone();
+        let endpoint = path.to_string();
+        let http_method = method.to_string();
+        let cost = storage::x_api_usage::estimate_cost(&endpoint, &http_method);
+        // Only record successful calls for cost (failed requests don't incur charges per X docs).
+        let final_cost = if status_code < 400 { cost } else { 0.0 };
+        tokio::spawn(async move {
+            if let Some(pool) = pool_lock.read().await.as_ref() {
+                if let Err(e) = storage::x_api_usage::insert_x_api_usage(
+                    pool,
+                    &endpoint,
+                    &http_method,
+                    status_code as i32,
+                    final_cost,
+                )
+                .await
+                {
+                    tracing::warn!(error = %e, "Failed to record X API usage");
+                }
+            }
+        });
+    }
+
     /// Send a GET request and handle common error patterns.
     async fn get(
         &self,
@@ -131,6 +169,7 @@ impl XApiHttpClient {
             .await
             .map_err(|e| XApiError::Network { source: e })?;
 
+        let status_code = response.status().as_u16();
         let rate_info = Self::parse_rate_limit_headers(response.headers());
         tracing::debug!(
             path,
@@ -138,6 +177,8 @@ impl XApiHttpClient {
             reset_at = ?rate_info.reset_at,
             "X API response"
         );
+
+        self.record_usage(path, "GET", status_code);
 
         if response.status().is_success() {
             Ok(response)
@@ -164,6 +205,7 @@ impl XApiHttpClient {
             .await
             .map_err(|e| XApiError::Network { source: e })?;
 
+        let status_code = response.status().as_u16();
         let rate_info = Self::parse_rate_limit_headers(response.headers());
         tracing::debug!(
             path,
@@ -171,6 +213,8 @@ impl XApiHttpClient {
             reset_at = ?rate_info.reset_at,
             "X API response"
         );
+
+        self.record_usage(path, "POST", status_code);
 
         if response.status().is_success() {
             Ok(response)
