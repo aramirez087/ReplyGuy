@@ -35,6 +35,8 @@ const SCOPES: &[&str] = &[
     "users.read",
     "follows.read",
     "follows.write",
+    "like.read",
+    "like.write",
     "offline.access",
 ];
 

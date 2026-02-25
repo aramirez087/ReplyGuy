@@ -148,6 +148,9 @@ impl RuntimeDeps {
             .map_err(|e| anyhow::anyhow!("Database initialization failed: {e}"))?;
         tracing::info!("Database initialized");
 
+        // 4b. Inject DB pool into X API client for usage tracking.
+        x_client.set_pool(pool.clone()).await;
+
         // 5. Initialize rate limits.
         storage::rate_limits::init_rate_limits(&pool, &config.limits, &config.intervals)
             .await
@@ -229,8 +232,8 @@ impl RuntimeDeps {
         let status_querier: Arc<StatusQuerierAdapter> =
             Arc::new(StatusQuerierAdapter::new(pool.clone()));
 
-        // Approval queue (only if approval mode is enabled).
-        let approval_queue: Option<Arc<dyn ApprovalQueue>> = if config.approval_mode {
+        // Approval queue (enabled if approval_mode is set or in composer mode).
+        let approval_queue: Option<Arc<dyn ApprovalQueue>> = if config.effective_approval_mode() {
             Some(Arc::new(ApprovalQueueAdapter::new(pool.clone())))
         } else {
             None

@@ -1,10 +1,15 @@
 //! Health check tool.
 
+use std::time::Instant;
+
 use serde::Serialize;
 
+use tuitbot_core::config::Config;
 use tuitbot_core::llm::LlmProvider;
 use tuitbot_core::storage;
 use tuitbot_core::storage::DbPool;
+
+use super::response::{ToolMeta, ToolResponse};
 
 #[derive(Serialize)]
 struct HealthStatus {
@@ -19,7 +24,13 @@ struct ComponentStatus {
 }
 
 /// Check system health: database connectivity and LLM provider status.
-pub async fn health_check(pool: &DbPool, llm_provider: Option<&dyn LlmProvider>) -> String {
+pub async fn health_check(
+    pool: &DbPool,
+    llm_provider: Option<&dyn LlmProvider>,
+    config: &Config,
+) -> String {
+    let start = Instant::now();
+
     // Check database by running a simple query through the storage layer
     let db_status = match storage::analytics::get_follower_snapshots(pool, 1).await {
         Ok(_) => ComponentStatus {
@@ -56,5 +67,9 @@ pub async fn health_check(pool: &DbPool, llm_provider: Option<&dyn LlmProvider>)
         llm: llm_status,
     };
 
-    serde_json::to_string_pretty(&out).unwrap_or_else(|e| format!("Error serializing health: {e}"))
+    let elapsed = start.elapsed().as_millis() as u64;
+    let meta =
+        ToolMeta::new(elapsed).with_mode(config.mode.to_string(), config.effective_approval_mode());
+
+    ToolResponse::success(out).with_meta(meta).to_json()
 }

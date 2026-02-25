@@ -7,6 +7,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tuitbot_core::config::Config;
+use tuitbot_core::content::{tweet_weighted_len, MAX_TWEET_CHARS};
 use tuitbot_core::storage::{approval_queue, replies, scheduled_content, threads};
 
 use crate::error::ApiError;
@@ -87,7 +88,7 @@ pub async fn compose_tweet(
             "", // no target author
             text, "", // no topic
             "", // no archetype
-            0.0,
+            0.0, "[]",
         )
         .await?;
 
@@ -95,6 +96,7 @@ pub async fn compose_tweet(
             id,
             action_type: "tweet".to_string(),
             content: text.to_string(),
+            media_paths: vec![],
         });
 
         Ok(Json(json!({
@@ -135,13 +137,14 @@ pub async fn compose_thread(
     let combined = body.tweets.join("\n---\n");
 
     if approval_mode {
-        let id =
-            approval_queue::enqueue(&state.db, "thread", "", "", &combined, "", "", 0.0).await?;
+        let id = approval_queue::enqueue(&state.db, "thread", "", "", &combined, "", "", 0.0, "[]")
+            .await?;
 
         let _ = state.event_tx.send(WsEvent::ApprovalQueued {
             id,
             action_type: "thread".to_string(),
             content: combined,
+            media_paths: vec![],
         });
 
         Ok(Json(json!({
@@ -320,6 +323,9 @@ pub struct ComposeRequest {
     pub content: String,
     /// Optional ISO 8601 timestamp to schedule the content.
     pub scheduled_for: Option<String>,
+    /// Optional local media file paths to attach.
+    #[serde(default)]
+    pub media_paths: Option<Vec<String>>,
 }
 
 /// `POST /api/content/compose` — compose manual content (tweet or thread).
@@ -334,7 +340,7 @@ pub async fn compose(
 
     match body.content_type.as_str() {
         "tweet" => {
-            if content.len() > 280 {
+            if tweet_weighted_len(&content) > MAX_TWEET_CHARS {
                 return Err(ApiError::BadRequest(
                     "tweet content must not exceed 280 characters".to_string(),
                 ));
@@ -351,7 +357,7 @@ pub async fn compose(
                 }
                 Ok(ref t) => {
                     for (i, tweet) in t.iter().enumerate() {
-                        if tweet.len() > 280 {
+                        if tweet_weighted_len(tweet) > MAX_TWEET_CHARS {
                             return Err(ApiError::BadRequest(format!(
                                 "tweet {} exceeds 280 characters",
                                 i + 1
@@ -376,14 +382,26 @@ pub async fn compose(
     let approval_mode = read_approval_mode(&state)?;
 
     if approval_mode {
-        let id =
-            approval_queue::enqueue(&state.db, &body.content_type, "", "", &content, "", "", 0.0)
-                .await?;
+        let media_paths = body.media_paths.as_deref().unwrap_or(&[]);
+        let media_json = serde_json::to_string(media_paths).unwrap_or_else(|_| "[]".to_string());
+        let id = approval_queue::enqueue(
+            &state.db,
+            &body.content_type,
+            "",
+            "",
+            &content,
+            "",
+            "",
+            0.0,
+            &media_json,
+        )
+        .await?;
 
         let _ = state.event_tx.send(WsEvent::ApprovalQueued {
             id,
             action_type: body.content_type,
             content: content.clone(),
+            media_paths: media_paths.to_vec(),
         });
 
         Ok(Json(json!({
@@ -482,7 +500,7 @@ pub async fn cancel_scheduled(
 /// Read `approval_mode` from the config file.
 fn read_approval_mode(state: &AppState) -> Result<bool, ApiError> {
     let config = read_config(state)?;
-    Ok(config.approval_mode)
+    Ok(config.effective_approval_mode())
 }
 
 /// Read the full config from the config file.
@@ -490,4 +508,158 @@ fn read_config(state: &AppState) -> Result<Config, ApiError> {
     let contents = std::fs::read_to_string(&state.config_path).unwrap_or_default();
     let config: Config = toml::from_str(&contents).unwrap_or_default();
     Ok(config)
+}
+
+// ---------------------------------------------------------------------------
+// Draft endpoints
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct CreateDraftRequest {
+    pub content_type: String,
+    pub content: String,
+    #[serde(default = "default_source")]
+    pub source: String,
+}
+
+fn default_source() -> String {
+    "manual".to_string()
+}
+
+pub async fn list_drafts(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<scheduled_content::ScheduledContent>>, ApiError> {
+    let drafts = scheduled_content::list_drafts(&state.db)
+        .await
+        .map_err(ApiError::Storage)?;
+    Ok(Json(drafts))
+}
+
+pub async fn create_draft(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<CreateDraftRequest>,
+) -> Result<Json<Value>, ApiError> {
+    // Validate content.
+    if body.content.trim().is_empty() {
+        return Err(ApiError::BadRequest(
+            "content must not be empty".to_string(),
+        ));
+    }
+
+    if body.content_type == "tweet"
+        && !tuitbot_core::content::validate_tweet_length(&body.content, MAX_TWEET_CHARS)
+    {
+        return Err(ApiError::BadRequest(format!(
+            "Tweet exceeds {} characters (weighted length: {})",
+            MAX_TWEET_CHARS,
+            tweet_weighted_len(&body.content)
+        )));
+    }
+
+    let id =
+        scheduled_content::insert_draft(&state.db, &body.content_type, &body.content, &body.source)
+            .await
+            .map_err(ApiError::Storage)?;
+
+    Ok(Json(json!({ "id": id, "status": "draft" })))
+}
+
+#[derive(Deserialize)]
+pub struct EditDraftRequest {
+    pub content: String,
+}
+
+pub async fn edit_draft(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(body): Json<EditDraftRequest>,
+) -> Result<Json<Value>, ApiError> {
+    if body.content.trim().is_empty() {
+        return Err(ApiError::BadRequest(
+            "content must not be empty".to_string(),
+        ));
+    }
+
+    scheduled_content::update_draft(&state.db, id, &body.content)
+        .await
+        .map_err(ApiError::Storage)?;
+
+    Ok(Json(json!({ "id": id, "status": "draft" })))
+}
+
+pub async fn delete_draft(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, ApiError> {
+    scheduled_content::delete_draft(&state.db, id)
+        .await
+        .map_err(ApiError::Storage)?;
+
+    Ok(Json(json!({ "id": id, "status": "cancelled" })))
+}
+
+#[derive(Deserialize)]
+pub struct ScheduleDraftRequest {
+    pub scheduled_for: String,
+}
+
+pub async fn schedule_draft(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(body): Json<ScheduleDraftRequest>,
+) -> Result<Json<Value>, ApiError> {
+    scheduled_content::schedule_draft(&state.db, id, &body.scheduled_for)
+        .await
+        .map_err(ApiError::Storage)?;
+
+    Ok(Json(
+        json!({ "id": id, "status": "scheduled", "scheduled_for": body.scheduled_for }),
+    ))
+}
+
+pub async fn publish_draft(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, ApiError> {
+    // Get the draft.
+    let item = scheduled_content::get_by_id(&state.db, id)
+        .await
+        .map_err(ApiError::Storage)?
+        .ok_or_else(|| ApiError::NotFound(format!("Draft {id} not found")))?;
+
+    if item.status != "draft" {
+        return Err(ApiError::BadRequest(format!(
+            "Item is in '{}' status, not 'draft'",
+            item.status
+        )));
+    }
+
+    // Queue into approval queue for immediate posting.
+    let queue_id = approval_queue::enqueue(
+        &state.db,
+        &item.content_type,
+        "", // no target tweet
+        "", // no target author
+        &item.content,
+        "",  // topic
+        "",  // archetype
+        0.0, // score
+        "[]",
+    )
+    .await
+    .map_err(ApiError::Storage)?;
+
+    // Mark as approved immediately so the approval poster picks it up.
+    approval_queue::update_status(&state.db, queue_id, "approved")
+        .await
+        .map_err(ApiError::Storage)?;
+
+    // Mark the draft as posted.
+    scheduled_content::update_status(&state.db, id, "posted", None)
+        .await
+        .map_err(ApiError::Storage)?;
+
+    Ok(Json(
+        json!({ "id": id, "approval_queue_id": queue_id, "status": "queued_for_posting" }),
+    ))
 }

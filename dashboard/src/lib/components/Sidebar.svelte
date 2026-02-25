@@ -21,6 +21,9 @@
 		Sun,
 		Moon,
 		Download,
+		Search,
+		PenLine,
+		Shield,
 	} from "lucide-svelte";
 
 	let collapsed = $state(false);
@@ -46,9 +49,12 @@
 		{ href: "/activity", label: "Activity", icon: Activity },
 		{ href: "/approval", label: "Approval", icon: CheckCircle },
 		{ href: "/content", label: "Content", icon: FileText },
+		{ href: "/drafts", label: "Drafts", icon: PenLine },
+		{ href: "/discovery", label: "Discovery", icon: Search },
 		{ href: "/targets", label: "Targets", icon: Target },
 		{ href: "/strategy", label: "Strategy", icon: Compass },
 		{ href: "/costs", label: "Costs", icon: DollarSign },
+		{ href: "/mcp", label: "MCP", icon: Shield },
 		{ href: "/settings", label: "Settings", icon: Settings },
 	];
 

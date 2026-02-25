@@ -85,6 +85,20 @@ pub enum XApiError {
         /// The error message from the API.
         message: String,
     },
+
+    /// Media upload failed.
+    #[error("media upload failed: {message}")]
+    MediaUploadError {
+        /// Details about the upload failure.
+        message: String,
+    },
+
+    /// Media processing timed out after waiting for the specified duration.
+    #[error("media processing timed out after {seconds}s")]
+    MediaProcessingTimeout {
+        /// Number of seconds waited before timing out.
+        seconds: u64,
+    },
 }
 
 /// Errors from interacting with LLM providers (OpenAI, Anthropic, Ollama).
@@ -276,5 +290,19 @@ mod tests {
             err.to_string(),
             "invalid tweet data for scoring: missing author_id"
         );
+    }
+
+    #[test]
+    fn x_api_error_media_upload_message() {
+        let err = XApiError::MediaUploadError {
+            message: "file too large".to_string(),
+        };
+        assert_eq!(err.to_string(), "media upload failed: file too large");
+    }
+
+    #[test]
+    fn x_api_error_media_processing_timeout_message() {
+        let err = XApiError::MediaProcessingTimeout { seconds: 300 };
+        assert_eq!(err.to_string(), "media processing timed out after 300s");
     }
 }

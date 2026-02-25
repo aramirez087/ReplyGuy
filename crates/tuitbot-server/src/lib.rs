@@ -69,6 +69,23 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/content/scheduled/{id}",
             patch(routes::content::edit_scheduled).delete(routes::content::cancel_scheduled),
         )
+        // Drafts
+        .route(
+            "/content/drafts",
+            get(routes::content::list_drafts).post(routes::content::create_draft),
+        )
+        .route(
+            "/content/drafts/{id}",
+            patch(routes::content::edit_draft).delete(routes::content::delete_draft),
+        )
+        .route(
+            "/content/drafts/{id}/schedule",
+            post(routes::content::schedule_draft),
+        )
+        .route(
+            "/content/drafts/{id}/publish",
+            post(routes::content::publish_draft),
+        )
         // Targets
         .route(
             "/targets",
@@ -91,11 +108,42 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/strategy/history", get(routes::strategy::history))
         .route("/strategy/refresh", post(routes::strategy::refresh))
         .route("/strategy/inputs", get(routes::strategy::inputs))
-        // Costs
+        // Costs — LLM
         .route("/costs/summary", get(routes::costs::summary))
         .route("/costs/daily", get(routes::costs::daily))
         .route("/costs/by-model", get(routes::costs::by_model))
         .route("/costs/by-type", get(routes::costs::by_type))
+        // Costs — X API
+        .route("/costs/x-api/summary", get(routes::costs::x_api_summary))
+        .route("/costs/x-api/daily", get(routes::costs::x_api_daily))
+        .route(
+            "/costs/x-api/by-endpoint",
+            get(routes::costs::x_api_by_endpoint),
+        )
+        // AI Assist
+        .route("/assist/tweet", post(routes::assist::assist_tweet))
+        .route("/assist/reply", post(routes::assist::assist_reply))
+        .route("/assist/thread", post(routes::assist::assist_thread))
+        .route("/assist/improve", post(routes::assist::assist_improve))
+        .route("/assist/topics", get(routes::assist::assist_topics))
+        .route(
+            "/assist/optimal-times",
+            get(routes::assist::assist_optimal_times),
+        )
+        .route("/assist/mode", get(routes::assist::get_mode))
+        // Discovery feed
+        .route("/discovery/feed", get(routes::discovery::feed))
+        .route(
+            "/discovery/{tweet_id}/compose-reply",
+            post(routes::discovery::compose_reply),
+        )
+        .route(
+            "/discovery/{tweet_id}/queue-reply",
+            post(routes::discovery::queue_reply),
+        )
+        // Media
+        .route("/media/upload", post(routes::media::upload))
+        .route("/media/file", get(routes::media::serve_file))
         // Settings
         .route("/settings/status", get(routes::settings::config_status))
         .route("/settings/init", post(routes::settings::init_settings))
@@ -109,6 +157,21 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/settings",
             get(routes::settings::get_settings).patch(routes::settings::patch_settings),
         )
+        // MCP governance
+        .route(
+            "/mcp/policy",
+            get(routes::mcp::get_policy).patch(routes::mcp::patch_policy),
+        )
+        .route(
+            "/mcp/telemetry/summary",
+            get(routes::mcp::telemetry_summary),
+        )
+        .route(
+            "/mcp/telemetry/metrics",
+            get(routes::mcp::telemetry_metrics),
+        )
+        .route("/mcp/telemetry/errors", get(routes::mcp::telemetry_errors))
+        .route("/mcp/telemetry/recent", get(routes::mcp::telemetry_recent))
         // Runtime
         .route("/runtime/status", get(routes::runtime::status))
         .route("/runtime/start", post(routes::runtime::start))

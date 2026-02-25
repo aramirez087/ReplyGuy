@@ -1,9 +1,14 @@
 //! Approval queue tools: list, approve, reject, approve_all.
 
+use std::time::Instant;
+
 use serde::Serialize;
 
+use tuitbot_core::config::Config;
 use tuitbot_core::storage;
 use tuitbot_core::storage::DbPool;
+
+use super::response::{ToolMeta, ToolResponse};
 
 #[derive(Serialize)]
 struct ApprovalItemOut {
@@ -35,14 +40,29 @@ fn item_to_out(item: &storage::approval_queue::ApprovalItem) -> ApprovalItemOut 
 }
 
 /// List all pending approval items.
-pub async fn list_pending(pool: &DbPool) -> String {
+pub async fn list_pending(pool: &DbPool, config: &Config) -> String {
+    let start = Instant::now();
+
     match storage::approval_queue::get_pending(pool).await {
         Ok(items) => {
             let out: Vec<ApprovalItemOut> = items.iter().map(item_to_out).collect();
-            serde_json::to_string_pretty(&out)
-                .unwrap_or_else(|e| format!("Error serializing approvals: {e}"))
+            let elapsed = start.elapsed().as_millis() as u64;
+            let meta = ToolMeta::new(elapsed)
+                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::success(out).with_meta(meta).to_json()
         }
-        Err(e) => format!("Error fetching pending approvals: {e}"),
+        Err(e) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let meta = ToolMeta::new(elapsed)
+                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::error(
+                "db_error",
+                format!("Error fetching pending approvals: {e}"),
+                true,
+            )
+            .with_meta(meta)
+            .to_json()
+        }
     }
 }
 

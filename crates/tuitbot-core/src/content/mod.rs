@@ -7,6 +7,11 @@
 
 pub mod frameworks;
 pub mod generator;
+pub mod length;
 
 pub use frameworks::{ReplyArchetype, ThreadStructure, TweetFormat};
 pub use generator::{ContentGenerator, GenerationOutput, ThreadGenerationOutput};
+pub use length::{
+    truncate_at_sentence, tweet_weighted_len, validate_tweet_length, MAX_TWEET_CHARS,
+    TCO_URL_LENGTH,
+};

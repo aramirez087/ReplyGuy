@@ -5,8 +5,10 @@
 pub mod automation;
 pub mod config;
 pub mod content;
+pub mod context;
 pub mod error;
 pub mod llm;
+pub mod mcp_policy;
 pub mod safety;
 pub mod scoring;
 pub mod startup;

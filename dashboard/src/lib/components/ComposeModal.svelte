@@ -1,6 +1,7 @@
 <script lang="ts">
-	import type { ScheduleConfig } from '$lib/api';
-	import { X, Plus, Trash2, Send } from 'lucide-svelte';
+	import { api, type ScheduleConfig } from '$lib/api';
+	import { tweetWeightedLen } from '$lib/utils/tweetLength';
+	import { X, Plus, Trash2, Send, Image, Film } from 'lucide-svelte';
 	import TimePicker from './TimePicker.svelte';
 
 	let {
@@ -16,7 +17,12 @@
 		prefillDate?: Date | null;
 		schedule: ScheduleConfig | null;
 		onclose: () => void;
-		onsubmit: (data: { content_type: string; content: string; scheduled_for?: string }) => void;
+		onsubmit: (data: {
+			content_type: string;
+			content: string;
+			scheduled_for?: string;
+			media_paths?: string[];
+		}) => void;
 	} = $props();
 
 	let mode = $state<'tweet' | 'thread'>('tweet');
@@ -25,6 +31,30 @@
 	let selectedTime = $state<string | null>(null);
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
+
+	// Media attachments
+	interface AttachedMedia {
+		path: string;
+		file: File;
+		previewUrl: string;
+		mediaType: string;
+	}
+	let attachedMedia = $state<AttachedMedia[]>([]);
+	let uploading = $state(false);
+	let fileInput: HTMLInputElement | undefined = $state();
+
+	const ACCEPTED_TYPES = 'image/jpeg,image/png,image/webp,image/gif,video/mp4';
+	const MAX_IMAGES = 4;
+	const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+	const MAX_GIF_SIZE = 15 * 1024 * 1024; // 15MB
+	const MAX_VIDEO_SIZE = 512 * 1024 * 1024; // 512MB
+
+	const hasGifOrVideo = $derived(
+		attachedMedia.some((m) => m.mediaType === 'image/gif' || m.mediaType === 'video/mp4')
+	);
+	const canAttachMore = $derived(
+		!hasGifOrVideo && attachedMedia.length < MAX_IMAGES
+	);
 
 	const targetDate = $derived(prefillDate ?? new Date());
 	const dateLabel = $derived(
@@ -40,17 +70,23 @@
 			mode = 'tweet';
 			submitting = false;
 			submitError = null;
+			// Clean up media preview URLs
+			for (const m of attachedMedia) {
+				URL.revokeObjectURL(m.previewUrl);
+			}
+			attachedMedia = [];
+			uploading = false;
 		}
 	});
 
 	const TWEET_MAX = 280;
-	const tweetChars = $derived(tweetText.length);
+	const tweetChars = $derived(tweetWeightedLen(tweetText));
 	const tweetOverLimit = $derived(tweetChars > TWEET_MAX);
 
 	const canSubmitTweet = $derived(tweetText.trim().length > 0 && !tweetOverLimit);
 	const canSubmitThread = $derived(
 		threadParts.filter((p) => p.trim().length > 0).length >= 2 &&
-			threadParts.every((p) => p.length <= TWEET_MAX)
+			threadParts.every((p) => tweetWeightedLen(p) <= TWEET_MAX)
 	);
 	const canSubmit = $derived(mode === 'tweet' ? canSubmitTweet : canSubmitThread);
 
@@ -67,6 +103,73 @@
 		threadParts = threadParts.map((p, i) => (i === index ? value : p));
 	}
 
+	function getMaxSize(type: string): number {
+		if (type === 'video/mp4') return MAX_VIDEO_SIZE;
+		if (type === 'image/gif') return MAX_GIF_SIZE;
+		return MAX_IMAGE_SIZE;
+	}
+
+	async function handleFileSelect(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const files = input.files;
+		if (!files || files.length === 0) return;
+
+		submitError = null;
+
+		for (const file of files) {
+			if (!canAttachMore && !hasGifOrVideo) {
+				submitError = `Maximum ${MAX_IMAGES} images allowed per tweet.`;
+				break;
+			}
+
+			const isGifOrVideo = file.type === 'image/gif' || file.type === 'video/mp4';
+			if (isGifOrVideo && attachedMedia.length > 0) {
+				submitError = 'GIF/video cannot be combined with other media.';
+				break;
+			}
+			if (!isGifOrVideo && hasGifOrVideo) {
+				submitError = 'Cannot add images when GIF/video is attached.';
+				break;
+			}
+
+			const maxSize = getMaxSize(file.type);
+			if (file.size > maxSize) {
+				submitError = `File "${file.name}" exceeds maximum size of ${Math.round(maxSize / 1024 / 1024)}MB.`;
+				break;
+			}
+
+			uploading = true;
+			try {
+				const result = await api.media.upload(file);
+				attachedMedia = [
+					...attachedMedia,
+					{
+						path: result.path,
+						file,
+						previewUrl: URL.createObjectURL(file),
+						mediaType: result.media_type
+					}
+				];
+			} catch (err) {
+				submitError = err instanceof Error ? err.message : 'Failed to upload media';
+				break;
+			} finally {
+				uploading = false;
+			}
+		}
+
+		// Reset file input so same file can be re-selected.
+		input.value = '';
+	}
+
+	function removeMedia(index: number) {
+		const removed = attachedMedia[index];
+		if (removed) {
+			URL.revokeObjectURL(removed.previewUrl);
+		}
+		attachedMedia = attachedMedia.filter((_, i) => i !== index);
+	}
+
 	async function handleSubmit() {
 		if (!canSubmit || submitting) return;
 		submitting = true;
@@ -76,7 +179,12 @@
 			const content =
 				mode === 'tweet' ? tweetText.trim() : JSON.stringify(threadParts.map((p) => p.trim()).filter(Boolean));
 
-			const data: { content_type: string; content: string; scheduled_for?: string } = {
+			const data: {
+				content_type: string;
+				content: string;
+				scheduled_for?: string;
+				media_paths?: string[];
+			} = {
 				content_type: mode,
 				content
 			};
@@ -87,6 +195,10 @@
 				const [h, m] = selectedTime.split(':').map(Number);
 				scheduled.setHours(h, m, 0, 0);
 				data.scheduled_for = scheduled.toISOString().replace('Z', '');
+			}
+
+			if (attachedMedia.length > 0) {
+				data.media_paths = attachedMedia.map((m) => m.path);
 			}
 
 			onsubmit(data);
@@ -105,6 +217,35 @@
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			onclose();
+		}
+	}
+
+	// AI Assist
+	let assisting = $state(false);
+
+	async function handleAiAssist() {
+		assisting = true;
+		submitError = null;
+		try {
+			if (mode === 'tweet') {
+				if (tweetText.trim()) {
+					// Improve existing draft
+					const result = await api.assist.improve(tweetText);
+					tweetText = result.content;
+				} else {
+					// Generate new tweet
+					const result = await api.assist.tweet('general');
+					tweetText = result.content;
+				}
+			} else {
+				// Generate thread
+				const result = await api.assist.thread('general');
+				threadParts = result.tweets;
+			}
+		} catch (e) {
+			submitError = e instanceof Error ? e.message : 'AI assist failed';
+		} finally {
+			assisting = false;
 		}
 	}
 </script>
@@ -162,14 +303,14 @@
 								</div>
 								<textarea
 									class="compose-input thread-input"
-									class:over-limit={part.length > TWEET_MAX}
+									class:over-limit={tweetWeightedLen(part) > TWEET_MAX}
 									placeholder={i === 0 ? 'Start your thread...' : 'Continue...'}
 									value={part}
 									oninput={(e) => updateThreadPart(i, e.currentTarget.value)}
 									rows={3}
 								></textarea>
-								<div class="char-counter" class:over-limit={part.length > TWEET_MAX}>
-									{part.length}/{TWEET_MAX}
+								<div class="char-counter" class:over-limit={tweetWeightedLen(part) > TWEET_MAX}>
+									{tweetWeightedLen(part)}/{TWEET_MAX}
 								</div>
 							</div>
 						{/each}
@@ -180,7 +321,50 @@
 					</div>
 				{/if}
 
-				<div class="schedule-section">
+				<!-- Media attachments -->
+			{#if attachedMedia.length > 0}
+				<div class="media-preview-grid">
+					{#each attachedMedia as media, i}
+						<div class="media-thumb">
+							{#if media.mediaType === 'video/mp4'}
+								<!-- svelte-ignore a11y_media_has_caption -->
+								<video src={media.previewUrl} class="thumb-img"></video>
+								<span class="media-badge"><Film size={10} /> Video</span>
+							{:else}
+								<img src={media.previewUrl} alt="Attached media" class="thumb-img" />
+								{#if media.mediaType === 'image/gif'}
+									<span class="media-badge">GIF</span>
+								{/if}
+							{/if}
+							<button class="remove-media-btn" onclick={() => removeMedia(i)}>
+								<X size={12} />
+							</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+
+			{#if mode === 'tweet' && canAttachMore}
+				<div class="media-attach-section">
+					<button class="attach-btn" onclick={() => fileInput?.click()} disabled={uploading}>
+						<Image size={14} />
+						{uploading ? 'Uploading...' : 'Attach media'}
+					</button>
+					<span class="attach-hint">
+						JPEG, PNG, WebP, GIF, MP4 &middot; max 4 images or 1 GIF/video
+					</span>
+					<input
+						bind:this={fileInput}
+						type="file"
+						accept={ACCEPTED_TYPES}
+						multiple
+						class="hidden-file-input"
+						onchange={handleFileSelect}
+					/>
+				</div>
+			{/if}
+
+			<div class="schedule-section">
 					<TimePicker
 						{schedule}
 						{selectedTime}
@@ -195,6 +379,10 @@
 			</div>
 
 			<div class="modal-footer">
+				<button class="assist-btn" onclick={handleAiAssist} disabled={assisting}>
+					{assisting ? 'Generating...' : tweetText.trim() ? 'AI Improve' : 'AI Assist'}
+				</button>
+				<div class="footer-spacer"></div>
 				<button class="cancel-btn" onclick={onclose}>Cancel</button>
 				<button class="submit-btn" onclick={handleSubmit} disabled={!canSubmit || submitting}>
 					<Send size={14} />
@@ -409,6 +597,105 @@
 		background: color-mix(in srgb, var(--color-accent) 5%, transparent);
 	}
 
+	.media-preview-grid {
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+		margin-top: 12px;
+	}
+
+	.media-thumb {
+		position: relative;
+		width: 80px;
+		height: 80px;
+		border-radius: 8px;
+		overflow: hidden;
+		border: 1px solid var(--color-border);
+	}
+
+	.thumb-img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+
+	.media-badge {
+		position: absolute;
+		bottom: 4px;
+		left: 4px;
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		font-size: 9px;
+		font-weight: 600;
+		padding: 1px 5px;
+		border-radius: 3px;
+		background: rgba(0, 0, 0, 0.7);
+		color: #fff;
+	}
+
+	.remove-media-btn {
+		position: absolute;
+		top: 4px;
+		right: 4px;
+		width: 20px;
+		height: 20px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		border-radius: 50%;
+		background: rgba(0, 0, 0, 0.6);
+		color: #fff;
+		cursor: pointer;
+		transition: background 0.15s ease;
+	}
+
+	.remove-media-btn:hover {
+		background: rgba(0, 0, 0, 0.85);
+	}
+
+	.media-attach-section {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-top: 12px;
+	}
+
+	.attach-btn {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		padding: 6px 12px;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		background: transparent;
+		color: var(--color-text-muted);
+		font-size: 12px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.attach-btn:hover:not(:disabled) {
+		border-color: var(--color-accent);
+		color: var(--color-accent);
+	}
+
+	.attach-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.attach-hint {
+		font-size: 11px;
+		color: var(--color-text-subtle);
+	}
+
+	.hidden-file-input {
+		display: none;
+	}
+
 	.schedule-section {
 		margin-top: 16px;
 		padding-top: 16px;
@@ -431,6 +718,30 @@
 		gap: 8px;
 		padding: 16px 20px;
 		border-top: 1px solid var(--color-border-subtle);
+	}
+
+	.assist-btn {
+		padding: 8px 16px;
+		border: 1px solid var(--color-accent);
+		border-radius: 6px;
+		background: transparent;
+		color: var(--color-accent);
+		font-size: 13px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.assist-btn:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+	}
+
+	.assist-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.footer-spacer {
+		flex: 1;
 	}
 
 	.cancel-btn {

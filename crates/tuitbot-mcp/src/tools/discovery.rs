@@ -1,9 +1,14 @@
 //! Discovery tools: list discovered tweets, list unreplied tweets.
 
+use std::time::Instant;
+
 use serde::Serialize;
 
+use tuitbot_core::config::Config;
 use tuitbot_core::storage;
 use tuitbot_core::storage::DbPool;
+
+use super::response::{ToolMeta, ToolResponse};
 
 #[derive(Serialize)]
 struct DiscoveredTweetOut {
@@ -47,5 +52,41 @@ pub async fn list_unreplied_tweets(pool: &DbPool, threshold: f64) -> String {
                 .unwrap_or_else(|e| format!("Error serializing tweets: {e}"))
         }
         Err(e) => format!("Error fetching unreplied tweets: {e}"),
+    }
+}
+
+/// List unreplied tweets above a score threshold with a limit.
+pub async fn list_unreplied_tweets_with_limit(
+    pool: &DbPool,
+    threshold: f64,
+    limit: u32,
+    config: &Config,
+) -> String {
+    let start = Instant::now();
+
+    match storage::tweets::get_unreplied_tweets_above_score(pool, threshold).await {
+        Ok(tweets) => {
+            let out: Vec<DiscoveredTweetOut> = tweets
+                .iter()
+                .take(limit as usize)
+                .map(tweet_to_out)
+                .collect();
+            let elapsed = start.elapsed().as_millis() as u64;
+            let meta = ToolMeta::new(elapsed)
+                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::success(out).with_meta(meta).to_json()
+        }
+        Err(e) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let meta = ToolMeta::new(elapsed)
+                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::error(
+                "db_error",
+                format!("Error fetching unreplied tweets: {e}"),
+                true,
+            )
+            .with_meta(meta)
+            .to_json()
+        }
     }
 }

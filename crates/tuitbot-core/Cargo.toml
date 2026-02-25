@@ -12,13 +12,13 @@ keywords = ["x-api", "twitter", "automation", "bot", "mcp"]
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio", "migrate", "macros"] }
 tracing = "0.1"
-oauth2 = "4"
+oauth2 = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
 thiserror = "2"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
@@ -29,6 +29,7 @@ sha2 = "0.10"
 base64 = "0.22"
 open = "5"
 tokio-util = "0.7.18"
+regex = "1"
 
 [features]
 test-helpers = []

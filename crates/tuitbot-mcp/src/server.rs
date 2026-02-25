@@ -7,9 +7,8 @@ use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::*;
 use rmcp::{tool, tool_handler, tool_router, ServerHandler};
-use schemars::JsonSchema;
-use serde::Deserialize;
 
+use crate::requests::*;
 use crate::state::SharedState;
 use crate::tools;
 
@@ -30,80 +29,6 @@ impl TuitbotMcpServer {
     }
 }
 
-// --- Request structs for tools with parameters ---
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct GetStatsRequest {
-    /// Number of days to look back (default: 7)
-    days: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct GetFollowerTrendRequest {
-    /// Number of snapshots to return (default: 7)
-    limit: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct GetActionLogRequest {
-    /// Hours to look back (default: 24)
-    since_hours: Option<u32>,
-    /// Filter by action type (e.g., 'reply', 'tweet', 'search')
-    action_type: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct SinceHoursRequest {
-    /// Hours to look back (default: 24)
-    since_hours: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct ListUnrepliedTweetsRequest {
-    /// Minimum relevance score threshold (default: 0.0)
-    threshold: Option<f64>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct ScoreTweetRequest {
-    /// The tweet text content
-    text: String,
-    /// Author's X username
-    author_username: String,
-    /// Author's follower count
-    author_followers: u64,
-    /// Number of likes on the tweet
-    likes: u64,
-    /// Number of retweets
-    retweets: u64,
-    /// Number of replies
-    replies: u64,
-    /// Tweet creation timestamp (ISO 8601)
-    created_at: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct ApprovalIdRequest {
-    /// The approval queue item ID
-    id: i64,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct GenerateReplyRequest {
-    /// The tweet text to reply to
-    tweet_text: String,
-    /// Username of the tweet author
-    tweet_author: String,
-    /// Whether to potentially mention the product (default: false)
-    mention_product: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct TopicRequest {
-    /// Topic (uses a random industry topic from config if not provided)
-    topic: Option<String>,
-}
-
 #[tool_router]
 impl TuitbotMcpServer {
     // --- Analytics ---
@@ -115,7 +40,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetStatsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let days = req.days.unwrap_or(7);
-        let result = tools::analytics::get_stats(&self.state.pool, days).await;
+        let result = tools::analytics::get_stats(&self.state.pool, days, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -233,7 +158,7 @@ impl TuitbotMcpServer {
     /// List all pending approval queue items (posts waiting for human review).
     #[tool]
     async fn list_pending_approvals(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::approval::list_pending(&self.state.pool).await;
+        let result = tools::approval::list_pending(&self.state.pool, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -353,10 +278,13 @@ impl TuitbotMcpServer {
     #[tool]
     async fn get_capabilities(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let llm_available = self.state.llm_provider.is_some();
+        let x_available = self.state.x_client.is_some();
         let result = tools::capabilities::get_capabilities(
             &self.state.pool,
             &self.state.config,
             llm_available,
+            x_available,
+            self.state.authenticated_user_id.as_deref(),
         )
         .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
@@ -382,7 +310,373 @@ impl TuitbotMcpServer {
     #[tool]
     async fn health_check(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let provider = self.state.llm_provider.as_deref();
-        let result = tools::health::health_check(&self.state.pool, provider).await;
+        let result =
+            tools::health::health_check(&self.state.pool, provider, &self.state.config).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    // --- Composer Mode ---
+
+    /// Get the current operating mode (autopilot or composer) and effective approval mode.
+    #[tool]
+    async fn get_mode(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        let mode = self.state.config.mode.to_string();
+        let approval = self.state.config.effective_approval_mode();
+        let result = serde_json::json!({
+            "mode": mode,
+            "approval_mode": approval,
+        });
+        Ok(CallToolResult::success(vec![Content::text(
+            result.to_string(),
+        )]))
+    }
+
+    /// Get the current MCP mutation policy status: enforcement settings, blocked tools, rate limit usage, and operating mode.
+    #[tool]
+    async fn get_policy_status(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::policy_gate::get_policy_status(&self.state).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Create a new draft or scheduled tweet/thread. In composer mode, this is the primary way to queue content.
+    #[tool]
+    async fn compose_tweet(
+        &self,
+        Parameters(req): Parameters<ComposeTweetRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let start = std::time::Instant::now();
+        let params = serde_json::json!({
+            "content": req.content,
+            "content_type": req.content_type,
+            "scheduled_for": req.scheduled_for,
+        })
+        .to_string();
+        match tools::policy_gate::check_policy(&self.state, "compose_tweet", &params, start).await {
+            tools::policy_gate::GateResult::EarlyReturn(r) => {
+                return Ok(CallToolResult::success(vec![Content::text(r)]));
+            }
+            tools::policy_gate::GateResult::Proceed => {}
+        }
+        let content_type = req.content_type.as_deref().unwrap_or("tweet");
+        let result = if let Some(scheduled_for) = &req.scheduled_for {
+            match tuitbot_core::storage::scheduled_content::insert(
+                &self.state.pool,
+                content_type,
+                &req.content,
+                Some(scheduled_for),
+            )
+            .await
+            {
+                Ok(id) => {
+                    let _ = tuitbot_core::mcp_policy::McpPolicyEvaluator::record_mutation(
+                        &self.state.pool,
+                    )
+                    .await;
+                    format!("Scheduled item created with id={id}")
+                }
+                Err(e) => format!("Error: {e}"),
+            }
+        } else {
+            match tuitbot_core::storage::scheduled_content::insert_draft(
+                &self.state.pool,
+                content_type,
+                &req.content,
+                "mcp",
+            )
+            .await
+            {
+                Ok(id) => {
+                    let _ = tuitbot_core::mcp_policy::McpPolicyEvaluator::record_mutation(
+                        &self.state.pool,
+                    )
+                    .await;
+                    format!("Draft created with id={id}")
+                }
+                Err(e) => format!("Error: {e}"),
+            }
+        };
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Browse high-scoring discovered tweets for manual engagement.
+    #[tool]
+    async fn get_discovery_feed(
+        &self,
+        Parameters(req): Parameters<DiscoveryFeedRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let threshold = req.min_score.unwrap_or(50.0);
+        let limit = req.limit.unwrap_or(10);
+        let result = tools::discovery::list_unreplied_tweets_with_limit(
+            &self.state.pool,
+            threshold,
+            limit,
+            &self.state.config,
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Get analytics-driven topic recommendations based on past performance.
+    #[tool]
+    async fn suggest_topics(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::analytics::get_top_topics(&self.state.pool, 10).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    // --- Direct X API ---
+
+    /// Get a single tweet by its ID. Returns full tweet data with metrics.
+    #[tool]
+    async fn get_tweet_by_id(
+        &self,
+        Parameters(req): Parameters<TweetIdRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::x_actions::get_tweet_by_id(&self.state, &req.tweet_id).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Look up an X user profile by username. Returns user data with public metrics.
+    #[tool]
+    async fn x_get_user_by_username(
+        &self,
+        Parameters(req): Parameters<UsernameRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::x_actions::get_user_by_username(&self.state, &req.username).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Search recent tweets matching a query. Returns up to max_results tweets.
+    #[tool]
+    async fn x_search_tweets(
+        &self,
+        Parameters(req): Parameters<SearchTweetsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let max = req.max_results.unwrap_or(10).clamp(10, 100);
+        let result =
+            tools::x_actions::search_tweets(&self.state, &req.query, max, req.since_id.as_deref())
+                .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Get recent mentions of the authenticated user.
+    #[tool]
+    async fn x_get_user_mentions(
+        &self,
+        Parameters(req): Parameters<GetUserMentionsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result =
+            tools::x_actions::get_user_mentions(&self.state, req.since_id.as_deref()).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Get recent tweets from a specific user by user ID.
+    #[tool]
+    async fn x_get_user_tweets(
+        &self,
+        Parameters(req): Parameters<GetUserTweetsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let max = req.max_results.unwrap_or(10).clamp(5, 100);
+        let result = tools::x_actions::get_user_tweets(&self.state, &req.user_id, max).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Post a new tweet to X. Returns the posted tweet data.
+    #[tool]
+    async fn x_post_tweet(
+        &self,
+        Parameters(req): Parameters<PostTweetTextRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::x_actions::post_tweet(&self.state, &req.text).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Reply to an existing tweet. Returns the posted reply data.
+    #[tool]
+    async fn x_reply_to_tweet(
+        &self,
+        Parameters(req): Parameters<ReplyToTweetRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result =
+            tools::x_actions::reply_to_tweet(&self.state, &req.text, &req.in_reply_to_id).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Post a quote tweet referencing another tweet. Returns the posted tweet data.
+    #[tool]
+    async fn x_quote_tweet(
+        &self,
+        Parameters(req): Parameters<QuoteTweetRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result =
+            tools::x_actions::quote_tweet(&self.state, &req.text, &req.quoted_tweet_id).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Like a tweet on behalf of the authenticated user.
+    #[tool]
+    async fn x_like_tweet(
+        &self,
+        Parameters(req): Parameters<LikeTweetMcpRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::x_actions::like_tweet(&self.state, &req.tweet_id).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Follow an X user by user ID.
+    #[tool]
+    async fn x_follow_user(
+        &self,
+        Parameters(req): Parameters<FollowUserMcpRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::x_actions::follow_user(&self.state, &req.target_user_id).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Unfollow an X user by user ID.
+    #[tool]
+    async fn x_unfollow_user(
+        &self,
+        Parameters(req): Parameters<UnfollowUserMcpRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::x_actions::unfollow_user(&self.state, &req.target_user_id).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    // --- Context Intelligence ---
+
+    /// Get a rich context profile for an author: prior interactions, response rates, topic affinity, and risk signals.
+    #[tool]
+    async fn get_author_context(
+        &self,
+        Parameters(req): Parameters<GetAuthorContextRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::context::get_author_context(&self.state, &req.identifier).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Recommend an engagement action (reply/skip/observe) for a tweet, with confidence score, contributing factors, and policy considerations.
+    #[tool]
+    async fn recommend_engagement_action(
+        &self,
+        Parameters(req): Parameters<RecommendEngagementRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::context::recommend_engagement(
+            &self.state,
+            &req.author_username,
+            &req.tweet_text,
+            req.campaign_objective.as_deref(),
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Get topics ranked by performance with "double_down/reduce/maintain/experiment" recommendations over a lookback window.
+    #[tool]
+    async fn topic_performance_snapshot(
+        &self,
+        Parameters(req): Parameters<TopicPerformanceSnapshotRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let days = req.lookback_days.unwrap_or(30);
+        let result = tools::context::topic_performance_snapshot(&self.state.pool, days).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    // --- Telemetry ---
+
+    /// Get time-windowed MCP tool execution metrics: call counts, success rates, latency percentiles, per tool.
+    #[tool]
+    async fn get_mcp_tool_metrics(
+        &self,
+        Parameters(req): Parameters<GetMcpToolMetricsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let hours = req.since_hours.unwrap_or(24);
+        let result = tools::telemetry::get_mcp_tool_metrics(&self.state.pool, hours).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Get MCP tool error distribution grouped by tool and error code in a time window.
+    #[tool]
+    async fn get_mcp_error_breakdown(
+        &self,
+        Parameters(req): Parameters<GetMcpErrorBreakdownRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let hours = req.since_hours.unwrap_or(24);
+        let result = tools::telemetry::get_mcp_error_breakdown(&self.state.pool, hours).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    // --- Composite Tools ---
+
+    /// Search X for tweets, score them, persist to DB, and return ranked reply opportunities. Read-only (no posts made).
+    #[tool]
+    async fn find_reply_opportunities(
+        &self,
+        Parameters(req): Parameters<FindReplyOpportunitiesRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::composite::find_opportunities::execute(
+            &self.state,
+            req.query.as_deref(),
+            req.min_score,
+            req.limit,
+            req.since_id.as_deref(),
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Generate reply drafts for previously discovered tweet candidates. Read-only. Requires LLM provider.
+    #[tool]
+    async fn draft_replies_for_candidates(
+        &self,
+        Parameters(req): Parameters<DraftRepliesRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.state.llm_provider.is_none() {
+            return Ok(CallToolResult::success(vec![Content::text(
+                "Error: No LLM provider configured. Set up the [llm] section in config.toml.",
+            )]));
+        }
+        let mention = req.mention_product.unwrap_or(false);
+        let result = tools::composite::draft_replies::execute(
+            &self.state,
+            &req.candidate_ids,
+            req.archetype.as_deref(),
+            mention,
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Safety-check replies and either queue them for approval or execute them directly. MUTATION — policy-gated.
+    #[tool]
+    async fn propose_and_queue_replies(
+        &self,
+        Parameters(req): Parameters<ProposeAndQueueRepliesRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let mention = req.mention_product.unwrap_or(false);
+        let result =
+            tools::composite::propose_queue::execute(&self.state, &req.items, mention).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Generate a structured thread with hook analysis and performance estimate. Read-only. Requires LLM provider.
+    #[tool]
+    async fn generate_thread_plan(
+        &self,
+        Parameters(req): Parameters<GenerateThreadPlanRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.state.llm_provider.is_none() {
+            return Ok(CallToolResult::success(vec![Content::text(
+                "Error: No LLM provider configured. Set up the [llm] section in config.toml.",
+            )]));
+        }
+        let result = tools::composite::thread_plan::execute(
+            &self.state,
+            &req.topic,
+            req.objective.as_deref(),
+            req.target_audience.as_deref(),
+            req.structure.as_deref(),
+        )
+        .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 }

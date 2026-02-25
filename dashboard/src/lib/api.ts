@@ -121,6 +121,13 @@ export interface ApprovalItem {
 	score: number;
 	status: string;
 	created_at: string;
+	media_paths: string[];
+}
+
+export interface MediaUploadResponse {
+	path: string;
+	media_type: string;
+	size: number;
 }
 
 export interface ApprovalStats {
@@ -154,6 +161,7 @@ export interface ComposeRequest {
 	content_type: string;
 	content: string;
 	scheduled_for?: string;
+	media_paths?: string[];
 }
 
 export interface ScheduledContentItem {
@@ -263,6 +271,7 @@ export interface TuitbotConfig {
 		accounts: string[];
 		max_target_replies_per_day: number;
 	};
+	mode: 'autopilot' | 'composer';
 	approval_mode: boolean;
 	storage: {
 		db_path: string;
@@ -382,6 +391,122 @@ export interface TypeCostBreakdown {
 	cost: number;
 	calls: number;
 	avg_cost: number;
+}
+
+// --- X API cost types ---
+
+export interface XApiUsageSummary {
+	cost_today: number;
+	cost_7d: number;
+	cost_30d: number;
+	cost_all_time: number;
+	calls_today: number;
+	calls_7d: number;
+	calls_30d: number;
+	calls_all_time: number;
+}
+
+export interface DailyXApiUsage {
+	date: string;
+	calls: number;
+	cost: number;
+}
+
+export interface EndpointBreakdown {
+	endpoint: string;
+	method: string;
+	calls: number;
+	cost: number;
+	error_count: number;
+}
+
+// --- MCP types ---
+
+export interface McpPolicyStatus {
+	enforce_for_mutations: boolean;
+	require_approval_for: string[];
+	blocked_tools: string[];
+	dry_run_mutations: boolean;
+	max_mutations_per_hour: number;
+	mode: string;
+	rate_limit: {
+		used: number;
+		max: number;
+		period_seconds?: number;
+		period_start?: string;
+	};
+}
+
+export interface McpPolicyPatch {
+	enforce_for_mutations?: boolean;
+	require_approval_for?: string[];
+	blocked_tools?: string[];
+	dry_run_mutations?: boolean;
+	max_mutations_per_hour?: number;
+}
+
+export interface McpTelemetrySummary {
+	total_calls: number;
+	total_successes: number;
+	total_failures: number;
+	overall_success_rate: number;
+	avg_latency_ms: number;
+	unique_tools: number;
+	policy_decisions: Record<string, number>;
+}
+
+export interface McpToolMetrics {
+	tool_name: string;
+	category: string;
+	total_calls: number;
+	success_count: number;
+	failure_count: number;
+	success_rate: number;
+	avg_latency_ms: number;
+	p50_latency_ms: number;
+	p95_latency_ms: number;
+	min_latency_ms: number;
+	max_latency_ms: number;
+}
+
+export interface McpErrorBreakdown {
+	tool_name: string;
+	error_code: string;
+	count: number;
+	latest_at: string;
+}
+
+export interface McpTelemetryEntry {
+	id: number;
+	tool_name: string;
+	category: string;
+	latency_ms: number;
+	success: boolean;
+	error_code: string | null;
+	policy_decision: string | null;
+	metadata: string | null;
+	created_at: string;
+}
+
+// --- File upload helper ---
+
+async function uploadFile(path: string, file: File): Promise<MediaUploadResponse> {
+	const formData = new FormData();
+	formData.append('file', file);
+
+	const res = await fetch(`${BASE_URL}${path}`, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`
+			// No Content-Type — browser sets multipart boundary automatically.
+		},
+		body: formData
+	});
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({ error: res.statusText }));
+		throw new Error(body.error || res.statusText);
+	}
+	return res.json();
 }
 
 // --- API client ---
@@ -506,7 +631,20 @@ export const api = {
 		byModel: (days: number = 30) =>
 			request<ModelCostBreakdown[]>(`/api/costs/by-model?days=${days}`),
 		byType: (days: number = 30) =>
-			request<TypeCostBreakdown[]>(`/api/costs/by-type?days=${days}`)
+			request<TypeCostBreakdown[]>(`/api/costs/by-type?days=${days}`),
+		xApi: {
+			summary: () => request<XApiUsageSummary>('/api/costs/x-api/summary'),
+			daily: (days: number = 30) =>
+				request<DailyXApiUsage[]>(`/api/costs/x-api/daily?days=${days}`),
+			byEndpoint: (days: number = 30) =>
+				request<EndpointBreakdown[]>(`/api/costs/x-api/by-endpoint?days=${days}`)
+		}
+	},
+
+	media: {
+		upload: (file: File) => uploadFile('/api/media/upload', file),
+		fileUrl: (path: string) =>
+			`${BASE_URL}/api/media/file?path=${encodeURIComponent(path)}`
 	},
 
 	approval: {
@@ -522,12 +660,128 @@ export const api = {
 			request<{ status: string; id: number }>(`/api/approval/${id}/approve`, { method: 'POST' }),
 		reject: (id: number) =>
 			request<{ status: string; id: number }>(`/api/approval/${id}/reject`, { method: 'POST' }),
-		edit: (id: number, content: string) =>
+		edit: (id: number, content: string, media_paths?: string[]) =>
 			request<ApprovalItem>(`/api/approval/${id}`, {
 				method: 'PATCH',
-				body: JSON.stringify({ content })
+				body: JSON.stringify({ content, ...(media_paths !== undefined && { media_paths }) })
 			}),
 		approveAll: () =>
 			request<{ status: string; count: number }>('/api/approval/approve-all', { method: 'POST' })
+	},
+
+	assist: {
+		tweet: (topic: string) =>
+			request<{ content: string; topic: string }>('/api/assist/tweet', {
+				method: 'POST',
+				body: JSON.stringify({ topic })
+			}),
+		reply: (tweetText: string, tweetAuthor: string, mentionProduct: boolean = false) =>
+			request<{ content: string }>('/api/assist/reply', {
+				method: 'POST',
+				body: JSON.stringify({
+					tweet_text: tweetText,
+					tweet_author: tweetAuthor,
+					mention_product: mentionProduct
+				})
+			}),
+		thread: (topic: string) =>
+			request<{ tweets: string[]; topic: string }>('/api/assist/thread', {
+				method: 'POST',
+				body: JSON.stringify({ topic })
+			}),
+		improve: (draft: string, context?: string) =>
+			request<{ content: string }>('/api/assist/improve', {
+				method: 'POST',
+				body: JSON.stringify({ draft, context })
+			}),
+		topics: () =>
+			request<{ topics: Array<{ topic: string; score: number }> }>('/api/assist/topics'),
+		optimalTimes: () =>
+			request<{ times: Array<{ hour: number; avg_engagement: number; post_count: number }> }>(
+				'/api/assist/optimal-times'
+			),
+		mode: () => request<{ mode: string; approval_mode: boolean }>('/api/assist/mode')
+	},
+
+	drafts: {
+		list: () => request<ScheduledContentItem[]>('/api/content/drafts'),
+		create: (contentType: string, content: string, source: string = 'manual') =>
+			request<{ id: number; status: string }>('/api/content/drafts', {
+				method: 'POST',
+				body: JSON.stringify({ content_type: contentType, content, source })
+			}),
+		edit: (id: number, content: string) =>
+			request<{ id: number; status: string }>(`/api/content/drafts/${id}`, {
+				method: 'PATCH',
+				body: JSON.stringify({ content })
+			}),
+		delete: (id: number) =>
+			request<{ id: number; status: string }>(`/api/content/drafts/${id}`, {
+				method: 'DELETE'
+			}),
+		schedule: (id: number, scheduledFor: string) =>
+			request<{ id: number; status: string; scheduled_for: string }>(
+				`/api/content/drafts/${id}/schedule`,
+				{
+					method: 'POST',
+					body: JSON.stringify({ scheduled_for: scheduledFor })
+				}
+			),
+		publish: (id: number) =>
+			request<{ id: number; approval_queue_id: number; status: string }>(
+				`/api/content/drafts/${id}/publish`,
+				{ method: 'POST' }
+			)
+	},
+
+	mcp: {
+		policy: () => request<McpPolicyStatus>('/api/mcp/policy'),
+		patchPolicy: (data: McpPolicyPatch) =>
+			request<McpPolicyPatch>('/api/mcp/policy', {
+				method: 'PATCH',
+				body: JSON.stringify(data)
+			}),
+		telemetrySummary: (hours: number = 24) =>
+			request<McpTelemetrySummary>(`/api/mcp/telemetry/summary?hours=${hours}`),
+		telemetryMetrics: (hours: number = 24) =>
+			request<McpToolMetrics[]>(`/api/mcp/telemetry/metrics?hours=${hours}`),
+		telemetryErrors: (hours: number = 24) =>
+			request<McpErrorBreakdown[]>(`/api/mcp/telemetry/errors?hours=${hours}`),
+		telemetryRecent: (limit: number = 50) =>
+			request<McpTelemetryEntry[]>(`/api/mcp/telemetry/recent?limit=${limit}`)
+	},
+
+	discovery: {
+		feed: (minScore: number = 50, limit: number = 20) =>
+			request<
+				Array<{
+					id: string;
+					author_username: string;
+					content: string;
+					relevance_score: number;
+					matched_keyword: string | null;
+					like_count: number;
+					retweet_count: number;
+					reply_count: number;
+					replied_to: boolean;
+					discovered_at: string;
+				}>
+			>(`/api/discovery/feed?min_score=${minScore}&limit=${limit}`),
+		composeReply: (tweetId: string, mentionProduct: boolean = false) =>
+			request<{ content: string; tweet_id: string }>(
+				`/api/discovery/${tweetId}/compose-reply`,
+				{
+					method: 'POST',
+					body: JSON.stringify({ mention_product: mentionProduct })
+				}
+			),
+		queueReply: (tweetId: string, content: string) =>
+			request<{ approval_queue_id: number; tweet_id: string; status: string }>(
+				`/api/discovery/${tweetId}/queue-reply`,
+				{
+					method: 'POST',
+					body: JSON.stringify({ content })
+				}
+			)
 	}
 };

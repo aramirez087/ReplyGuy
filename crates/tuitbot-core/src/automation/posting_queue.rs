@@ -25,6 +25,8 @@ pub enum PostAction {
         tweet_id: String,
         /// The reply content.
         content: String,
+        /// Media IDs to attach (already uploaded to X API).
+        media_ids: Vec<String>,
         /// Optional channel to receive the result (posted tweet ID or error).
         result_tx: Option<oneshot::Sender<Result<String, String>>>,
     },
@@ -32,6 +34,8 @@ pub enum PostAction {
     Tweet {
         /// The tweet content.
         content: String,
+        /// Media IDs to attach (already uploaded to X API).
+        media_ids: Vec<String>,
         /// Optional channel to receive the result.
         result_tx: Option<oneshot::Sender<Result<String, String>>>,
     },
@@ -41,6 +45,8 @@ pub enum PostAction {
         content: String,
         /// The ID of the previous tweet in the thread.
         in_reply_to: String,
+        /// Media IDs to attach (already uploaded to X API).
+        media_ids: Vec<String>,
         /// Optional channel to receive the result.
         result_tx: Option<oneshot::Sender<Result<String, String>>>,
     },
@@ -50,24 +56,33 @@ impl std::fmt::Debug for PostAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PostAction::Reply {
-                tweet_id, content, ..
+                tweet_id,
+                content,
+                media_ids,
+                ..
             } => f
                 .debug_struct("Reply")
                 .field("tweet_id", tweet_id)
                 .field("content_len", &content.len())
+                .field("media_count", &media_ids.len())
                 .finish(),
-            PostAction::Tweet { content, .. } => f
+            PostAction::Tweet {
+                content, media_ids, ..
+            } => f
                 .debug_struct("Tweet")
                 .field("content_len", &content.len())
+                .field("media_count", &media_ids.len())
                 .finish(),
             PostAction::ThreadTweet {
                 content,
                 in_reply_to,
+                media_ids,
                 ..
             } => f
                 .debug_struct("ThreadTweet")
                 .field("in_reply_to", in_reply_to)
                 .field("content_len", &content.len())
+                .field("media_count", &media_ids.len())
                 .finish(),
         }
     }
@@ -80,10 +95,15 @@ impl std::fmt::Debug for PostAction {
 #[async_trait::async_trait]
 pub trait PostExecutor: Send + Sync {
     /// Post a reply to a specific tweet. Returns the posted tweet ID.
-    async fn execute_reply(&self, tweet_id: &str, content: &str) -> Result<String, String>;
+    async fn execute_reply(
+        &self,
+        tweet_id: &str,
+        content: &str,
+        media_ids: &[String],
+    ) -> Result<String, String>;
 
     /// Post a new original tweet. Returns the posted tweet ID.
-    async fn execute_tweet(&self, content: &str) -> Result<String, String>;
+    async fn execute_tweet(&self, content: &str, media_ids: &[String]) -> Result<String, String>;
 }
 
 /// Create a bounded posting queue channel.
@@ -98,10 +118,15 @@ pub fn create_posting_queue() -> (mpsc::Sender<PostAction>, mpsc::Receiver<PostA
 #[async_trait::async_trait]
 pub trait ApprovalQueue: Send + Sync {
     /// Queue a reply for human review. Returns the queue item ID.
-    async fn queue_reply(&self, tweet_id: &str, content: &str) -> Result<i64, String>;
+    async fn queue_reply(
+        &self,
+        tweet_id: &str,
+        content: &str,
+        media_paths: &[String],
+    ) -> Result<i64, String>;
 
     /// Queue a tweet for human review. Returns the queue item ID.
-    async fn queue_tweet(&self, content: &str) -> Result<i64, String>;
+    async fn queue_tweet(&self, content: &str, media_paths: &[String]) -> Result<i64, String>;
 }
 
 /// Run the posting queue consumer loop.
@@ -195,21 +220,24 @@ async fn queue_for_approval(action: PostAction, queue: &Arc<dyn ApprovalQueue>) 
         PostAction::Reply {
             tweet_id,
             content,
+            media_ids: _,
             result_tx,
         } => {
             tracing::info!(tweet_id = %tweet_id, "Queuing reply for approval");
             let r = queue
-                .queue_reply(&tweet_id, &content)
+                .queue_reply(&tweet_id, &content, &[])
                 .await
                 .map(|id| format!("queued:{id}"));
             (r, result_tx)
         }
         PostAction::Tweet {
-            content, result_tx, ..
+            content,
+            media_ids: _,
+            result_tx,
         } => {
             tracing::info!("Queuing tweet for approval");
             let r = queue
-                .queue_tweet(&content)
+                .queue_tweet(&content, &[])
                 .await
                 .map(|id| format!("queued:{id}"));
             (r, result_tx)
@@ -217,11 +245,12 @@ async fn queue_for_approval(action: PostAction, queue: &Arc<dyn ApprovalQueue>) 
         PostAction::ThreadTweet {
             content,
             in_reply_to,
+            media_ids: _,
             result_tx,
         } => {
             tracing::info!(in_reply_to = %in_reply_to, "Queuing thread tweet for approval");
             let r = queue
-                .queue_reply(&in_reply_to, &content)
+                .queue_reply(&in_reply_to, &content, &[])
                 .await
                 .map(|id| format!("queued:{id}"));
             (r, result_tx)
@@ -244,26 +273,34 @@ async fn execute_and_respond(action: PostAction, executor: &Arc<dyn PostExecutor
         PostAction::Reply {
             tweet_id,
             content,
+            media_ids,
             result_tx,
         } => {
             tracing::debug!(tweet_id = %tweet_id, "Executing reply action");
-            let r = executor.execute_reply(&tweet_id, &content).await;
+            let r = executor
+                .execute_reply(&tweet_id, &content, &media_ids)
+                .await;
             (r, result_tx)
         }
         PostAction::Tweet {
-            content, result_tx, ..
+            content,
+            media_ids,
+            result_tx,
         } => {
             tracing::debug!("Executing tweet action");
-            let r = executor.execute_tweet(&content).await;
+            let r = executor.execute_tweet(&content, &media_ids).await;
             (r, result_tx)
         }
         PostAction::ThreadTweet {
             content,
             in_reply_to,
+            media_ids,
             result_tx,
         } => {
             tracing::debug!(in_reply_to = %in_reply_to, "Executing thread tweet action");
-            let r = executor.execute_reply(&in_reply_to, &content).await;
+            let r = executor
+                .execute_reply(&in_reply_to, &content, &media_ids)
+                .await;
             (r, result_tx)
         }
     };
@@ -326,7 +363,12 @@ mod tests {
 
     #[async_trait::async_trait]
     impl PostExecutor for MockExecutor {
-        async fn execute_reply(&self, tweet_id: &str, content: &str) -> Result<String, String> {
+        async fn execute_reply(
+            &self,
+            tweet_id: &str,
+            content: &str,
+            _media_ids: &[String],
+        ) -> Result<String, String> {
             self.calls
                 .lock()
                 .expect("lock poisoned")
@@ -338,7 +380,11 @@ mod tests {
             }
         }
 
-        async fn execute_tweet(&self, content: &str) -> Result<String, String> {
+        async fn execute_tweet(
+            &self,
+            content: &str,
+            _media_ids: &[String],
+        ) -> Result<String, String> {
             self.calls
                 .lock()
                 .expect("lock poisoned")
@@ -367,6 +413,7 @@ mod tests {
         tx.send(PostAction::Reply {
             tweet_id: "t1".to_string(),
             content: "hello".to_string(),
+            media_ids: vec![],
             result_tx: Some(result_tx),
         })
         .await
@@ -395,6 +442,7 @@ mod tests {
         let (result_tx, result_rx) = oneshot::channel();
         tx.send(PostAction::Tweet {
             content: "my tweet".to_string(),
+            media_ids: vec![],
             result_tx: Some(result_tx),
         })
         .await
@@ -423,6 +471,7 @@ mod tests {
         tx.send(PostAction::ThreadTweet {
             content: "thread part 2".to_string(),
             in_reply_to: "prev-id".to_string(),
+            media_ids: vec![],
             result_tx: Some(result_tx),
         })
         .await
@@ -453,6 +502,7 @@ mod tests {
 
         tx.send(PostAction::Tweet {
             content: "fire and forget".to_string(),
+            media_ids: vec![],
             result_tx: None,
         })
         .await
@@ -481,6 +531,7 @@ mod tests {
         let (result_tx, result_rx) = oneshot::channel();
         tx.send(PostAction::Tweet {
             content: "will fail".to_string(),
+            media_ids: vec![],
             result_tx: Some(result_tx),
         })
         .await
@@ -520,12 +571,14 @@ mod tests {
         // Send actions before starting consumer
         tx.send(PostAction::Tweet {
             content: "queued1".to_string(),
+            media_ids: vec![],
             result_tx: None,
         })
         .await
         .expect("send");
         tx.send(PostAction::Tweet {
             content: "queued2".to_string(),
+            media_ids: vec![],
             result_tx: None,
         })
         .await
@@ -560,6 +613,7 @@ mod tests {
         for i in 0..5 {
             tx.send(PostAction::Tweet {
                 content: format!("tweet-{i}"),
+                media_ids: vec![],
                 result_tx: None,
             })
             .await
@@ -585,6 +639,7 @@ mod tests {
         let action = PostAction::Reply {
             tweet_id: "123".to_string(),
             content: "hello world".to_string(),
+            media_ids: vec![],
             result_tx: None,
         };
         let debug = format!("{action:?}");
@@ -612,7 +667,12 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ApprovalQueue for MockApprovalQueue {
-        async fn queue_reply(&self, tweet_id: &str, content: &str) -> Result<i64, String> {
+        async fn queue_reply(
+            &self,
+            tweet_id: &str,
+            content: &str,
+            _media_paths: &[String],
+        ) -> Result<i64, String> {
             self.items.lock().expect("lock").push((
                 "reply".to_string(),
                 tweet_id.to_string(),
@@ -621,7 +681,7 @@ mod tests {
             Ok(self.item_count() as i64)
         }
 
-        async fn queue_tweet(&self, content: &str) -> Result<i64, String> {
+        async fn queue_tweet(&self, content: &str, _media_paths: &[String]) -> Result<i64, String> {
             self.items.lock().expect("lock").push((
                 "tweet".to_string(),
                 String::new(),
@@ -657,6 +717,7 @@ mod tests {
         tx.send(PostAction::Reply {
             tweet_id: "t1".to_string(),
             content: "hello".to_string(),
+            media_ids: vec![],
             result_tx: Some(result_tx),
         })
         .await
@@ -699,6 +760,7 @@ mod tests {
 
         tx.send(PostAction::Tweet {
             content: "my tweet".to_string(),
+            media_ids: vec![],
             result_tx: None,
         })
         .await

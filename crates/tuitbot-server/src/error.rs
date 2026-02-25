@@ -16,6 +16,8 @@ pub enum ApiError {
     BadRequest(String),
     /// Conflict (resource already exists, runtime already running, etc.).
     Conflict(String),
+    /// Internal server error (non-storage).
+    Internal(String),
 }
 
 impl From<tuitbot_core::error::StorageError> for ApiError {
@@ -34,6 +36,10 @@ impl IntoResponse for ApiError {
             Self::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             Self::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             Self::Conflict(msg) => (StatusCode::CONFLICT, msg),
+            Self::Internal(msg) => {
+                tracing::error!("internal error: {msg}");
+                (StatusCode::INTERNAL_SERVER_ERROR, msg)
+            }
         };
 
         let body = axum::Json(json!({ "error": message }));

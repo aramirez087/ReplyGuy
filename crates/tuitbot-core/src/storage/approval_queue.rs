@@ -18,6 +18,7 @@ type ApprovalRow = (
     f64,
     String,
     String,
+    String,
 );
 
 /// A pending item in the approval queue.
@@ -33,6 +34,24 @@ pub struct ApprovalItem {
     pub score: f64,
     pub status: String,
     pub created_at: String,
+    /// JSON-encoded list of local media file paths.
+    /// Serialized as a raw JSON array (not a string) for API consumers.
+    #[serde(serialize_with = "serialize_json_string")]
+    pub media_paths: String,
+}
+
+/// Serialize a JSON-encoded string as a raw JSON value.
+///
+/// The database stores `media_paths` as a JSON string (e.g. `"[\"/path/to/img.jpg\"]"`).
+/// This serializer emits it as an actual JSON array in the API response.
+fn serialize_json_string<S: serde::Serializer>(
+    value: &str,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::Serialize;
+    let parsed: serde_json::Value =
+        serde_json::from_str(value).unwrap_or(serde_json::Value::Array(vec![]));
+    parsed.serialize(serializer)
 }
 
 impl From<ApprovalRow> for ApprovalItem {
@@ -48,6 +67,7 @@ impl From<ApprovalRow> for ApprovalItem {
             score: r.7,
             status: r.8,
             created_at: r.9,
+            media_paths: r.10,
         }
     }
 }
@@ -63,10 +83,11 @@ pub async fn enqueue(
     topic: &str,
     archetype: &str,
     score: f64,
+    media_paths: &str,
 ) -> Result<i64, StorageError> {
     let result = sqlx::query(
-        "INSERT INTO approval_queue (action_type, target_tweet_id, target_author, generated_content, topic, archetype, score)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO approval_queue (action_type, target_tweet_id, target_author, generated_content, topic, archetype, score, media_paths)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(action_type)
     .bind(target_tweet_id)
@@ -75,6 +96,7 @@ pub async fn enqueue(
     .bind(topic)
     .bind(archetype)
     .bind(score)
+    .bind(media_paths)
     .execute(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
@@ -85,7 +107,7 @@ pub async fn enqueue(
 /// Get all pending approval items, ordered by creation time (oldest first).
 pub async fn get_pending(pool: &DbPool) -> Result<Vec<ApprovalItem>, StorageError> {
     let rows: Vec<ApprovalRow> = sqlx::query_as(
-        "SELECT id, action_type, target_tweet_id, target_author, generated_content, topic, archetype, score, status, created_at
+        "SELECT id, action_type, target_tweet_id, target_author, generated_content, topic, archetype, score, status, created_at, COALESCE(media_paths, '[]')
          FROM approval_queue
          WHERE status = 'pending'
          ORDER BY created_at ASC",
@@ -143,7 +165,7 @@ pub async fn update_content_and_approve(
 /// Get a single approval item by ID.
 pub async fn get_by_id(pool: &DbPool, id: i64) -> Result<Option<ApprovalItem>, StorageError> {
     let row: Option<ApprovalRow> = sqlx::query_as(
-        "SELECT id, action_type, target_tweet_id, target_author, generated_content, topic, archetype, score, status, created_at
+        "SELECT id, action_type, target_tweet_id, target_author, generated_content, topic, archetype, score, status, created_at, COALESCE(media_paths, '[]')
          FROM approval_queue
          WHERE id = ?",
     )
@@ -201,7 +223,7 @@ pub async fn get_by_statuses(
 
     let query = if let Some(at) = action_type {
         let sql = format!(
-            "SELECT id, action_type, target_tweet_id, target_author, generated_content, topic, archetype, score, status, created_at
+            "SELECT id, action_type, target_tweet_id, target_author, generated_content, topic, archetype, score, status, created_at, COALESCE(media_paths, '[]')
              FROM approval_queue
              WHERE status IN ({in_clause}) AND action_type = ?
              ORDER BY created_at ASC"
@@ -214,7 +236,7 @@ pub async fn get_by_statuses(
         q.fetch_all(pool).await
     } else {
         let sql = format!(
-            "SELECT id, action_type, target_tweet_id, target_author, generated_content, topic, archetype, score, status, created_at
+            "SELECT id, action_type, target_tweet_id, target_author, generated_content, topic, archetype, score, status, created_at, COALESCE(media_paths, '[]')
              FROM approval_queue
              WHERE status IN ({in_clause})
              ORDER BY created_at ASC"
@@ -234,6 +256,52 @@ pub async fn get_by_statuses(
 pub async fn update_content(pool: &DbPool, id: i64, new_content: &str) -> Result<(), StorageError> {
     sqlx::query("UPDATE approval_queue SET generated_content = ? WHERE id = ?")
         .bind(new_content)
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(())
+}
+
+/// Update the media paths of an approval item.
+pub async fn update_media_paths(
+    pool: &DbPool,
+    id: i64,
+    media_paths: &str,
+) -> Result<(), StorageError> {
+    sqlx::query("UPDATE approval_queue SET media_paths = ? WHERE id = ?")
+        .bind(media_paths)
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(())
+}
+
+/// Fetch the next approved item ready for posting.
+///
+/// Returns the oldest item with `status='approved'`, ordered by `reviewed_at`.
+pub async fn get_next_approved(pool: &DbPool) -> Result<Option<ApprovalItem>, StorageError> {
+    let row: Option<ApprovalRow> = sqlx::query_as(
+        "SELECT id, action_type, target_tweet_id, target_author, generated_content, topic, archetype, score, status, created_at, COALESCE(media_paths, '[]')
+         FROM approval_queue
+         WHERE status = 'approved'
+         ORDER BY reviewed_at ASC
+         LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(row.map(ApprovalItem::from))
+}
+
+/// Mark an approved item as posted, storing the returned tweet ID.
+pub async fn mark_posted(pool: &DbPool, id: i64, tweet_id: &str) -> Result<(), StorageError> {
+    sqlx::query("UPDATE approval_queue SET status = 'posted', posted_tweet_id = ? WHERE id = ?")
+        .bind(tweet_id)
         .bind(id)
         .execute(pool)
         .await
@@ -275,6 +343,7 @@ mod tests {
             "Rust",
             "AgreeAndExpand",
             85.0,
+            "[]",
         )
         .await
         .expect("enqueue");
@@ -294,10 +363,20 @@ mod tests {
 
         assert_eq!(pending_count(&pool).await.expect("count"), 0);
 
-        enqueue(&pool, "tweet", "", "", "Hello world", "General", "", 0.0)
-            .await
-            .expect("enqueue");
-        enqueue(&pool, "reply", "t1", "@u", "Nice!", "Rust", "", 50.0)
+        enqueue(
+            &pool,
+            "tweet",
+            "",
+            "",
+            "Hello world",
+            "General",
+            "",
+            0.0,
+            "[]",
+        )
+        .await
+        .expect("enqueue");
+        enqueue(&pool, "reply", "t1", "@u", "Nice!", "Rust", "", 50.0, "[]")
             .await
             .expect("enqueue");
 
@@ -308,7 +387,7 @@ mod tests {
     async fn update_status_marks_approved() {
         let pool = init_test_db().await.expect("init db");
 
-        let id = enqueue(&pool, "tweet", "", "", "Hello", "General", "", 0.0)
+        let id = enqueue(&pool, "tweet", "", "", "Hello", "General", "", 0.0, "[]")
             .await
             .expect("enqueue");
 
@@ -325,7 +404,7 @@ mod tests {
     async fn update_status_marks_rejected() {
         let pool = init_test_db().await.expect("init db");
 
-        let id = enqueue(&pool, "tweet", "", "", "Hello", "General", "", 0.0)
+        let id = enqueue(&pool, "tweet", "", "", "Hello", "General", "", 0.0, "[]")
             .await
             .expect("enqueue");
 
@@ -339,7 +418,7 @@ mod tests {
     async fn update_content_and_approve_works() {
         let pool = init_test_db().await.expect("init db");
 
-        let id = enqueue(&pool, "tweet", "", "", "Draft", "General", "", 0.0)
+        let id = enqueue(&pool, "tweet", "", "", "Draft", "General", "", 0.0, "[]")
             .await
             .expect("enqueue");
 
@@ -363,13 +442,13 @@ mod tests {
     async fn pending_ordered_by_creation_time() {
         let pool = init_test_db().await.expect("init db");
 
-        enqueue(&pool, "tweet", "", "", "First", "A", "", 0.0)
+        enqueue(&pool, "tweet", "", "", "First", "A", "", 0.0, "[]")
             .await
             .expect("enqueue");
-        enqueue(&pool, "tweet", "", "", "Second", "B", "", 0.0)
+        enqueue(&pool, "tweet", "", "", "Second", "B", "", 0.0, "[]")
             .await
             .expect("enqueue");
-        enqueue(&pool, "tweet", "", "", "Third", "C", "", 0.0)
+        enqueue(&pool, "tweet", "", "", "Third", "C", "", 0.0, "[]")
             .await
             .expect("enqueue");
 
@@ -391,13 +470,13 @@ mod tests {
         assert_eq!(stats.rejected, 0);
 
         // Add items and change statuses.
-        let id1 = enqueue(&pool, "tweet", "", "", "A", "General", "", 0.0)
+        let id1 = enqueue(&pool, "tweet", "", "", "A", "General", "", 0.0, "[]")
             .await
             .expect("enqueue");
-        enqueue(&pool, "tweet", "", "", "B", "General", "", 0.0)
+        enqueue(&pool, "tweet", "", "", "B", "General", "", 0.0, "[]")
             .await
             .expect("enqueue");
-        let id3 = enqueue(&pool, "reply", "t1", "@u", "C", "Rust", "", 50.0)
+        let id3 = enqueue(&pool, "reply", "t1", "@u", "C", "Rust", "", 50.0, "[]")
             .await
             .expect("enqueue");
 
@@ -414,13 +493,13 @@ mod tests {
     async fn get_by_statuses_filters_correctly() {
         let pool = init_test_db().await.expect("init db");
 
-        let id1 = enqueue(&pool, "tweet", "", "", "A", "General", "", 0.0)
+        let id1 = enqueue(&pool, "tweet", "", "", "A", "General", "", 0.0, "[]")
             .await
             .expect("enqueue");
-        enqueue(&pool, "tweet", "", "", "B", "General", "", 0.0)
+        enqueue(&pool, "tweet", "", "", "B", "General", "", 0.0, "[]")
             .await
             .expect("enqueue");
-        let id3 = enqueue(&pool, "reply", "t1", "@u", "C", "Rust", "", 50.0)
+        let id3 = enqueue(&pool, "reply", "t1", "@u", "C", "Rust", "", 50.0, "[]")
             .await
             .expect("enqueue");
 
@@ -451,10 +530,10 @@ mod tests {
     async fn get_by_statuses_with_action_type() {
         let pool = init_test_db().await.expect("init db");
 
-        enqueue(&pool, "tweet", "", "", "A", "General", "", 0.0)
+        enqueue(&pool, "tweet", "", "", "A", "General", "", 0.0, "[]")
             .await
             .expect("enqueue");
-        enqueue(&pool, "reply", "t1", "@u", "B", "Rust", "", 50.0)
+        enqueue(&pool, "reply", "t1", "@u", "B", "Rust", "", 50.0, "[]")
             .await
             .expect("enqueue");
 
@@ -475,7 +554,7 @@ mod tests {
     async fn get_by_statuses_empty_returns_empty() {
         let pool = init_test_db().await.expect("init db");
 
-        enqueue(&pool, "tweet", "", "", "A", "General", "", 0.0)
+        enqueue(&pool, "tweet", "", "", "A", "General", "", 0.0, "[]")
             .await
             .expect("enqueue");
 
@@ -487,7 +566,7 @@ mod tests {
     async fn update_content_preserves_status() {
         let pool = init_test_db().await.expect("init db");
 
-        let id = enqueue(&pool, "tweet", "", "", "Original", "General", "", 0.0)
+        let id = enqueue(&pool, "tweet", "", "", "Original", "General", "", 0.0, "[]")
             .await
             .expect("enqueue");
 

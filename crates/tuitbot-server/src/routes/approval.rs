@@ -49,6 +49,9 @@ pub async fn stats(State(state): State<Arc<AppState>>) -> Result<Json<Value>, Ap
 #[derive(Deserialize)]
 pub struct EditContentRequest {
     pub content: String,
+    /// Optional updated media paths.
+    #[serde(default)]
+    pub media_paths: Option<Vec<String>>,
 }
 
 /// `PATCH /api/approval/:id` — edit content before approving.
@@ -68,6 +71,11 @@ pub async fn edit_item(
     }
 
     approval_queue::update_content(&state.db, id, content).await?;
+
+    if let Some(media_paths) = &body.media_paths {
+        let media_json = serde_json::to_string(media_paths).unwrap_or_else(|_| "[]".to_string());
+        approval_queue::update_media_paths(&state.db, id, &media_json).await?;
+    }
 
     let updated = approval_queue::get_by_id(&state.db, id)
         .await?

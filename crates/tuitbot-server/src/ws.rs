@@ -30,6 +30,8 @@ pub enum WsEvent {
         id: i64,
         action_type: String,
         content: String,
+        #[serde(default)]
+        media_paths: Vec<String>,
     },
     /// An approval item's status was updated (approved, rejected, edited).
     ApprovalUpdated {

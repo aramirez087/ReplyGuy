@@ -7,9 +7,10 @@
 		CheckCircle,
 		XCircle,
 		Pencil,
-		X
+		X,
+		Film
 	} from 'lucide-svelte';
-	import type { ApprovalItem } from '$lib/api';
+	import { api, type ApprovalItem } from '$lib/api';
 
 	interface Props {
 		item: ApprovalItem;
@@ -49,6 +50,9 @@
 
 	const Icon = $derived(iconMap[item.action_type] ?? FileText);
 	const typeLabel = $derived(item.action_type.replace(/_/g, ' '));
+
+	// Media paths from the approval item.
+	const mediaPaths = $derived(item.media_paths ?? []);
 
 	const statusClass = $derived(
 		item.status === 'pending'
@@ -147,6 +151,20 @@
 			<div class="card-content">
 				<p class="content-text">{item.generated_content}</p>
 				<span class="char-count" class:over-limit={isOverLimit}>{charCount}/280</span>
+			</div>
+		{/if}
+
+		{#if mediaPaths.length > 0}
+			<div class="card-media-previews">
+				{#each mediaPaths as mediaPath}
+					{#if mediaPath.endsWith('.mp4')}
+						<!-- svelte-ignore a11y_media_has_caption -->
+						<video src={api.media.fileUrl(mediaPath)} class="media-thumb-img"></video>
+						<span class="media-thumb-badge"><Film size={10} /></span>
+					{:else}
+						<img src={api.media.fileUrl(mediaPath)} alt="Attached" class="media-thumb-img" />
+					{/if}
+				{/each}
 			</div>
 		{/if}
 
@@ -408,6 +426,34 @@
 	.editor-cancel:hover {
 		background-color: var(--color-surface-hover);
 		color: var(--color-text);
+	}
+
+	.card-media-previews {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+		margin-bottom: 8px;
+		position: relative;
+	}
+
+	.media-thumb-img {
+		width: 64px;
+		height: 64px;
+		object-fit: cover;
+		border-radius: 6px;
+		border: 1px solid var(--color-border-subtle);
+	}
+
+	.media-thumb-badge {
+		position: absolute;
+		bottom: 4px;
+		left: 4px;
+		display: flex;
+		align-items: center;
+		padding: 1px 4px;
+		border-radius: 3px;
+		background: rgba(0, 0, 0, 0.7);
+		color: #fff;
 	}
 
 	.card-meta {

@@ -19,9 +19,38 @@ fn default_approval_mode() -> bool {
     true
 }
 
+/// Operating mode controlling how autonomous Tuitbot is.
+///
+/// - **Autopilot**: Full autonomous operation — discovers, generates, and posts content.
+/// - **Composer**: User-controlled posting with on-demand AI intelligence.
+///   In composer mode, `approval_mode` is implicitly `true` and autonomous
+///   posting loops (content, threads, discovery replies) are disabled.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum OperatingMode {
+    /// Full autonomous operation.
+    #[default]
+    Autopilot,
+    /// User-controlled posting with on-demand AI assist.
+    Composer,
+}
+
+impl std::fmt::Display for OperatingMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OperatingMode::Autopilot => write!(f, "autopilot"),
+            OperatingMode::Composer => write!(f, "composer"),
+        }
+    }
+}
+
 /// Top-level configuration for the Tuitbot agent.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Config {
+    /// Operating mode: "autopilot" (default) or "composer".
+    #[serde(default)]
+    pub mode: OperatingMode,
+
     /// X API credentials.
     #[serde(default)]
     pub x_api: XApiConfig,
@@ -69,6 +98,10 @@ pub struct Config {
     /// Active hours schedule for posting.
     #[serde(default)]
     pub schedule: ScheduleConfig,
+
+    /// MCP mutation policy enforcement.
+    #[serde(default)]
+    pub mcp_policy: McpPolicyConfig,
 }
 
 /// X API credentials.
@@ -354,6 +387,50 @@ impl Default for ScheduleConfig {
     }
 }
 
+/// MCP mutation policy configuration.
+///
+/// Controls whether MCP mutation tools (post, reply, like, follow, etc.)
+/// are gated by policy checks before execution.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct McpPolicyConfig {
+    /// Master switch: when false, all mutations are allowed without checks.
+    #[serde(default = "default_true")]
+    pub enforce_for_mutations: bool,
+
+    /// Tool names that require routing through the approval queue.
+    #[serde(default = "default_require_approval_for")]
+    pub require_approval_for: Vec<String>,
+
+    /// Tool names that are completely blocked from execution.
+    #[serde(default)]
+    pub blocked_tools: Vec<String>,
+
+    /// When true, mutations return a dry-run response without executing.
+    #[serde(default)]
+    pub dry_run_mutations: bool,
+
+    /// Maximum MCP mutations allowed per hour (aggregate across all tools).
+    #[serde(default = "default_max_mutations_per_hour")]
+    pub max_mutations_per_hour: u32,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_require_approval_for() -> Vec<String> {
+    vec![
+        "post_tweet".to_string(),
+        "reply_to_tweet".to_string(),
+        "follow_user".to_string(),
+        "like_tweet".to_string(),
+    ]
+}
+
+fn default_max_mutations_per_hour() -> u32 {
+    20
+}
+
 fn default_timezone() -> String {
     "UTC".to_string()
 }
@@ -496,6 +573,19 @@ impl Config {
         let config = Config::load(config_path).map_err(|e| vec![e])?;
         config.validate()?;
         Ok(config)
+    }
+
+    /// Returns `true` if approval mode is effectively enabled.
+    ///
+    /// In composer mode, approval mode is always implicitly enabled so
+    /// the user controls all posting.
+    pub fn effective_approval_mode(&self) -> bool {
+        self.approval_mode || self.mode == OperatingMode::Composer
+    }
+
+    /// Returns `true` if the agent is in composer mode.
+    pub fn is_composer_mode(&self) -> bool {
+        self.mode == OperatingMode::Composer
     }
 
     /// Validate the configuration, returning all errors found (not just the first).
@@ -671,6 +761,19 @@ impl Config {
             }
         }
 
+        // Validate MCP policy: tools can't be in both blocked_tools and require_approval_for
+        for tool in &self.mcp_policy.blocked_tools {
+            if self.mcp_policy.require_approval_for.contains(tool) {
+                errors.push(ConfigError::InvalidValue {
+                    field: "mcp_policy.blocked_tools".to_string(),
+                    message: format!(
+                        "tool '{tool}' cannot be in both blocked_tools and require_approval_for"
+                    ),
+                });
+                break;
+            }
+        }
+
         // Count effective slots per day vs max_tweets_per_day
         let effective_slots = if self.schedule.preferred_times.is_empty() {
             0
@@ -755,6 +858,22 @@ impl Config {
     /// Environment variables use the `TUITBOT_` prefix with double underscores
     /// separating nested keys (e.g., `TUITBOT_LLM__API_KEY`).
     fn apply_env_overrides(&mut self) -> Result<(), ConfigError> {
+        // Operating mode
+        if let Ok(val) = env::var("TUITBOT_MODE") {
+            match val.to_lowercase().as_str() {
+                "autopilot" => self.mode = OperatingMode::Autopilot,
+                "composer" => self.mode = OperatingMode::Composer,
+                other => {
+                    return Err(ConfigError::InvalidValue {
+                        field: "mode".to_string(),
+                        message: format!(
+                            "invalid mode '{other}', expected 'autopilot' or 'composer'"
+                        ),
+                    });
+                }
+            }
+        }
+
         // X API
         if let Ok(val) = env::var("TUITBOT_X_API__CLIENT_ID") {
             self.x_api.client_id = val;
@@ -935,6 +1054,26 @@ impl Config {
         }
         if let Ok(val) = env::var("TUITBOT_SCHEDULE__THREAD_PREFERRED_TIME") {
             self.schedule.thread_preferred_time = val;
+        }
+
+        // MCP Policy
+        if let Ok(val) = env::var("TUITBOT_MCP_POLICY__ENFORCE_FOR_MUTATIONS") {
+            self.mcp_policy.enforce_for_mutations =
+                parse_env_bool("TUITBOT_MCP_POLICY__ENFORCE_FOR_MUTATIONS", &val)?;
+        }
+        if let Ok(val) = env::var("TUITBOT_MCP_POLICY__REQUIRE_APPROVAL_FOR") {
+            self.mcp_policy.require_approval_for = split_csv(&val);
+        }
+        if let Ok(val) = env::var("TUITBOT_MCP_POLICY__BLOCKED_TOOLS") {
+            self.mcp_policy.blocked_tools = split_csv(&val);
+        }
+        if let Ok(val) = env::var("TUITBOT_MCP_POLICY__DRY_RUN_MUTATIONS") {
+            self.mcp_policy.dry_run_mutations =
+                parse_env_bool("TUITBOT_MCP_POLICY__DRY_RUN_MUTATIONS", &val)?;
+        }
+        if let Ok(val) = env::var("TUITBOT_MCP_POLICY__MAX_MUTATIONS_PER_HOUR") {
+            self.mcp_policy.max_mutations_per_hour =
+                parse_env_u32("TUITBOT_MCP_POLICY__MAX_MUTATIONS_PER_HOUR", &val)?;
         }
 
         // Approval mode
