@@ -22,6 +22,9 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let minScore = $state(50);
+	let maxScore = $state<number | undefined>(undefined);
+	let keyword = $state('');
+	let keywords = $state<string[]>([]);
 	let limit = $state(20);
 
 	let composingId = $state<string | null>(null);
@@ -33,11 +36,24 @@
 		loading = true;
 		error = null;
 		try {
-			tweets = await api.discovery.feed(minScore, limit);
+			tweets = await api.discovery.feed({
+				minScore,
+				maxScore,
+				keyword: keyword || undefined,
+				limit
+			});
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load discovery feed';
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function loadKeywords() {
+		try {
+			keywords = await api.discovery.keywords();
+		} catch {
+			// Non-critical — silently ignore.
 		}
 	}
 
@@ -78,7 +94,10 @@
 		return 'var(--color-text-subtle)';
 	}
 
-	onMount(loadFeed);
+	onMount(() => {
+		loadFeed();
+		loadKeywords();
+	});
 </script>
 
 <svelte:head>
@@ -99,6 +118,29 @@
 				step="5"
 			/>
 		</label>
+		<label class="score-control">
+			<span class="control-label">Max score</span>
+			<input
+				type="number"
+				class="score-input"
+				bind:value={maxScore}
+				min="0"
+				max="100"
+				step="5"
+				placeholder="—"
+			/>
+		</label>
+		{#if keywords.length > 0}
+			<label class="score-control">
+				<span class="control-label">Keyword</span>
+				<select class="keyword-select" bind:value={keyword}>
+					<option value="">All</option>
+					{#each keywords as kw}
+						<option value={kw}>{kw}</option>
+					{/each}
+				</select>
+			</label>
+		{/if}
 		<label class="score-control">
 			<span class="control-label">Limit</span>
 			<input
@@ -246,6 +288,16 @@
 		color: var(--color-text);
 		font-size: 13px;
 		text-align: center;
+	}
+
+	.keyword-select {
+		padding: 6px 8px;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		background: var(--color-bg);
+		color: var(--color-text);
+		font-size: 13px;
+		min-width: 100px;
 	}
 
 	.refresh-btn {

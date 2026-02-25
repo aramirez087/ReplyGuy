@@ -3,11 +3,15 @@
 
 	interface Props {
 		pendingCount: number;
+		maxBatch: number;
 		onApproveAll: () => void;
 	}
 
-	let { pendingCount, onApproveAll }: Props = $props();
+	let { pendingCount, maxBatch = 25, onApproveAll }: Props = $props();
 	let showConfirm = $state(false);
+
+	const approveCount = $derived(Math.min(pendingCount, maxBatch));
+	const isCapped = $derived(pendingCount > maxBatch);
 
 	function handleConfirm() {
 		showConfirm = false;
@@ -23,12 +27,20 @@
 			disabled={pendingCount === 0}
 		>
 			<CheckCircle size={16} />
-			Approve All ({pendingCount})
+			{#if isCapped}
+				Approve {approveCount} of {pendingCount}
+			{:else}
+				Approve All ({pendingCount})
+			{/if}
 		</button>
 	{:else}
 		<div class="confirm-dialog">
 			<span class="confirm-text">
-				Approve all {pendingCount} pending items?
+				{#if isCapped}
+					Approve {approveCount} of {pendingCount} pending items? (max batch: {maxBatch})
+				{:else}
+					Approve all {pendingCount} pending items?
+				{/if}
 			</span>
 			<div class="confirm-actions">
 				<button class="confirm-btn" onclick={handleConfirm}>Confirm</button>

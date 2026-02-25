@@ -3,6 +3,7 @@
 //! Prunes old records according to retention rules while preserving
 //! rate limit counters and records needed for deduplication.
 
+use super::accounts::DEFAULT_ACCOUNT_ID;
 use super::DbPool;
 use crate::error::StorageError;
 use chrono::Utc;
@@ -26,7 +27,7 @@ pub struct CleanupStats {
     pub vacuum_run: bool,
 }
 
-/// Run data retention cleanup, pruning old records per retention rules.
+/// Run data retention cleanup for a specific account, pruning old records per retention rules.
 ///
 /// Retention rules:
 /// - Unreplied discovered tweets: 7 days (fixed).
@@ -38,7 +39,11 @@ pub struct CleanupStats {
 /// - Rate limits: NEVER deleted.
 ///
 /// Runs VACUUM if more than 1000 total rows were deleted.
-pub async fn run_cleanup(pool: &DbPool, retention_days: u32) -> Result<CleanupStats, StorageError> {
+pub async fn run_cleanup_for(
+    pool: &DbPool,
+    account_id: &str,
+    retention_days: u32,
+) -> Result<CleanupStats, StorageError> {
     let now = Utc::now();
 
     let unreplied_cutoff = (now - chrono::Duration::days(7))
@@ -54,54 +59,65 @@ pub async fn run_cleanup(pool: &DbPool, retention_days: u32) -> Result<CleanupSt
     // Delete child records before parent records for FK constraints.
 
     // 1. Delete old replies first (before their parent discovered_tweets).
-    let replies_result = sqlx::query("DELETE FROM replies_sent WHERE created_at < ?")
-        .bind(&replied_cutoff)
-        .execute(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e })?;
+    let replies_result =
+        sqlx::query("DELETE FROM replies_sent WHERE created_at < ? AND account_id = ?")
+            .bind(&replied_cutoff)
+            .bind(account_id)
+            .execute(pool)
+            .await
+            .map_err(|e| StorageError::Query { source: e })?;
     let replies_deleted = replies_result.rows_affected();
 
     // 2. Delete unreplied discovered tweets older than 7 days.
-    let unreplied_result =
-        sqlx::query("DELETE FROM discovered_tweets WHERE replied_to = 0 AND discovered_at < ?")
-            .bind(&unreplied_cutoff)
-            .execute(pool)
-            .await
-            .map_err(|e| StorageError::Query { source: e })?;
+    let unreplied_result = sqlx::query(
+        "DELETE FROM discovered_tweets WHERE replied_to = 0 AND discovered_at < ? AND account_id = ?",
+    )
+    .bind(&unreplied_cutoff)
+    .bind(account_id)
+    .execute(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
 
     // 3. Delete replied discovered tweets older than retention_days.
-    let replied_result =
-        sqlx::query("DELETE FROM discovered_tweets WHERE replied_to = 1 AND discovered_at < ?")
-            .bind(&replied_cutoff)
-            .execute(pool)
-            .await
-            .map_err(|e| StorageError::Query { source: e })?;
+    let replied_result = sqlx::query(
+        "DELETE FROM discovered_tweets WHERE replied_to = 1 AND discovered_at < ? AND account_id = ?",
+    )
+    .bind(&replied_cutoff)
+    .bind(account_id)
+    .execute(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
 
     let discovered_tweets_deleted =
         unreplied_result.rows_affected() + replied_result.rows_affected();
 
     // 4. Delete old original tweets.
-    let originals_result = sqlx::query("DELETE FROM original_tweets WHERE created_at < ?")
-        .bind(&replied_cutoff)
-        .execute(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e })?;
+    let originals_result =
+        sqlx::query("DELETE FROM original_tweets WHERE created_at < ? AND account_id = ?")
+            .bind(&replied_cutoff)
+            .bind(account_id)
+            .execute(pool)
+            .await
+            .map_err(|e| StorageError::Query { source: e })?;
     let original_tweets_deleted = originals_result.rows_affected();
 
     // 5. Delete old threads (CASCADE deletes thread_tweets).
-    let threads_result = sqlx::query("DELETE FROM threads WHERE created_at < ?")
+    let threads_result = sqlx::query("DELETE FROM threads WHERE created_at < ? AND account_id = ?")
         .bind(&replied_cutoff)
+        .bind(account_id)
         .execute(pool)
         .await
         .map_err(|e| StorageError::Query { source: e })?;
     let threads_deleted = threads_result.rows_affected();
 
     // 6. Delete old action log entries.
-    let action_log_result = sqlx::query("DELETE FROM action_log WHERE created_at < ?")
-        .bind(&action_log_cutoff)
-        .execute(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e })?;
+    let action_log_result =
+        sqlx::query("DELETE FROM action_log WHERE created_at < ? AND account_id = ?")
+            .bind(&action_log_cutoff)
+            .bind(account_id)
+            .execute(pool)
+            .await
+            .map_err(|e| StorageError::Query { source: e })?;
     let action_log_deleted = action_log_result.rows_affected();
 
     let total_deleted = discovered_tweets_deleted
@@ -142,6 +158,22 @@ pub async fn run_cleanup(pool: &DbPool, retention_days: u32) -> Result<CleanupSt
     );
 
     Ok(stats)
+}
+
+/// Run data retention cleanup, pruning old records per retention rules.
+///
+/// Retention rules:
+/// - Unreplied discovered tweets: 7 days (fixed).
+/// - Replied discovered tweets: `retention_days` (configurable, default 90).
+/// - Replies: `retention_days`.
+/// - Original tweets: `retention_days`.
+/// - Threads: `retention_days` (CASCADE deletes thread_tweets).
+/// - Action log: 14 days (fixed).
+/// - Rate limits: NEVER deleted.
+///
+/// Runs VACUUM if more than 1000 total rows were deleted.
+pub async fn run_cleanup(pool: &DbPool, retention_days: u32) -> Result<CleanupStats, StorageError> {
+    run_cleanup_for(pool, DEFAULT_ACCOUNT_ID, retention_days).await
 }
 
 #[cfg(test)]

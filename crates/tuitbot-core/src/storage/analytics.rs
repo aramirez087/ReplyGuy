@@ -3,6 +3,7 @@
 //! Manages follower snapshots, reply/tweet performance metrics,
 //! and content score running averages.
 
+use super::accounts::DEFAULT_ACCOUNT_ID;
 use super::DbPool;
 use crate::error::StorageError;
 use chrono::{NaiveDate, Utc};
@@ -20,21 +21,24 @@ pub struct FollowerSnapshot {
     pub tweet_count: i64,
 }
 
-/// Upsert a follower snapshot for today.
-pub async fn upsert_follower_snapshot(
+/// Upsert a follower snapshot for today for a specific account.
+pub async fn upsert_follower_snapshot_for(
     pool: &DbPool,
+    account_id: &str,
     follower_count: i64,
     following_count: i64,
     tweet_count: i64,
 ) -> Result<(), StorageError> {
     sqlx::query(
-        "INSERT INTO follower_snapshots (snapshot_date, follower_count, following_count, tweet_count) \
-         VALUES (date('now'), ?, ?, ?) \
+        "INSERT INTO follower_snapshots (account_id, snapshot_date, follower_count, following_count, tweet_count) \
+         VALUES (?, date('now'), ?, ?, ?) \
          ON CONFLICT(snapshot_date) DO UPDATE SET \
+         account_id = excluded.account_id, \
          follower_count = excluded.follower_count, \
          following_count = excluded.following_count, \
          tweet_count = excluded.tweet_count",
     )
+    .bind(account_id)
     .bind(follower_count)
     .bind(following_count)
     .bind(tweet_count)
@@ -44,15 +48,34 @@ pub async fn upsert_follower_snapshot(
     Ok(())
 }
 
-/// Get the most recent N follower snapshots, newest first.
-pub async fn get_follower_snapshots(
+/// Upsert a follower snapshot for today.
+pub async fn upsert_follower_snapshot(
     pool: &DbPool,
+    follower_count: i64,
+    following_count: i64,
+    tweet_count: i64,
+) -> Result<(), StorageError> {
+    upsert_follower_snapshot_for(
+        pool,
+        DEFAULT_ACCOUNT_ID,
+        follower_count,
+        following_count,
+        tweet_count,
+    )
+    .await
+}
+
+/// Get the most recent N follower snapshots for a specific account, newest first.
+pub async fn get_follower_snapshots_for(
+    pool: &DbPool,
+    account_id: &str,
     limit: u32,
 ) -> Result<Vec<FollowerSnapshot>, StorageError> {
     let rows: Vec<(String, i64, i64, i64)> = sqlx::query_as(
         "SELECT snapshot_date, follower_count, following_count, tweet_count \
-         FROM follower_snapshots ORDER BY snapshot_date DESC LIMIT ?",
+         FROM follower_snapshots WHERE account_id = ? ORDER BY snapshot_date DESC LIMIT ?",
     )
+    .bind(account_id)
     .bind(limit)
     .fetch_all(pool)
     .await
@@ -69,13 +92,22 @@ pub async fn get_follower_snapshots(
         .collect())
 }
 
+/// Get the most recent N follower snapshots, newest first.
+pub async fn get_follower_snapshots(
+    pool: &DbPool,
+    limit: u32,
+) -> Result<Vec<FollowerSnapshot>, StorageError> {
+    get_follower_snapshots_for(pool, DEFAULT_ACCOUNT_ID, limit).await
+}
+
 // ============================================================================
 // Reply performance
 // ============================================================================
 
-/// Store or update reply performance metrics.
-pub async fn upsert_reply_performance(
+/// Store or update reply performance metrics for a specific account.
+pub async fn upsert_reply_performance_for(
     pool: &DbPool,
+    account_id: &str,
     reply_id: &str,
     likes: i64,
     replies: i64,
@@ -83,8 +115,8 @@ pub async fn upsert_reply_performance(
     score: f64,
 ) -> Result<(), StorageError> {
     sqlx::query(
-        "INSERT INTO reply_performance (reply_id, likes_received, replies_received, impressions, performance_score) \
-         VALUES (?, ?, ?, ?, ?) \
+        "INSERT INTO reply_performance (account_id, reply_id, likes_received, replies_received, impressions, performance_score) \
+         VALUES (?, ?, ?, ?, ?, ?) \
          ON CONFLICT(reply_id) DO UPDATE SET \
          likes_received = excluded.likes_received, \
          replies_received = excluded.replies_received, \
@@ -92,6 +124,7 @@ pub async fn upsert_reply_performance(
          performance_score = excluded.performance_score, \
          measured_at = datetime('now')",
     )
+    .bind(account_id)
     .bind(reply_id)
     .bind(likes)
     .bind(replies)
@@ -103,9 +136,66 @@ pub async fn upsert_reply_performance(
     Ok(())
 }
 
+/// Store or update reply performance metrics.
+pub async fn upsert_reply_performance(
+    pool: &DbPool,
+    reply_id: &str,
+    likes: i64,
+    replies: i64,
+    impressions: i64,
+    score: f64,
+) -> Result<(), StorageError> {
+    upsert_reply_performance_for(
+        pool,
+        DEFAULT_ACCOUNT_ID,
+        reply_id,
+        likes,
+        replies,
+        impressions,
+        score,
+    )
+    .await
+}
+
 // ============================================================================
 // Tweet performance
 // ============================================================================
+
+/// Store or update tweet performance metrics for a specific account.
+#[allow(clippy::too_many_arguments)]
+pub async fn upsert_tweet_performance_for(
+    pool: &DbPool,
+    account_id: &str,
+    tweet_id: &str,
+    likes: i64,
+    retweets: i64,
+    replies: i64,
+    impressions: i64,
+    score: f64,
+) -> Result<(), StorageError> {
+    sqlx::query(
+        "INSERT INTO tweet_performance (account_id, tweet_id, likes_received, retweets_received, replies_received, impressions, performance_score) \
+         VALUES (?, ?, ?, ?, ?, ?, ?) \
+         ON CONFLICT(tweet_id) DO UPDATE SET \
+         likes_received = excluded.likes_received, \
+         retweets_received = excluded.retweets_received, \
+         replies_received = excluded.replies_received, \
+         impressions = excluded.impressions, \
+         performance_score = excluded.performance_score, \
+         measured_at = datetime('now')",
+    )
+    .bind(account_id)
+    .bind(tweet_id)
+    .bind(likes)
+    .bind(retweets)
+    .bind(replies)
+    .bind(impressions)
+    .bind(score)
+    .execute(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+    Ok(())
+}
 
 /// Store or update tweet performance metrics.
 pub async fn upsert_tweet_performance(
@@ -117,27 +207,17 @@ pub async fn upsert_tweet_performance(
     impressions: i64,
     score: f64,
 ) -> Result<(), StorageError> {
-    sqlx::query(
-        "INSERT INTO tweet_performance (tweet_id, likes_received, retweets_received, replies_received, impressions, performance_score) \
-         VALUES (?, ?, ?, ?, ?, ?) \
-         ON CONFLICT(tweet_id) DO UPDATE SET \
-         likes_received = excluded.likes_received, \
-         retweets_received = excluded.retweets_received, \
-         replies_received = excluded.replies_received, \
-         impressions = excluded.impressions, \
-         performance_score = excluded.performance_score, \
-         measured_at = datetime('now')",
+    upsert_tweet_performance_for(
+        pool,
+        DEFAULT_ACCOUNT_ID,
+        tweet_id,
+        likes,
+        retweets,
+        replies,
+        impressions,
+        score,
     )
-    .bind(tweet_id)
-    .bind(likes)
-    .bind(retweets)
-    .bind(replies)
-    .bind(impressions)
-    .bind(score)
-    .execute(pool)
     .await
-    .map_err(|e| StorageError::Query { source: e })?;
-    Ok(())
 }
 
 // ============================================================================
@@ -153,24 +233,27 @@ pub struct ContentScore {
     pub avg_performance: f64,
 }
 
-/// Update the running average for a topic/format pair.
+/// Update the running average for a topic/format pair for a specific account.
 ///
 /// Uses incremental mean: new_avg = old_avg + (score - old_avg) / new_count.
-pub async fn update_content_score(
+pub async fn update_content_score_for(
     pool: &DbPool,
+    account_id: &str,
     topic: &str,
     format: &str,
     new_score: f64,
 ) -> Result<(), StorageError> {
     // Insert or update with incremental average
     sqlx::query(
-        "INSERT INTO content_scores (topic, format, total_posts, avg_performance) \
-         VALUES (?, ?, 1, ?) \
+        "INSERT INTO content_scores (account_id, topic, format, total_posts, avg_performance) \
+         VALUES (?, ?, ?, 1, ?) \
          ON CONFLICT(topic, format) DO UPDATE SET \
+         account_id = excluded.account_id, \
          total_posts = content_scores.total_posts + 1, \
          avg_performance = content_scores.avg_performance + \
          (? - content_scores.avg_performance) / (content_scores.total_posts + 1)",
     )
+    .bind(account_id)
     .bind(topic)
     .bind(format)
     .bind(new_score)
@@ -181,14 +264,32 @@ pub async fn update_content_score(
     Ok(())
 }
 
-/// Get top-performing topics ordered by average performance descending.
-pub async fn get_top_topics(pool: &DbPool, limit: u32) -> Result<Vec<ContentScore>, StorageError> {
+/// Update the running average for a topic/format pair.
+///
+/// Uses incremental mean: new_avg = old_avg + (score - old_avg) / new_count.
+pub async fn update_content_score(
+    pool: &DbPool,
+    topic: &str,
+    format: &str,
+    new_score: f64,
+) -> Result<(), StorageError> {
+    update_content_score_for(pool, DEFAULT_ACCOUNT_ID, topic, format, new_score).await
+}
+
+/// Get top-performing topics for a specific account ordered by average performance descending.
+pub async fn get_top_topics_for(
+    pool: &DbPool,
+    account_id: &str,
+    limit: u32,
+) -> Result<Vec<ContentScore>, StorageError> {
     let rows: Vec<(String, String, i64, f64)> = sqlx::query_as(
         "SELECT topic, format, total_posts, avg_performance \
          FROM content_scores \
+         WHERE account_id = ? \
          ORDER BY avg_performance DESC \
          LIMIT ?",
     )
+    .bind(account_id)
     .bind(limit)
     .fetch_all(pool)
     .await
@@ -205,41 +306,78 @@ pub async fn get_top_topics(pool: &DbPool, limit: u32) -> Result<Vec<ContentScor
         .collect())
 }
 
+/// Get top-performing topics ordered by average performance descending.
+pub async fn get_top_topics(pool: &DbPool, limit: u32) -> Result<Vec<ContentScore>, StorageError> {
+    get_top_topics_for(pool, DEFAULT_ACCOUNT_ID, limit).await
+}
+
+/// Get average reply engagement rate for a specific account (avg performance_score across all measured replies).
+pub async fn get_avg_reply_engagement_for(
+    pool: &DbPool,
+    account_id: &str,
+) -> Result<f64, StorageError> {
+    let row: (f64,) = sqlx::query_as(
+        "SELECT COALESCE(AVG(performance_score), 0.0) FROM reply_performance WHERE account_id = ?",
+    )
+    .bind(account_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(row.0)
+}
+
 /// Get average reply engagement rate (avg performance_score across all measured replies).
 pub async fn get_avg_reply_engagement(pool: &DbPool) -> Result<f64, StorageError> {
-    let row: (f64,) =
-        sqlx::query_as("SELECT COALESCE(AVG(performance_score), 0.0) FROM reply_performance")
-            .fetch_one(pool)
-            .await
-            .map_err(|e| StorageError::Query { source: e })?;
+    get_avg_reply_engagement_for(pool, DEFAULT_ACCOUNT_ID).await
+}
+
+/// Get average tweet engagement rate for a specific account (avg performance_score across all measured tweets).
+pub async fn get_avg_tweet_engagement_for(
+    pool: &DbPool,
+    account_id: &str,
+) -> Result<f64, StorageError> {
+    let row: (f64,) = sqlx::query_as(
+        "SELECT COALESCE(AVG(performance_score), 0.0) FROM tweet_performance WHERE account_id = ?",
+    )
+    .bind(account_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
 
     Ok(row.0)
 }
 
 /// Get average tweet engagement rate (avg performance_score across all measured tweets).
 pub async fn get_avg_tweet_engagement(pool: &DbPool) -> Result<f64, StorageError> {
-    let row: (f64,) =
-        sqlx::query_as("SELECT COALESCE(AVG(performance_score), 0.0) FROM tweet_performance")
+    get_avg_tweet_engagement_for(pool, DEFAULT_ACCOUNT_ID).await
+}
+
+/// Get total count of measured replies and tweets for a specific account.
+pub async fn get_performance_counts_for(
+    pool: &DbPool,
+    account_id: &str,
+) -> Result<(i64, i64), StorageError> {
+    let reply_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM reply_performance WHERE account_id = ?")
+            .bind(account_id)
             .fetch_one(pool)
             .await
             .map_err(|e| StorageError::Query { source: e })?;
 
-    Ok(row.0)
+    let tweet_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM tweet_performance WHERE account_id = ?")
+            .bind(account_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok((reply_count.0, tweet_count.0))
 }
 
 /// Get total count of measured replies and tweets.
 pub async fn get_performance_counts(pool: &DbPool) -> Result<(i64, i64), StorageError> {
-    let reply_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM reply_performance")
-        .fetch_one(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e })?;
-
-    let tweet_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM tweet_performance")
-        .fetch_one(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e })?;
-
-    Ok((reply_count.0, tweet_count.0))
+    get_performance_counts_for(pool, DEFAULT_ACCOUNT_ID).await
 }
 
 /// Compute the performance score for a piece of content.
@@ -289,13 +427,16 @@ pub struct AnalyticsSummary {
     pub top_topics: Vec<ContentScore>,
 }
 
-/// Get a combined analytics summary for the dashboard.
+/// Get a combined analytics summary for the dashboard for a specific account.
 ///
 /// Aggregates follower deltas, today's action counts, and engagement stats
 /// into a single struct to minimise round-trips from the frontend.
-pub async fn get_analytics_summary(pool: &DbPool) -> Result<AnalyticsSummary, StorageError> {
+pub async fn get_analytics_summary_for(
+    pool: &DbPool,
+    account_id: &str,
+) -> Result<AnalyticsSummary, StorageError> {
     // --- Follower data ---
-    let snapshots = get_follower_snapshots(pool, 90).await?;
+    let snapshots = get_follower_snapshots_for(pool, account_id, 90).await?;
     let current = snapshots.first().map_or(0, |s| s.follower_count);
 
     // Find the first snapshot whose date is at least N days ago (handles gaps from
@@ -333,12 +474,13 @@ pub async fn get_analytics_summary(pool: &DbPool) -> Result<AnalyticsSummary, St
     };
 
     // --- Engagement ---
-    let avg_reply_score = get_avg_reply_engagement(pool).await?;
-    let avg_tweet_score = get_avg_tweet_engagement(pool).await?;
-    let (total_replies_sent, total_tweets_posted) = get_performance_counts(pool).await?;
+    let avg_reply_score = get_avg_reply_engagement_for(pool, account_id).await?;
+    let avg_tweet_score = get_avg_tweet_engagement_for(pool, account_id).await?;
+    let (total_replies_sent, total_tweets_posted) =
+        get_performance_counts_for(pool, account_id).await?;
 
     // --- Top topics ---
-    let top_topics = get_top_topics(pool, 5).await?;
+    let top_topics = get_top_topics_for(pool, account_id, 5).await?;
 
     Ok(AnalyticsSummary {
         followers: FollowerSummary {
@@ -355,6 +497,14 @@ pub async fn get_analytics_summary(pool: &DbPool) -> Result<AnalyticsSummary, St
         },
         top_topics,
     })
+}
+
+/// Get a combined analytics summary for the dashboard.
+///
+/// Aggregates follower deltas, today's action counts, and engagement stats
+/// into a single struct to minimise round-trips from the frontend.
+pub async fn get_analytics_summary(pool: &DbPool) -> Result<AnalyticsSummary, StorageError> {
+    get_analytics_summary_for(pool, DEFAULT_ACCOUNT_ID).await
 }
 
 // ============================================================================
@@ -385,12 +535,13 @@ pub struct PerformanceItem {
 /// Row type returned by the recent-performance UNION query.
 type PerformanceRow = (String, String, i64, i64, i64, i64, f64, String);
 
-/// Get recent content performance items, newest first.
+/// Get recent content performance items for a specific account, newest first.
 ///
 /// Unions reply and tweet performance joined with their content tables
 /// so the dashboard can show a content preview alongside metrics.
-pub async fn get_recent_performance_items(
+pub async fn get_recent_performance_items_for(
     pool: &DbPool,
+    account_id: &str,
     limit: u32,
 ) -> Result<Vec<PerformanceItem>, StorageError> {
     let rows: Vec<PerformanceRow> = sqlx::query_as(
@@ -400,6 +551,7 @@ pub async fn get_recent_performance_items(
                 rp.impressions, rp.performance_score, rs.created_at as posted_at \
          FROM reply_performance rp \
          JOIN replies_sent rs ON rs.reply_tweet_id = rp.reply_id \
+         WHERE rp.account_id = ? \
          UNION ALL \
          SELECT 'tweet' as content_type, \
                 SUBSTR(ot.content, 1, 120) as content_preview, \
@@ -407,9 +559,12 @@ pub async fn get_recent_performance_items(
                 tp.impressions, tp.performance_score, ot.created_at as posted_at \
          FROM tweet_performance tp \
          JOIN original_tweets ot ON ot.tweet_id = tp.tweet_id \
+         WHERE tp.account_id = ? \
          ORDER BY posted_at DESC \
          LIMIT ?",
     )
+    .bind(account_id)
+    .bind(account_id)
     .bind(limit)
     .fetch_all(pool)
     .await
@@ -430,6 +585,17 @@ pub async fn get_recent_performance_items(
         .collect())
 }
 
+/// Get recent content performance items, newest first.
+///
+/// Unions reply and tweet performance joined with their content tables
+/// so the dashboard can show a content preview alongside metrics.
+pub async fn get_recent_performance_items(
+    pool: &DbPool,
+    limit: u32,
+) -> Result<Vec<PerformanceItem>, StorageError> {
+    get_recent_performance_items_for(pool, DEFAULT_ACCOUNT_ID, limit).await
+}
+
 /// Hourly posting performance data.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct HourlyPerformance {
@@ -441,9 +607,10 @@ pub struct HourlyPerformance {
     pub post_count: i64,
 }
 
-/// Get optimal posting times based on historical performance.
-pub async fn get_optimal_posting_times(
+/// Get optimal posting times based on historical performance for a specific account.
+pub async fn get_optimal_posting_times_for(
     pool: &DbPool,
+    account_id: &str,
 ) -> Result<Vec<HourlyPerformance>, StorageError> {
     let rows: Vec<(i64, f64, i64)> = sqlx::query_as(
         "SELECT
@@ -452,10 +619,11 @@ pub async fn get_optimal_posting_times(
             COUNT(*) as post_count
          FROM original_tweets ot
          LEFT JOIN tweet_performance tp ON tp.tweet_id = ot.tweet_id
-         WHERE ot.status = 'sent' AND ot.tweet_id IS NOT NULL
+         WHERE ot.account_id = ? AND ot.status = 'sent' AND ot.tweet_id IS NOT NULL
          GROUP BY hour
          ORDER BY avg_engagement DESC",
     )
+    .bind(account_id)
     .fetch_all(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
@@ -468,6 +636,13 @@ pub async fn get_optimal_posting_times(
             post_count,
         })
         .collect())
+}
+
+/// Get optimal posting times based on historical performance.
+pub async fn get_optimal_posting_times(
+    pool: &DbPool,
+) -> Result<Vec<HourlyPerformance>, StorageError> {
+    get_optimal_posting_times_for(pool, DEFAULT_ACCOUNT_ID).await
 }
 
 #[cfg(test)]

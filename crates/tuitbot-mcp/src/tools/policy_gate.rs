@@ -60,10 +60,19 @@ pub async fn check_policy(
     match decision {
         PolicyDecision::Allow => GateResult::Proceed,
 
-        PolicyDecision::RouteToApproval { ref reason } => {
+        PolicyDecision::RouteToApproval {
+            ref reason,
+            ref rule_id,
+        } => {
             let reason = reason.clone();
-            // Enqueue into approval queue
-            let enqueue_result = tuitbot_core::storage::approval_queue::enqueue(
+            let matched_rule_id = rule_id.clone();
+            // Build detected_risks JSON from rule_id.
+            let detected_risks = match &rule_id {
+                Some(rid) => format!(r#"["policy_rule:{rid}"]"#),
+                None => "[]".to_string(),
+            };
+            // Enqueue into approval queue with context.
+            let enqueue_result = tuitbot_core::storage::approval_queue::enqueue_with_context(
                 &state.pool,
                 tool_name,
                 "", // no target tweet ID for generic mutations
@@ -73,6 +82,8 @@ pub async fn check_policy(
                 tool_name,
                 0.0,
                 "[]",
+                Some(&reason),
+                Some(&detected_risks),
             )
             .await;
 
@@ -92,6 +103,7 @@ pub async fn check_policy(
                     "routed_to_approval": true,
                     "approval_queue_id": id,
                     "reason": reason,
+                    "matched_rule_id": matched_rule_id,
                 }))
                 .with_meta(ToolMeta::new(elapsed))
                 .to_json(),
@@ -106,11 +118,13 @@ pub async fn check_policy(
             GateResult::EarlyReturn(json)
         }
 
-        PolicyDecision::Deny { reason } => {
+        PolicyDecision::Deny { reason, rule_id } => {
             let elapsed = start.elapsed().as_millis() as u64;
             let code = match &reason {
                 PolicyDenialReason::ToolBlocked => "policy_denied_blocked",
                 PolicyDenialReason::RateLimited => "policy_denied_rate_limited",
+                PolicyDenialReason::HardRule => "policy_denied_hard_rule",
+                PolicyDenialReason::UserRule => "policy_denied_user_rule",
             };
             super::telemetry::record(
                 &state.pool,
@@ -122,13 +136,33 @@ pub async fn check_policy(
                 Some("deny"),
             )
             .await;
-            let json = ToolResponse::error(code, format!("Policy denied: {reason}"), false)
-                .with_meta(ToolMeta::new(elapsed))
-                .to_json();
-            GateResult::EarlyReturn(json)
+            let mut resp = ToolResponse::error(code, format!("Policy denied: {reason}"), false)
+                .with_policy_decision("denied")
+                .with_meta(ToolMeta::new(elapsed));
+
+            // For rate-limited denials, attach the reset timestamp.
+            if matches!(reason, PolicyDenialReason::RateLimited) {
+                // Try the v2 rate limit key first, then fall back to legacy
+                let rl_key = rule_id.as_deref().unwrap_or("mcp_mutation");
+                if let Ok(limits) = rate_limits::get_all_rate_limits(&state.pool).await {
+                    if let Some(rl) = limits.iter().find(|l| l.action_type == rl_key) {
+                        if let Ok(start_ts) = chrono::NaiveDateTime::parse_from_str(
+                            &rl.period_start,
+                            "%Y-%m-%dT%H:%M:%SZ",
+                        ) {
+                            let reset = start_ts + chrono::Duration::seconds(rl.period_seconds);
+                            resp = resp.with_rate_limit_reset(
+                                reset.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+                            );
+                        }
+                    }
+                }
+            }
+
+            GateResult::EarlyReturn(resp.to_json())
         }
 
-        PolicyDecision::DryRun => {
+        PolicyDecision::DryRun { rule_id } => {
             let elapsed = start.elapsed().as_millis() as u64;
             super::telemetry::record(
                 &state.pool,
@@ -144,6 +178,7 @@ pub async fn check_policy(
                 "dry_run": true,
                 "would_execute": tool_name,
                 "params": mutation_params_json,
+                "matched_rule_id": rule_id,
             }))
             .with_meta(ToolMeta::new(elapsed))
             .to_json();
@@ -152,7 +187,7 @@ pub async fn check_policy(
     }
 }
 
-/// Get the current MCP policy status: config + rate limit usage.
+/// Get the current MCP policy status: config + rate limit usage + v2 fields.
 pub async fn get_policy_status(state: &SharedState) -> String {
     let start = Instant::now();
 
@@ -182,6 +217,9 @@ pub async fn get_policy_status(state: &SharedState) -> String {
         "max_mutations_per_hour": state.config.mcp_policy.max_mutations_per_hour,
         "mode": state.config.mode.to_string(),
         "rate_limit": rate_limit_info,
+        "template": state.config.mcp_policy.template,
+        "rules": state.config.mcp_policy.rules,
+        "rate_limits": state.config.mcp_policy.rate_limits,
     }))
     .with_meta(ToolMeta::new(elapsed))
     .to_json()

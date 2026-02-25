@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use tuitbot_core::config::Config;
 use tuitbot_core::storage;
+use tuitbot_core::storage::approval_queue::ReviewAction;
 use tuitbot_core::storage::DbPool;
 
 use super::response::{ToolMeta, ToolResponse};
@@ -22,6 +23,10 @@ struct ApprovalItemOut {
     score: f64,
     status: String,
     created_at: String,
+    reviewed_by: Option<String>,
+    review_notes: Option<String>,
+    reason: Option<String>,
+    detected_risks: String,
 }
 
 fn item_to_out(item: &storage::approval_queue::ApprovalItem) -> ApprovalItemOut {
@@ -36,6 +41,10 @@ fn item_to_out(item: &storage::approval_queue::ApprovalItem) -> ApprovalItemOut 
         score: item.score,
         status: item.status.clone(),
         created_at: item.created_at.clone(),
+        reviewed_by: item.reviewed_by.clone(),
+        review_notes: item.review_notes.clone(),
+        reason: item.reason.clone(),
+        detected_risks: item.detected_risks.clone(),
     }
 }
 
@@ -55,60 +64,122 @@ pub async fn list_pending(pool: &DbPool, config: &Config) -> String {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
                 .with_mode(config.mode.to_string(), config.effective_approval_mode());
-            ToolResponse::error(
-                "db_error",
-                format!("Error fetching pending approvals: {e}"),
-                true,
-            )
-            .with_meta(meta)
-            .to_json()
+            ToolResponse::db_error(format!("Error fetching pending approvals: {e}"))
+                .with_meta(meta)
+                .to_json()
         }
     }
 }
 
 /// Get count of pending approval items.
-pub async fn get_pending_count(pool: &DbPool) -> String {
+pub async fn get_pending_count(pool: &DbPool, config: &Config) -> String {
+    let start = Instant::now();
+
     match storage::approval_queue::pending_count(pool).await {
-        Ok(count) => serde_json::json!({ "pending_count": count }).to_string(),
-        Err(e) => format!("Error counting pending approvals: {e}"),
+        Ok(count) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let meta = ToolMeta::new(elapsed)
+                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::success(serde_json::json!({ "pending_count": count }))
+                .with_meta(meta)
+                .to_json()
+        }
+        Err(e) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let meta = ToolMeta::new(elapsed)
+                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::db_error(format!("Error counting pending approvals: {e}"))
+                .with_meta(meta)
+                .to_json()
+        }
     }
 }
 
 /// Approve a specific item by ID.
-pub async fn approve_item(pool: &DbPool, id: i64) -> String {
-    match storage::approval_queue::update_status(pool, id, "approved").await {
-        Ok(()) => serde_json::json!({ "status": "approved", "id": id }).to_string(),
-        Err(e) => format!("Error approving item {id}: {e}"),
+pub async fn approve_item(pool: &DbPool, id: i64, config: &Config) -> String {
+    let start = Instant::now();
+
+    let review = ReviewAction {
+        actor: Some("mcp_agent".to_string()),
+        notes: None,
+    };
+    match storage::approval_queue::update_status_with_review(pool, id, "approved", &review).await {
+        Ok(()) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let meta = ToolMeta::new(elapsed)
+                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::success(serde_json::json!({ "status": "approved", "id": id }))
+                .with_meta(meta)
+                .to_json()
+        }
+        Err(e) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let meta = ToolMeta::new(elapsed)
+                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::db_error(format!("Error approving item {id}: {e}"))
+                .with_meta(meta)
+                .to_json()
+        }
     }
 }
 
 /// Reject a specific item by ID.
-pub async fn reject_item(pool: &DbPool, id: i64) -> String {
-    match storage::approval_queue::update_status(pool, id, "rejected").await {
-        Ok(()) => serde_json::json!({ "status": "rejected", "id": id }).to_string(),
-        Err(e) => format!("Error rejecting item {id}: {e}"),
+pub async fn reject_item(pool: &DbPool, id: i64, config: &Config) -> String {
+    let start = Instant::now();
+
+    let review = ReviewAction {
+        actor: Some("mcp_agent".to_string()),
+        notes: None,
+    };
+    match storage::approval_queue::update_status_with_review(pool, id, "rejected", &review).await {
+        Ok(()) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let meta = ToolMeta::new(elapsed)
+                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::success(serde_json::json!({ "status": "rejected", "id": id }))
+                .with_meta(meta)
+                .to_json()
+        }
+        Err(e) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let meta = ToolMeta::new(elapsed)
+                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::db_error(format!("Error rejecting item {id}: {e}"))
+                .with_meta(meta)
+                .to_json()
+        }
     }
 }
 
-/// Approve all pending items.
-pub async fn approve_all(pool: &DbPool) -> String {
-    match storage::approval_queue::get_pending(pool).await {
-        Ok(items) => {
-            let mut approved = 0i64;
-            let mut errors = 0i64;
-            for item in &items {
-                match storage::approval_queue::update_status(pool, item.id, "approved").await {
-                    Ok(()) => approved += 1,
-                    Err(_) => errors += 1,
-                }
-            }
-            serde_json::json!({
+/// Approve all pending items (clamped by max_batch_approve).
+pub async fn approve_all(pool: &DbPool, config: &Config) -> String {
+    let start = Instant::now();
+
+    let review = ReviewAction {
+        actor: Some("mcp_agent".to_string()),
+        notes: None,
+    };
+    match storage::approval_queue::batch_approve(pool, config.max_batch_approve, &review).await {
+        Ok(ids) => {
+            let approved = ids.len() as i64;
+            let elapsed = start.elapsed().as_millis() as u64;
+            let meta = ToolMeta::new(elapsed)
+                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::success(serde_json::json!({
                 "approved": approved,
-                "errors": errors,
-                "total": items.len(),
-            })
-            .to_string()
+                "ids": ids,
+                "max_batch": config.max_batch_approve,
+            }))
+            .with_meta(meta)
+            .to_json()
         }
-        Err(e) => format!("Error fetching pending approvals: {e}"),
+        Err(e) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let meta = ToolMeta::new(elapsed)
+                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::db_error(format!("Error batch approving: {e}"))
+                .with_meta(meta)
+                .to_json()
+        }
     }
 }

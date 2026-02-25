@@ -25,6 +25,26 @@
 - Back up config and token material securely.
 - Validate restore procedure before incident.
 
+```bash
+tuitbot backup                     # create backup to ~/.tuitbot/backups/
+tuitbot backup --list              # list existing backups
+tuitbot backup --prune 5           # keep 5 most recent
+tuitbot restore ./backup.db        # restore with confirmation
+tuitbot restore ./backup.db --validate-only  # validate only
+```
+
+Pre-migration backups are created automatically on startup when the DB already exists.
+
+## Runbooks
+
+Step-by-step operational guides are available in [`docs/runbooks/`](runbooks/README.md):
+
+- [Incident Response](runbooks/incident-response.md) — general triage
+- [Auth Expiry](runbooks/auth-expiry.md) — token refresh failures
+- [Rate Limit Storms](runbooks/rate-limit-storms.md) — circuit breaker events
+- [Backup & Restore](runbooks/backup-restore.md) — scheduled backups, recovery
+- [Database Maintenance](runbooks/database-maintenance.md) — WAL, VACUUM, cleanup
+
 ## Upgrades
 
 ```bash
@@ -65,7 +85,7 @@ The eval harness (`cargo test -p tuitbot-mcp eval_harness`) enforces two quality
 
 | Gate | Threshold | Description |
 |------|-----------|-------------|
-| Schema validation | >= 95% | All MCP tool responses must conform to the `ToolResponse` envelope (`success` key present) |
+| Schema validation | >= 95% | All MCP tool responses must conform to the `ToolResponse` envelope (`success` key present). As of v1.0, all tools return the envelope. |
 | Unknown errors | <= 5% | Error responses must use typed error codes — unclassified errors indicate missing handling |
 
 **Running the eval harness:**

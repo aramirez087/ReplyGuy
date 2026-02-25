@@ -3,6 +3,7 @@
 //! Exposes `tuitbot-core`'s storage layer as a REST API with read + write
 //! endpoints, local bearer-token auth, and a WebSocket for real-time events.
 
+pub mod account;
 pub mod auth;
 pub mod error;
 pub mod routes;
@@ -23,6 +24,7 @@ use crate::state::AppState;
 pub fn build_router(state: Arc<AppState>) -> Router {
     let api = Router::new()
         .route("/health", get(routes::health::health))
+        .route("/health/detailed", get(routes::health::health_detailed))
         // Analytics
         .route("/analytics/summary", get(routes::analytics::summary))
         .route("/analytics/followers", get(routes::analytics::followers))
@@ -36,9 +38,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             get(routes::analytics::recent_performance),
         )
         // Approval
+        .route("/approval/export", get(routes::approval::export_items))
         .route("/approval", get(routes::approval::list_items))
         .route("/approval/stats", get(routes::approval::stats))
         .route("/approval/approve-all", post(routes::approval::approve_all))
+        .route(
+            "/approval/{id}/history",
+            get(routes::approval::get_edit_history),
+        )
         .route("/approval/{id}", patch(routes::approval::edit_item))
         .route(
             "/approval/{id}/approve",
@@ -46,6 +53,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         .route("/approval/{id}/reject", post(routes::approval::reject_item))
         // Activity
+        .route("/activity/export", get(routes::activity::export_activity))
         .route("/activity", get(routes::activity::list_activity))
         .route(
             "/activity/rate-limits",
@@ -133,6 +141,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/assist/mode", get(routes::assist::get_mode))
         // Discovery feed
         .route("/discovery/feed", get(routes::discovery::feed))
+        .route("/discovery/keywords", get(routes::discovery::keywords))
         .route(
             "/discovery/{tweet_id}/compose-reply",
             post(routes::discovery::compose_reply),
@@ -162,6 +171,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/mcp/policy",
             get(routes::mcp::get_policy).patch(routes::mcp::patch_policy),
         )
+        .route("/mcp/policy/templates", get(routes::mcp::list_templates))
+        .route(
+            "/mcp/policy/templates/{name}",
+            post(routes::mcp::apply_template),
+        )
         .route(
             "/mcp/telemetry/summary",
             get(routes::mcp::telemetry_summary),
@@ -176,6 +190,23 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/runtime/status", get(routes::runtime::status))
         .route("/runtime/start", post(routes::runtime::start))
         .route("/runtime/stop", post(routes::runtime::stop))
+        // Accounts
+        .route(
+            "/accounts",
+            get(routes::accounts::list_accounts).post(routes::accounts::create_account),
+        )
+        .route(
+            "/accounts/{id}/roles",
+            get(routes::accounts::list_roles)
+                .post(routes::accounts::set_role)
+                .delete(routes::accounts::remove_role),
+        )
+        .route(
+            "/accounts/{id}",
+            get(routes::accounts::get_account)
+                .patch(routes::accounts::update_account)
+                .delete(routes::accounts::delete_account),
+        )
         // WebSocket
         .route("/ws", get(ws::ws_handler))
         // Auth middleware — applied to all routes; health is exempted internally.

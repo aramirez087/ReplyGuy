@@ -26,8 +26,9 @@ async fn test_router() -> axum::Router {
         data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
-        content_generator: None,
-        runtime: Mutex::new(None),
+        content_generators: Mutex::new(std::collections::HashMap::new()),
+        runtimes: Mutex::new(std::collections::HashMap::new()),
+        circuit_breaker: None,
     });
 
     tuitbot_server::build_router(state)
@@ -232,8 +233,9 @@ async fn approval_stats_returns_counts() {
         data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
-        content_generator: None,
-        runtime: Mutex::new(None),
+        content_generators: Mutex::new(std::collections::HashMap::new()),
+        runtimes: Mutex::new(std::collections::HashMap::new()),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -269,8 +271,9 @@ async fn approval_list_with_status_filter() {
         data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
-        content_generator: None,
-        runtime: Mutex::new(None),
+        content_generators: Mutex::new(std::collections::HashMap::new()),
+        runtimes: Mutex::new(std::collections::HashMap::new()),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -316,8 +319,9 @@ async fn approval_edit_content() {
         data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
-        content_generator: None,
-        runtime: Mutex::new(None),
+        content_generators: Mutex::new(std::collections::HashMap::new()),
+        runtimes: Mutex::new(std::collections::HashMap::new()),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -361,8 +365,9 @@ async fn approval_edit_empty_content() {
         data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
-        content_generator: None,
-        runtime: Mutex::new(None),
+        content_generators: Mutex::new(std::collections::HashMap::new()),
+        runtimes: Mutex::new(std::collections::HashMap::new()),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -492,8 +497,9 @@ async fn add_and_list_target() {
         data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
-        content_generator: None,
-        runtime: Mutex::new(None),
+        content_generators: Mutex::new(std::collections::HashMap::new()),
+        runtimes: Mutex::new(std::collections::HashMap::new()),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -525,8 +531,9 @@ async fn add_duplicate_target_fails() {
         data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
-        content_generator: None,
-        runtime: Mutex::new(None),
+        content_generators: Mutex::new(std::collections::HashMap::new()),
+        runtimes: Mutex::new(std::collections::HashMap::new()),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -559,8 +566,9 @@ async fn remove_target_works() {
         data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
-        content_generator: None,
-        runtime: Mutex::new(None),
+        content_generators: Mutex::new(std::collections::HashMap::new()),
+        runtimes: Mutex::new(std::collections::HashMap::new()),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -613,8 +621,9 @@ async fn runtime_start_and_stop() {
         data_dir: std::path::PathBuf::from("/tmp"),
         event_tx,
         api_token: TEST_TOKEN.to_string(),
-        content_generator: None,
-        runtime: Mutex::new(None),
+        content_generators: Mutex::new(std::collections::HashMap::new()),
+        runtimes: Mutex::new(std::collections::HashMap::new()),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -664,8 +673,9 @@ async fn settings_get_returns_json() {
         config_path,
         event_tx,
         api_token: TEST_TOKEN.to_string(),
-        content_generator: None,
-        runtime: Mutex::new(None),
+        content_generators: Mutex::new(std::collections::HashMap::new()),
+        runtimes: Mutex::new(std::collections::HashMap::new()),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 
@@ -689,8 +699,9 @@ async fn settings_patch_round_trips() {
         config_path,
         event_tx,
         api_token: TEST_TOKEN.to_string(),
-        content_generator: None,
-        runtime: Mutex::new(None),
+        content_generators: Mutex::new(std::collections::HashMap::new()),
+        runtimes: Mutex::new(std::collections::HashMap::new()),
+        circuit_breaker: None,
     });
     let router = tuitbot_server::build_router(state);
 

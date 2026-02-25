@@ -2,6 +2,7 @@
 
 use crate::error::StorageError;
 
+use super::accounts::DEFAULT_ACCOUNT_ID;
 use super::DbPool;
 
 /// Summary of costs across multiple time windows.
@@ -47,9 +48,11 @@ pub struct TypeCostBreakdown {
     pub avg_cost: f64,
 }
 
-/// Insert a new LLM usage record.
-pub async fn insert_llm_usage(
+/// Insert a new LLM usage record for a specific account.
+#[allow(clippy::too_many_arguments)]
+pub async fn insert_llm_usage_for(
     pool: &DbPool,
+    account_id: &str,
     generation_type: &str,
     provider: &str,
     model: &str,
@@ -58,9 +61,10 @@ pub async fn insert_llm_usage(
     cost_usd: f64,
 ) -> Result<(), StorageError> {
     sqlx::query(
-        "INSERT INTO llm_usage (generation_type, provider, model, input_tokens, output_tokens, cost_usd)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO llm_usage (account_id, generation_type, provider, model, input_tokens, output_tokens, cost_usd)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     )
+    .bind(account_id)
     .bind(generation_type)
     .bind(provider)
     .bind(model)
@@ -73,8 +77,34 @@ pub async fn insert_llm_usage(
     Ok(())
 }
 
-/// Get cost summary across time windows.
-pub async fn get_cost_summary(pool: &DbPool) -> Result<CostSummary, StorageError> {
+/// Insert a new LLM usage record.
+pub async fn insert_llm_usage(
+    pool: &DbPool,
+    generation_type: &str,
+    provider: &str,
+    model: &str,
+    input_tokens: u32,
+    output_tokens: u32,
+    cost_usd: f64,
+) -> Result<(), StorageError> {
+    insert_llm_usage_for(
+        pool,
+        DEFAULT_ACCOUNT_ID,
+        generation_type,
+        provider,
+        model,
+        input_tokens,
+        output_tokens,
+        cost_usd,
+    )
+    .await
+}
+
+/// Get cost summary across time windows for a specific account.
+pub async fn get_cost_summary_for(
+    pool: &DbPool,
+    account_id: &str,
+) -> Result<CostSummary, StorageError> {
     let row: (f64, i64, f64, i64, f64, i64, f64, i64) = sqlx::query_as(
         "SELECT
             COALESCE(SUM(CASE WHEN created_at >= date('now') THEN cost_usd ELSE 0.0 END), 0.0),
@@ -85,8 +115,10 @@ pub async fn get_cost_summary(pool: &DbPool) -> Result<CostSummary, StorageError
             COALESCE(SUM(CASE WHEN created_at >= date('now', '-30 days') THEN 1 ELSE 0 END), 0),
             COALESCE(SUM(cost_usd), 0.0),
             COUNT(*)
-        FROM llm_usage",
+        FROM llm_usage
+        WHERE account_id = ?",
     )
+    .bind(account_id)
     .fetch_one(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
@@ -103,9 +135,15 @@ pub async fn get_cost_summary(pool: &DbPool) -> Result<CostSummary, StorageError
     })
 }
 
-/// Get daily cost aggregation for chart data.
-pub async fn get_daily_costs(
+/// Get cost summary across time windows.
+pub async fn get_cost_summary(pool: &DbPool) -> Result<CostSummary, StorageError> {
+    get_cost_summary_for(pool, DEFAULT_ACCOUNT_ID).await
+}
+
+/// Get daily cost aggregation for chart data for a specific account.
+pub async fn get_daily_costs_for(
     pool: &DbPool,
+    account_id: &str,
     days: u32,
 ) -> Result<Vec<DailyCostSummary>, StorageError> {
     let rows: Vec<(String, f64, i64, i64, i64)> = sqlx::query_as(
@@ -116,10 +154,11 @@ pub async fn get_daily_costs(
             COALESCE(SUM(input_tokens), 0),
             COALESCE(SUM(output_tokens), 0)
         FROM llm_usage
-        WHERE created_at >= date('now', '-' || ?1 || ' days')
+        WHERE account_id = ? AND created_at >= date('now', '-' || ? || ' days')
         GROUP BY day
         ORDER BY day",
     )
+    .bind(account_id)
     .bind(days)
     .fetch_all(pool)
     .await
@@ -139,9 +178,18 @@ pub async fn get_daily_costs(
         .collect())
 }
 
-/// Get cost breakdown by provider + model.
-pub async fn get_model_breakdown(
+/// Get daily cost aggregation for chart data.
+pub async fn get_daily_costs(
     pool: &DbPool,
+    days: u32,
+) -> Result<Vec<DailyCostSummary>, StorageError> {
+    get_daily_costs_for(pool, DEFAULT_ACCOUNT_ID, days).await
+}
+
+/// Get cost breakdown by provider + model for a specific account.
+pub async fn get_model_breakdown_for(
+    pool: &DbPool,
+    account_id: &str,
     days: u32,
 ) -> Result<Vec<ModelCostBreakdown>, StorageError> {
     let rows: Vec<(String, String, f64, i64, i64, i64)> = sqlx::query_as(
@@ -153,10 +201,11 @@ pub async fn get_model_breakdown(
             COALESCE(SUM(input_tokens), 0),
             COALESCE(SUM(output_tokens), 0)
         FROM llm_usage
-        WHERE created_at >= date('now', '-' || ?1 || ' days')
+        WHERE account_id = ? AND created_at >= date('now', '-' || ? || ' days')
         GROUP BY provider, model
         ORDER BY SUM(cost_usd) DESC",
     )
+    .bind(account_id)
     .bind(days)
     .fetch_all(pool)
     .await
@@ -177,9 +226,18 @@ pub async fn get_model_breakdown(
         .collect())
 }
 
-/// Get cost breakdown by generation type.
-pub async fn get_type_breakdown(
+/// Get cost breakdown by provider + model.
+pub async fn get_model_breakdown(
     pool: &DbPool,
+    days: u32,
+) -> Result<Vec<ModelCostBreakdown>, StorageError> {
+    get_model_breakdown_for(pool, DEFAULT_ACCOUNT_ID, days).await
+}
+
+/// Get cost breakdown by generation type for a specific account.
+pub async fn get_type_breakdown_for(
+    pool: &DbPool,
+    account_id: &str,
     days: u32,
 ) -> Result<Vec<TypeCostBreakdown>, StorageError> {
     let rows: Vec<(String, f64, i64)> = sqlx::query_as(
@@ -188,10 +246,11 @@ pub async fn get_type_breakdown(
             COALESCE(SUM(cost_usd), 0.0),
             COUNT(*)
         FROM llm_usage
-        WHERE created_at >= date('now', '-' || ?1 || ' days')
+        WHERE account_id = ? AND created_at >= date('now', '-' || ? || ' days')
         GROUP BY generation_type
         ORDER BY SUM(cost_usd) DESC",
     )
+    .bind(account_id)
     .bind(days)
     .fetch_all(pool)
     .await
@@ -209,6 +268,14 @@ pub async fn get_type_breakdown(
             }
         })
         .collect())
+}
+
+/// Get cost breakdown by generation type.
+pub async fn get_type_breakdown(
+    pool: &DbPool,
+    days: u32,
+) -> Result<Vec<TypeCostBreakdown>, StorageError> {
+    get_type_breakdown_for(pool, DEFAULT_ACCOUNT_ID, days).await
 }
 
 #[cfg(test)]

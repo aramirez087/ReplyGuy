@@ -8,12 +8,14 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::error::XApiError;
+use crate::safety::redact::redact_secrets;
 use crate::storage::{self, DbPool};
 
 use super::types::{
-    ActionResultResponse, FollowUserRequest, LikeTweetRequest, MediaId, MediaPayload, MediaType,
-    MentionResponse, PostTweetRequest, PostTweetResponse, PostedTweet, RateLimitInfo, ReplyTo,
-    SearchResponse, SingleTweetResponse, Tweet, User, UserResponse, XApiErrorResponse,
+    ActionResultResponse, DeleteTweetResponse, FollowUserRequest, LikeTweetRequest, MediaId,
+    MediaPayload, MediaType, MentionResponse, PostTweetRequest, PostTweetResponse, PostedTweet,
+    RateLimitInfo, ReplyTo, RetweetRequest, SearchResponse, SingleTweetResponse, Tweet, User,
+    UserResponse, XApiErrorResponse,
 };
 use super::XApiClient;
 
@@ -112,13 +114,15 @@ impl XApiHttpClient {
         let status = response.status().as_u16();
         let rate_info = Self::parse_rate_limit_headers(response.headers());
 
-        let body = response.text().await.unwrap_or_default();
-        let error_detail = serde_json::from_str::<XApiErrorResponse>(&body).ok();
+        let raw_body = response.text().await.unwrap_or_default();
+        let error_detail = serde_json::from_str::<XApiErrorResponse>(&raw_body).ok();
+        let body = redact_secrets(&raw_body);
 
         let message = error_detail
             .as_ref()
             .and_then(|e| e.detail.clone())
             .unwrap_or_else(|| body.clone());
+        let message = redact_secrets(&message);
 
         match status {
             429 => {
@@ -129,9 +133,21 @@ impl XApiHttpClient {
                 XApiError::RateLimited { retry_after }
             }
             401 => XApiError::AuthExpired,
+            403 if Self::is_scope_insufficient_message(&message) => {
+                XApiError::ScopeInsufficient { message }
+            }
             403 => XApiError::Forbidden { message },
             _ => XApiError::ApiError { status, message },
         }
+    }
+
+    fn is_scope_insufficient_message(message: &str) -> bool {
+        let normalized = message.to_ascii_lowercase();
+        normalized.contains("scope")
+            && (normalized.contains("insufficient")
+                || normalized.contains("missing")
+                || normalized.contains("not granted")
+                || normalized.contains("required"))
     }
 
     /// Record an API call in the usage tracking table (fire-and-forget).
@@ -270,6 +286,7 @@ impl XApiClient for XApiHttpClient {
         query: &str,
         max_results: u32,
         since_id: Option<&str>,
+        pagination_token: Option<&str>,
     ) -> Result<SearchResponse, XApiError> {
         tracing::debug!(query = %query, max_results = max_results, "Search tweets");
         let max_str = max_results.to_string();
@@ -285,6 +302,12 @@ impl XApiClient for XApiHttpClient {
         if let Some(sid) = since_id {
             since_id_owned = sid.to_string();
             params.push(("since_id", &since_id_owned));
+        }
+
+        let pagination_token_owned;
+        if let Some(pt) = pagination_token {
+            pagination_token_owned = pt.to_string();
+            params.push(("pagination_token", &pagination_token_owned));
         }
 
         let response = self.get("/tweets/search/recent", &params).await?;
@@ -304,6 +327,7 @@ impl XApiClient for XApiHttpClient {
         &self,
         user_id: &str,
         since_id: Option<&str>,
+        pagination_token: Option<&str>,
     ) -> Result<MentionResponse, XApiError> {
         let path = format!("/users/{user_id}/mentions");
         let mut params = vec![
@@ -316,6 +340,12 @@ impl XApiClient for XApiHttpClient {
         if let Some(sid) = since_id {
             since_id_owned = sid.to_string();
             params.push(("since_id", &since_id_owned));
+        }
+
+        let pagination_token_owned;
+        if let Some(pt) = pagination_token {
+            pagination_token_owned = pt.to_string();
+            params.push(("pagination_token", &pagination_token_owned));
         }
 
         let response = self.get(&path, &params).await?;
@@ -460,15 +490,22 @@ impl XApiClient for XApiHttpClient {
         &self,
         user_id: &str,
         max_results: u32,
+        pagination_token: Option<&str>,
     ) -> Result<SearchResponse, XApiError> {
         let path = format!("/users/{user_id}/tweets");
         let max_str = max_results.to_string();
-        let params = [
+        let mut params = vec![
             ("max_results", max_str.as_str()),
             ("tweet.fields", TWEET_FIELDS),
             ("expansions", EXPANSIONS),
             ("user.fields", USER_FIELDS),
         ];
+
+        let pagination_token_owned;
+        if let Some(pt) = pagination_token {
+            pagination_token_owned = pt.to_string();
+            params.push(("pagination_token", &pagination_token_owned));
+        }
 
         let response = self.get(&path, &params).await?;
         response
@@ -551,6 +588,74 @@ impl XApiClient for XApiHttpClient {
             .map_err(|e| XApiError::Network { source: e })?;
         Ok(resp.data.result)
     }
+
+    async fn retweet(&self, user_id: &str, tweet_id: &str) -> Result<bool, XApiError> {
+        tracing::debug!(user_id = %user_id, tweet_id = %tweet_id, "Retweeting");
+        let path = format!("/users/{user_id}/retweets");
+        let body = RetweetRequest {
+            tweet_id: tweet_id.to_string(),
+        };
+
+        let response = self.post_json(&path, &body).await?;
+        let resp: ActionResultResponse = response
+            .json()
+            .await
+            .map_err(|e| XApiError::Network { source: e })?;
+        Ok(resp.data.result)
+    }
+
+    async fn unretweet(&self, user_id: &str, tweet_id: &str) -> Result<bool, XApiError> {
+        tracing::debug!(user_id = %user_id, tweet_id = %tweet_id, "Unretweeting");
+        let path = format!("/users/{user_id}/retweets/{tweet_id}");
+
+        let response = self.delete(&path).await?;
+        let resp: ActionResultResponse = response
+            .json()
+            .await
+            .map_err(|e| XApiError::Network { source: e })?;
+        Ok(resp.data.result)
+    }
+
+    async fn delete_tweet(&self, tweet_id: &str) -> Result<bool, XApiError> {
+        tracing::debug!(tweet_id = %tweet_id, "Deleting tweet");
+        let path = format!("/tweets/{tweet_id}");
+
+        let response = self.delete(&path).await?;
+        let resp: DeleteTweetResponse = response
+            .json()
+            .await
+            .map_err(|e| XApiError::Network { source: e })?;
+        Ok(resp.data.deleted)
+    }
+
+    async fn get_home_timeline(
+        &self,
+        user_id: &str,
+        max_results: u32,
+        pagination_token: Option<&str>,
+    ) -> Result<SearchResponse, XApiError> {
+        tracing::debug!(user_id = %user_id, max_results = max_results, "Getting home timeline");
+        let path = format!("/users/{user_id}/timelines/reverse_chronological");
+        let max_str = max_results.to_string();
+        let mut params = vec![
+            ("max_results", max_str.as_str()),
+            ("tweet.fields", TWEET_FIELDS),
+            ("expansions", EXPANSIONS),
+            ("user.fields", USER_FIELDS),
+        ];
+
+        let pagination_token_owned;
+        if let Some(pt) = pagination_token {
+            pagination_token_owned = pt.to_string();
+            params.push(("pagination_token", &pagination_token_owned));
+        }
+
+        let response = self.get(&path, &params).await?;
+        response
+            .json::<SearchResponse>()
+            .await
+            .map_err(|e| XApiError::Network { source: e })
+    }
 }
 
 #[cfg(test)]
@@ -580,7 +685,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = client.search_tweets("rust", 10, None).await;
+        let result = client.search_tweets("rust", 10, None, None).await;
         let resp = result.expect("search");
         assert_eq!(resp.data.len(), 1);
         assert_eq!(resp.data[0].text, "Rust is great");
@@ -601,7 +706,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = client.search_tweets("test", 10, Some("999")).await;
+        let result = client.search_tweets("test", 10, Some("999"), None).await;
         assert!(result.is_ok());
     }
 
@@ -682,7 +787,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = client.search_tweets("test", 10, None).await;
+        let result = client.search_tweets("test", 10, None, None).await;
         assert!(matches!(result, Err(XApiError::RateLimited { .. })));
     }
 
@@ -717,12 +822,34 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = client.search_tweets("test", 10, None).await;
+        let result = client.search_tweets("test", 10, None, None).await;
         match result {
             Err(XApiError::Forbidden { message }) => {
                 assert!(message.contains("not permitted"));
             }
             other => panic!("expected Forbidden, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn error_403_scope_message_maps_to_scope_insufficient() {
+        let server = MockServer::start().await;
+        let client = setup_client(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/tweets/search/recent"))
+            .respond_with(ResponseTemplate::new(403).set_body_json(
+                serde_json::json!({"detail": "Missing required OAuth scope: tweet.write"}),
+            ))
+            .mount(&server)
+            .await;
+
+        let result = client.search_tweets("test", 10, None, None).await;
+        match result {
+            Err(XApiError::ScopeInsufficient { message }) => {
+                assert!(message.contains("scope"));
+            }
+            other => panic!("expected ScopeInsufficient, got: {other:?}"),
         }
     }
 
@@ -743,6 +870,32 @@ mod tests {
         let result = client.get_me().await;
         match result {
             Err(XApiError::ApiError { status, .. }) => assert_eq!(status, 500),
+            other => panic!("expected ApiError, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn error_messages_are_redacted() {
+        let server = MockServer::start().await;
+        let client = setup_client(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/users/me"))
+            .respond_with(
+                ResponseTemplate::new(500).set_body_json(
+                    serde_json::json!({"detail": "access_token=abc123 Authorization: Bearer secrettoken"}),
+                ),
+            )
+            .mount(&server)
+            .await;
+
+        let result = client.get_me().await;
+        match result {
+            Err(XApiError::ApiError { message, .. }) => {
+                assert!(!message.contains("abc123"));
+                assert!(!message.contains("secrettoken"));
+                assert!(message.contains("***REDACTED***"));
+            }
             other => panic!("expected ApiError, got: {other:?}"),
         }
     }
@@ -804,7 +957,10 @@ mod tests {
             .mount(&server)
             .await;
 
-        let resp = client.get_mentions("u1", None).await.expect("mentions");
+        let resp = client
+            .get_mentions("u1", None, None)
+            .await
+            .expect("mentions");
         assert_eq!(resp.data.len(), 1);
     }
 
@@ -918,5 +1074,106 @@ mod tests {
 
         let result = client.unfollow_user("u1", "target1").await;
         assert!(matches!(result, Err(XApiError::AuthExpired)));
+    }
+
+    #[tokio::test]
+    async fn retweet_success() {
+        let server = MockServer::start().await;
+        let client = setup_client(&server).await;
+
+        Mock::given(method("POST"))
+            .and(path("/users/u1/retweets"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": {"retweeted": true}
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client.retweet("u1", "t1").await.expect("retweet");
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn unretweet_success() {
+        let server = MockServer::start().await;
+        let client = setup_client(&server).await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/users/u1/retweets/t1"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": {"retweeted": false}
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client.unretweet("u1", "t1").await.expect("unretweet");
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn delete_tweet_success() {
+        let server = MockServer::start().await;
+        let client = setup_client(&server).await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/tweets/t1"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": {"deleted": true}
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client.delete_tweet("t1").await.expect("delete");
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn get_home_timeline_success() {
+        let server = MockServer::start().await;
+        let client = setup_client(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/users/u1/timelines/reverse_chronological"))
+            .and(query_param("max_results", "10"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{"id": "ht1", "text": "Home tweet", "author_id": "a1"}],
+                "meta": {"result_count": 1}
+            })))
+            .mount(&server)
+            .await;
+
+        let resp = client
+            .get_home_timeline("u1", 10, None)
+            .await
+            .expect("home timeline");
+        assert_eq!(resp.data.len(), 1);
+        assert_eq!(resp.data[0].text, "Home tweet");
+    }
+
+    #[tokio::test]
+    async fn search_tweets_with_pagination_token() {
+        let server = MockServer::start().await;
+        let client = setup_client(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/tweets/search/recent"))
+            .and(query_param("pagination_token", "next_abc"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{"id": "p1", "text": "Page 2 tweet", "author_id": "a1"}],
+                "meta": {"result_count": 1}
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client
+            .search_tweets("test", 10, None, Some("next_abc"))
+            .await;
+        let resp = result.expect("search with pagination");
+        assert_eq!(resp.data.len(), 1);
+        assert_eq!(resp.data[0].id, "p1");
     }
 }

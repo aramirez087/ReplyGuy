@@ -2,6 +2,8 @@
 	import { page } from "$app/stores";
 	import { connected, runtimeRunning } from "$lib/stores/websocket";
 	import { pendingCount } from "$lib/stores/approval";
+	import { accounts } from "$lib/stores/accounts";
+	import AccountSwitcher from "$lib/components/AccountSwitcher.svelte";
 	import { theme } from "$lib/stores/theme";
 	import { updateAvailable, installUpdate } from "$lib/stores/update";
 	import { persistGet, persistSet } from "$lib/stores/persistence";
@@ -55,6 +57,7 @@
 		{ href: "/strategy", label: "Strategy", icon: Compass },
 		{ href: "/costs", label: "Costs", icon: DollarSign },
 		{ href: "/mcp", label: "MCP", icon: Shield },
+		{ href: "/observability", label: "Observability", icon: Activity },
 		{ href: "/settings", label: "Settings", icon: Settings },
 	];
 
@@ -77,6 +80,10 @@
 			</div>
 		{/if}
 	</div>
+
+	{#if !collapsed && $accounts.length > 1}
+		<AccountSwitcher />
+	{/if}
 
 	<nav class="sidebar-nav">
 		{#each navItems as item}

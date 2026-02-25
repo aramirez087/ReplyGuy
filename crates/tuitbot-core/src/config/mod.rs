@@ -19,6 +19,10 @@ fn default_approval_mode() -> bool {
     true
 }
 
+fn default_max_batch_approve() -> usize {
+    25
+}
+
 /// Operating mode controlling how autonomous Tuitbot is.
 ///
 /// - **Autopilot**: Full autonomous operation — discovers, generates, and posts content.
@@ -87,6 +91,10 @@ pub struct Config {
     #[serde(default = "default_approval_mode")]
     pub approval_mode: bool,
 
+    /// Maximum items that can be batch-approved at once.
+    #[serde(default = "default_max_batch_approve")]
+    pub max_batch_approve: usize,
+
     /// Data storage configuration.
     #[serde(default)]
     pub storage: StorageConfig,
@@ -102,6 +110,10 @@ pub struct Config {
     /// MCP mutation policy enforcement.
     #[serde(default)]
     pub mcp_policy: McpPolicyConfig,
+
+    /// Circuit breaker for X API rate-limit protection.
+    #[serde(default)]
+    pub circuit_breaker: CircuitBreakerConfig,
 }
 
 /// X API credentials.
@@ -391,8 +403,12 @@ impl Default for ScheduleConfig {
 ///
 /// Controls whether MCP mutation tools (post, reply, like, follow, etc.)
 /// are gated by policy checks before execution.
+///
+/// v2 fields (`template`, `rules`, `rate_limits`) are additive — existing
+/// v1 configs deserialize without changes.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct McpPolicyConfig {
+    // --- v1 fields (unchanged) ---
     /// Master switch: when false, all mutations are allowed without checks.
     #[serde(default = "default_true")]
     pub enforce_for_mutations: bool,
@@ -412,6 +428,19 @@ pub struct McpPolicyConfig {
     /// Maximum MCP mutations allowed per hour (aggregate across all tools).
     #[serde(default = "default_max_mutations_per_hour")]
     pub max_mutations_per_hour: u32,
+
+    // --- v2 fields ---
+    /// Optional named template to apply as the baseline rule set.
+    #[serde(default)]
+    pub template: Option<crate::mcp_policy::types::PolicyTemplateName>,
+
+    /// Explicit policy rules (user-defined). Evaluated by priority order.
+    #[serde(default)]
+    pub rules: Vec<crate::mcp_policy::types::PolicyRule>,
+
+    /// Per-dimension rate limits (beyond the global `max_mutations_per_hour`).
+    #[serde(default)]
+    pub rate_limits: Vec<crate::mcp_policy::types::PolicyRateLimit>,
 }
 
 fn default_true() -> bool {
@@ -533,6 +562,42 @@ fn default_db_path() -> String {
 }
 fn default_retention_days() -> u32 {
     90
+}
+
+fn default_cb_error_threshold() -> u32 {
+    5
+}
+fn default_cb_window_seconds() -> u64 {
+    300
+}
+fn default_cb_cooldown_seconds() -> u64 {
+    600
+}
+
+/// Circuit breaker configuration for X API rate-limit protection.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CircuitBreakerConfig {
+    /// Number of errors within the window to trip the breaker.
+    #[serde(default = "default_cb_error_threshold")]
+    pub error_threshold: u32,
+
+    /// Sliding window duration in seconds for counting errors.
+    #[serde(default = "default_cb_window_seconds")]
+    pub window_seconds: u64,
+
+    /// How long (seconds) to stay Open before allowing a probe mutation.
+    #[serde(default = "default_cb_cooldown_seconds")]
+    pub cooldown_seconds: u64,
+}
+
+impl Default for CircuitBreakerConfig {
+    fn default() -> Self {
+        Self {
+            error_threshold: default_cb_error_threshold(),
+            window_seconds: default_cb_window_seconds(),
+            cooldown_seconds: default_cb_cooldown_seconds(),
+        }
+    }
 }
 
 impl Config {

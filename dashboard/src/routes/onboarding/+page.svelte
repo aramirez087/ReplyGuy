@@ -6,10 +6,12 @@
 	import XApiStep from '$lib/components/onboarding/XApiStep.svelte';
 	import BusinessStep from '$lib/components/onboarding/BusinessStep.svelte';
 	import LlmStep from '$lib/components/onboarding/LlmStep.svelte';
+	import LanguageBrandStep from '$lib/components/onboarding/LanguageBrandStep.svelte';
+	import ValidationStep from '$lib/components/onboarding/ValidationStep.svelte';
 	import ReviewStep from '$lib/components/onboarding/ReviewStep.svelte';
 	import { Zap, ArrowLeft, ArrowRight, Loader2 } from 'lucide-svelte';
 
-	const STEPS = ['Welcome', 'X API', 'Business', 'LLM', 'Review'];
+	const STEPS = ['Welcome', 'X API', 'Business', 'LLM', 'Language', 'Validate', 'Review'];
 	let currentStep = $state(0);
 	let submitting = $state(false);
 	let errorMsg = $state('');
@@ -17,11 +19,11 @@
 	function canAdvance(): boolean {
 		const data = $onboardingData;
 		switch (currentStep) {
-			case 0:
+			case 0: // Welcome
 				return true;
-			case 1:
+			case 1: // X API
 				return data.client_id.trim().length > 0;
-			case 2:
+			case 2: // Business
 				return (
 					data.product_name.trim().length > 0 &&
 					data.product_description.trim().length > 0 &&
@@ -29,10 +31,14 @@
 					data.product_keywords.length > 0 &&
 					data.industry_topics.length > 0
 				);
-			case 3:
+			case 3: // LLM
 				if (data.llm_provider === 'ollama') return data.llm_model.trim().length > 0;
 				return data.llm_api_key.trim().length > 0 && data.llm_model.trim().length > 0;
-			case 4:
+			case 4: // Language & Brand
+				return true;
+			case 5: // Validation
+				return true;
+			case 6: // Review
 				return true;
 			default:
 				return false;
@@ -89,7 +95,7 @@
 			}
 
 			onboardingData.reset();
-			goto('/');
+			goto('/content?compose=true');
 		} catch (e) {
 			errorMsg = e instanceof Error ? e.message : 'Failed to create configuration';
 		} finally {
@@ -135,6 +141,10 @@
 			{:else if currentStep === 3}
 				<LlmStep />
 			{:else if currentStep === 4}
+				<LanguageBrandStep />
+			{:else if currentStep === 5}
+				<ValidationStep />
+			{:else if currentStep === 6}
 				<ReviewStep />
 			{/if}
 		</div>

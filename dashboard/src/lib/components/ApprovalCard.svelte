@@ -8,16 +8,19 @@
 		XCircle,
 		Pencil,
 		X,
-		Film
+		Film,
+		ShieldAlert
 	} from 'lucide-svelte';
 	import { api, type ApprovalItem } from '$lib/api';
+	import ApprovalEditHistory from './ApprovalEditHistory.svelte';
+	import ApprovalRejectDialog from './ApprovalRejectDialog.svelte';
 
 	interface Props {
 		item: ApprovalItem;
 		focused: boolean;
 		editing: boolean;
 		onApprove: (id: number) => void;
-		onReject: (id: number) => void;
+		onReject: (id: number, notes?: string) => void;
 		onStartEdit: (id: number) => void;
 		onSaveEdit: (id: number, content: string) => void;
 		onCancelEdit: () => void;
@@ -36,6 +39,7 @@
 
 	let editContent = $state('');
 	let textareaEl: HTMLTextAreaElement | undefined = $state();
+	let showRejectDialog = $state(false);
 
 	const charCount = $derived(editing ? editContent.length : item.generated_content.length);
 	const isOverLimit = $derived(charCount > 280);
@@ -53,6 +57,11 @@
 
 	// Media paths from the approval item.
 	const mediaPaths = $derived(item.media_paths ?? []);
+
+	// Detected risks parsed from the item.
+	const risks = $derived(
+		Array.isArray(item.detected_risks) ? item.detected_risks : []
+	);
 
 	const statusClass = $derived(
 		item.status === 'pending'
@@ -175,16 +184,72 @@
 			{#if item.archetype}
 				<span class="meta-tag archetype">{item.archetype}</span>
 			{/if}
+			{#if item.reason}
+				<span class="meta-tag reason">{item.reason}</span>
+			{/if}
 		</div>
 
-		{#if item.status === 'pending' && !editing}
+		{#if risks.length > 0}
+			<div class="card-risks">
+				<ShieldAlert size={11} />
+				{#each risks as risk}
+					<span class="risk-chip">{risk}</span>
+				{/each}
+			</div>
+		{/if}
+
+		{#if item.qa_score > 0}
+			<div class="card-qa">
+				<span
+					class="qa-score-badge"
+					class:qa-good={item.qa_score > 80}
+					class:qa-warn={item.qa_score > 60 && item.qa_score <= 80}
+					class:qa-bad={item.qa_score <= 60}
+				>
+					QA {Math.round(item.qa_score)}
+				</span>
+				{#if item.qa_hard_flags?.length > 0}
+					<span class="qa-flag-count hard">{item.qa_hard_flags.length} hard</span>
+				{/if}
+				{#if item.qa_soft_flags?.length > 0}
+					<span class="qa-flag-count soft">{item.qa_soft_flags.length} soft</span>
+				{/if}
+				{#if item.qa_override_by}
+					<span class="qa-override">override by {item.qa_override_by}</span>
+				{/if}
+			</div>
+		{/if}
+
+		{#if item.status !== 'pending' && (item.reviewed_by || item.review_notes)}
+			<div class="card-review-info">
+				{#if item.reviewed_by}
+					<span class="review-by">Reviewed by {item.reviewed_by}</span>
+				{/if}
+				{#if item.review_notes}
+					<span class="review-notes">{item.review_notes}</span>
+				{/if}
+			</div>
+		{/if}
+
+		<ApprovalEditHistory approvalId={item.id} />
+
+		{#if showRejectDialog && item.status === 'pending'}
+			<ApprovalRejectDialog
+				itemId={item.id}
+				onConfirm={(id, notes) => {
+					showRejectDialog = false;
+					onReject(id, notes || undefined);
+				}}
+				onCancel={() => (showRejectDialog = false)}
+			/>
+		{:else if item.status === 'pending' && !editing}
 			<div class="card-actions">
 				<button class="action-btn approve" onclick={() => onApprove(item.id)}>
 					<CheckCircle size={14} />
 					Approve
 					<kbd>a</kbd>
 				</button>
-				<button class="action-btn reject" onclick={() => onReject(item.id)}>
+				<button class="action-btn reject" onclick={() => (showRejectDialog = true)}>
 					<XCircle size={14} />
 					Reject
 					<kbd>r</kbd>
@@ -478,6 +543,101 @@
 	.meta-tag.archetype {
 		background-color: color-mix(in srgb, var(--color-text-subtle) 15%, transparent);
 		color: var(--color-text-muted);
+	}
+
+	.meta-tag.reason {
+		background-color: color-mix(in srgb, var(--color-warning) 12%, transparent);
+		color: var(--color-warning);
+	}
+
+	.card-risks {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		margin-bottom: 8px;
+		color: var(--color-warning);
+		flex-wrap: wrap;
+	}
+
+	.risk-chip {
+		font-size: 10px;
+		font-weight: 500;
+		padding: 1px 6px;
+		border-radius: 3px;
+		background-color: color-mix(in srgb, var(--color-warning) 10%, transparent);
+		color: var(--color-warning);
+	}
+
+	.card-qa {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-bottom: 8px;
+		flex-wrap: wrap;
+	}
+
+	.qa-score-badge {
+		font-size: 11px;
+		font-weight: 700;
+		padding: 2px 8px;
+		border-radius: 4px;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.qa-score-badge.qa-good {
+		background-color: color-mix(in srgb, var(--color-success) 15%, transparent);
+		color: var(--color-success);
+	}
+
+	.qa-score-badge.qa-warn {
+		background-color: color-mix(in srgb, var(--color-warning) 15%, transparent);
+		color: var(--color-warning);
+	}
+
+	.qa-score-badge.qa-bad {
+		background-color: color-mix(in srgb, var(--color-danger) 15%, transparent);
+		color: var(--color-danger);
+	}
+
+	.qa-flag-count {
+		font-size: 10px;
+		font-weight: 600;
+		padding: 1px 6px;
+		border-radius: 3px;
+	}
+
+	.qa-flag-count.hard {
+		background-color: color-mix(in srgb, var(--color-danger) 10%, transparent);
+		color: var(--color-danger);
+	}
+
+	.qa-flag-count.soft {
+		background-color: color-mix(in srgb, var(--color-warning) 10%, transparent);
+		color: var(--color-warning);
+	}
+
+	.qa-override {
+		font-size: 10px;
+		color: var(--color-text-subtle);
+		font-style: italic;
+	}
+
+	.card-review-info {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 6px;
+		font-size: 11px;
+	}
+
+	.review-by {
+		color: var(--color-text-subtle);
+		font-weight: 500;
+	}
+
+	.review-notes {
+		color: var(--color-text-muted);
+		font-style: italic;
 	}
 
 	.card-actions {

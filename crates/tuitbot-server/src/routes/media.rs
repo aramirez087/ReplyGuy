@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tuitbot_core::storage::media;
 
+use crate::account::{require_mutate, AccountContext};
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -19,8 +20,10 @@ use crate::state::AppState;
 /// Returns `{ id, path, media_type, size }`.
 pub async fn upload(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     mut multipart: Multipart,
 ) -> Result<Json<Value>, ApiError> {
+    require_mutate(&ctx)?;
     let field = multipart
         .next_field()
         .await
@@ -73,6 +76,7 @@ pub struct MediaFileQuery {
 /// `GET /api/media/file?path=...` — serve a local media file.
 pub async fn serve_file(
     State(state): State<Arc<AppState>>,
+    _ctx: AccountContext,
     Query(params): Query<MediaFileQuery>,
 ) -> Result<Response, ApiError> {
     // Path traversal protection.

@@ -3,8 +3,35 @@
 //! Tracks how many times the agent has replied to each author per day
 //! to prevent spam behavior (replying to the same person multiple times).
 
+use super::accounts::DEFAULT_ACCOUNT_ID;
 use super::DbPool;
 use crate::error::StorageError;
+
+/// Increment the reply count for an author on today's date for a specific account.
+///
+/// Uses `INSERT OR REPLACE` with a composite key of (author_id, date)
+/// to atomically create or update the counter.
+pub async fn increment_author_interaction_for(
+    pool: &DbPool,
+    account_id: &str,
+    author_id: &str,
+    author_username: &str,
+) -> Result<(), StorageError> {
+    sqlx::query(
+        "INSERT INTO author_interactions (account_id, author_id, author_username, interaction_date, reply_count) \
+         VALUES (?, ?, ?, date('now'), 1) \
+         ON CONFLICT(author_id, interaction_date) \
+         DO UPDATE SET reply_count = reply_count + 1, author_username = excluded.author_username",
+    )
+    .bind(account_id)
+    .bind(author_id)
+    .bind(author_username)
+    .execute(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(())
+}
 
 /// Increment the reply count for an author on today's date.
 ///
@@ -15,19 +42,28 @@ pub async fn increment_author_interaction(
     author_id: &str,
     author_username: &str,
 ) -> Result<(), StorageError> {
-    sqlx::query(
-        "INSERT INTO author_interactions (author_id, author_username, interaction_date, reply_count) \
-         VALUES (?, ?, date('now'), 1) \
-         ON CONFLICT(author_id, interaction_date) \
-         DO UPDATE SET reply_count = reply_count + 1, author_username = excluded.author_username",
+    increment_author_interaction_for(pool, DEFAULT_ACCOUNT_ID, author_id, author_username).await
+}
+
+/// Get the number of replies sent to a specific author today for a specific account.
+pub async fn get_author_reply_count_today_for(
+    pool: &DbPool,
+    account_id: &str,
+    author_id: &str,
+) -> Result<i64, StorageError> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COALESCE( \
+            (SELECT reply_count FROM author_interactions \
+             WHERE author_id = ? AND interaction_date = date('now') AND account_id = ?), \
+         0)",
     )
     .bind(author_id)
-    .bind(author_username)
-    .execute(pool)
+    .bind(account_id)
+    .fetch_one(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })?;
 
-    Ok(())
+    Ok(row.0)
 }
 
 /// Get the number of replies sent to a specific author today.
@@ -35,18 +71,7 @@ pub async fn get_author_reply_count_today(
     pool: &DbPool,
     author_id: &str,
 ) -> Result<i64, StorageError> {
-    let row: (i64,) = sqlx::query_as(
-        "SELECT COALESCE( \
-            (SELECT reply_count FROM author_interactions \
-             WHERE author_id = ? AND interaction_date = date('now')), \
-         0)",
-    )
-    .bind(author_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| StorageError::Query { source: e })?;
-
-    Ok(row.0)
+    get_author_reply_count_today_for(pool, DEFAULT_ACCOUNT_ID, author_id).await
 }
 
 #[cfg(test)]

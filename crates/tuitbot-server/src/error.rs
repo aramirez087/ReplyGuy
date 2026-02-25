@@ -18,11 +18,23 @@ pub enum ApiError {
     Conflict(String),
     /// Internal server error (non-storage).
     Internal(String),
+    /// Forbidden — insufficient role/permissions.
+    Forbidden(String),
 }
 
 impl From<tuitbot_core::error::StorageError> for ApiError {
     fn from(err: tuitbot_core::error::StorageError) -> Self {
         Self::Storage(err)
+    }
+}
+
+impl From<crate::account::AccountError> for ApiError {
+    fn from(err: crate::account::AccountError) -> Self {
+        match err.status {
+            StatusCode::FORBIDDEN => Self::Forbidden(err.message),
+            StatusCode::NOT_FOUND => Self::NotFound(err.message),
+            _ => Self::Internal(err.message),
+        }
     }
 }
 
@@ -40,6 +52,7 @@ impl IntoResponse for ApiError {
                 tracing::error!("internal error: {msg}");
                 (StatusCode::INTERNAL_SERVER_ERROR, msg)
             }
+            Self::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
         };
 
         let body = axum::Json(json!({ "error": message }));

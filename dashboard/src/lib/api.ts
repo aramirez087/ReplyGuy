@@ -1,5 +1,6 @@
 const BASE_URL = 'http://localhost:3001';
 let token: string = '';
+let accountId: string = '00000000-0000-0000-0000-000000000000';
 
 export function setToken(t: string) {
 	token = t;
@@ -9,12 +10,21 @@ export function getToken(): string {
 	return token;
 }
 
+export function setAccountId(id: string) {
+	accountId = id;
+}
+
+export function getAccountId(): string {
+	return accountId;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
 	const res = await fetch(`${BASE_URL}${path}`, {
 		...options,
 		headers: {
 			'Content-Type': 'application/json',
 			Authorization: `Bearer ${token}`,
+			'X-Account-Id': accountId,
 			...options?.headers
 		}
 	});
@@ -122,6 +132,27 @@ export interface ApprovalItem {
 	status: string;
 	created_at: string;
 	media_paths: string[];
+	reviewed_by?: string;
+	review_notes?: string;
+	reason?: string;
+	detected_risks: string[];
+	qa_score: number;
+	qa_hard_flags: string[];
+	qa_soft_flags: string[];
+	qa_requires_override: boolean;
+	qa_override_by?: string;
+	qa_override_note?: string;
+	qa_override_at?: string;
+}
+
+export interface EditHistoryEntry {
+	id: number;
+	approval_id: number;
+	editor: string;
+	field: string;
+	old_value: string;
+	new_value: string;
+	created_at: string;
 }
 
 export interface MediaUploadResponse {
@@ -422,6 +453,47 @@ export interface EndpointBreakdown {
 
 // --- MCP types ---
 
+export interface McpPolicyRuleConditions {
+	tools?: string[];
+	categories?: string[];
+	modes?: string[];
+	schedule_window?: {
+		start_hour: number;
+		end_hour: number;
+		timezone: string;
+		days: string[];
+	};
+}
+
+export interface McpPolicyAction {
+	type: 'allow' | 'deny' | 'require_approval' | 'dry_run';
+	reason?: string;
+}
+
+export interface McpPolicyRule {
+	id: string;
+	priority: number;
+	label: string;
+	enabled: boolean;
+	conditions: McpPolicyRuleConditions;
+	action: McpPolicyAction;
+}
+
+export interface McpPolicyRateLimit {
+	key: string;
+	dimension: string;
+	match_value: string;
+	max_count: number;
+	period_seconds: number;
+}
+
+export interface McpPolicyTemplate {
+	name: string;
+	description: string;
+	rules: McpPolicyRule[];
+	rate_limits: McpPolicyRateLimit[];
+}
+
 export interface McpPolicyStatus {
 	enforce_for_mutations: boolean;
 	require_approval_for: string[];
@@ -435,6 +507,9 @@ export interface McpPolicyStatus {
 		period_seconds?: number;
 		period_start?: string;
 	};
+	template?: string;
+	rules: McpPolicyRule[];
+	rate_limits: McpPolicyRateLimit[];
 }
 
 export interface McpPolicyPatch {
@@ -443,6 +518,9 @@ export interface McpPolicyPatch {
 	blocked_tools?: string[];
 	dry_run_mutations?: boolean;
 	max_mutations_per_hour?: number;
+	template?: string;
+	rules?: McpPolicyRule[];
+	rate_limits?: McpPolicyRateLimit[];
 }
 
 export interface McpTelemetrySummary {
@@ -497,7 +575,8 @@ async function uploadFile(path: string, file: File): Promise<MediaUploadResponse
 	const res = await fetch(`${BASE_URL}${path}`, {
 		method: 'POST',
 		headers: {
-			Authorization: `Bearer ${token}`
+			Authorization: `Bearer ${token}`,
+			'X-Account-Id': accountId
 			// No Content-Type — browser sets multipart boundary automatically.
 		},
 		body: formData
@@ -511,8 +590,38 @@ async function uploadFile(path: string, file: File): Promise<MediaUploadResponse
 
 // --- API client ---
 
+// --- Account types ---
+
+export interface Account {
+	id: string;
+	label: string;
+	x_username: string | null;
+	x_user_id: string | null;
+	config_overrides: string | null;
+	status: string;
+	created_at: string;
+	updated_at: string;
+}
+
 export const api = {
 	health: () => request<HealthResponse>('/api/health'),
+
+	accounts: {
+		list: () => request<Account[]>('/api/accounts'),
+		get: (id: string) => request<Account>(`/api/accounts/${id}`),
+		create: (label: string) =>
+			request<Account>('/api/accounts', {
+				method: 'POST',
+				body: JSON.stringify({ label })
+			}),
+		update: (id: string, data: { label?: string; config_overrides?: string }) =>
+			request<Account>(`/api/accounts/${id}`, {
+				method: 'PATCH',
+				body: JSON.stringify(data)
+			}),
+		delete: (id: string) =>
+			request<{ status: string }>(`/api/accounts/${id}`, { method: 'DELETE' })
+	},
 
 	analytics: {
 		summary: () => request<AnalyticsSummary>('/api/analytics/summary'),
@@ -534,7 +643,13 @@ export const api = {
 			const qs = query.toString();
 			return request<ActivityResponse>(`/api/activity${qs ? `?${qs}` : ''}`);
 		},
-		rateLimits: () => request<RateLimitUsage>('/api/activity/rate-limits')
+		rateLimits: () => request<RateLimitUsage>('/api/activity/rate-limits'),
+		exportUrl: (format: 'csv' | 'json', type_?: string, status?: string): string => {
+			const query = new URLSearchParams({ format });
+			if (type_) query.set('type', type_);
+			if (status) query.set('status', status);
+			return `${BASE_URL}/api/activity/export?${query.toString()}`;
+		}
 	},
 
 	content: {
@@ -648,25 +763,55 @@ export const api = {
 	},
 
 	approval: {
-		list: (params: { status?: string; type?: string } = {}) => {
+		list: (params: { status?: string; type?: string; reviewed_by?: string; since?: string } = {}) => {
 			const query = new URLSearchParams();
 			if (params.status) query.set('status', params.status);
 			if (params.type) query.set('type', params.type);
+			if (params.reviewed_by) query.set('reviewed_by', params.reviewed_by);
+			if (params.since) query.set('since', params.since);
 			const qs = query.toString();
 			return request<ApprovalItem[]>(`/api/approval${qs ? `?${qs}` : ''}`);
 		},
 		stats: () => request<ApprovalStats>('/api/approval/stats'),
-		approve: (id: number) =>
-			request<{ status: string; id: number }>(`/api/approval/${id}/approve`, { method: 'POST' }),
-		reject: (id: number) =>
-			request<{ status: string; id: number }>(`/api/approval/${id}/reject`, { method: 'POST' }),
-		edit: (id: number, content: string, media_paths?: string[]) =>
+		approve: (id: number, actor?: string, notes?: string) =>
+			request<{ status: string; id: number }>(`/api/approval/${id}/approve`, {
+				method: 'POST',
+				body: JSON.stringify({ actor, notes })
+			}),
+		reject: (id: number, actor?: string, notes?: string) =>
+			request<{ status: string; id: number }>(`/api/approval/${id}/reject`, {
+				method: 'POST',
+				body: JSON.stringify({ actor, notes })
+			}),
+		edit: (id: number, content: string, media_paths?: string[], editor?: string) =>
 			request<ApprovalItem>(`/api/approval/${id}`, {
 				method: 'PATCH',
-				body: JSON.stringify({ content, ...(media_paths !== undefined && { media_paths }) })
+				body: JSON.stringify({
+					content,
+					...(media_paths !== undefined && { media_paths }),
+					...(editor !== undefined && { editor })
+				})
 			}),
-		approveAll: () =>
-			request<{ status: string; count: number }>('/api/approval/approve-all', { method: 'POST' })
+		approveAll: (max?: number, ids?: number[]) =>
+			request<{ status: string; count: number; ids: number[]; max_batch: number }>(
+				'/api/approval/approve-all',
+				{
+					method: 'POST',
+					body: JSON.stringify({
+						...(max !== undefined && { max }),
+						...(ids !== undefined && { ids }),
+						review: { actor: 'dashboard' }
+					})
+				}
+			),
+		editHistory: (id: number) =>
+			request<EditHistoryEntry[]>(`/api/approval/${id}/history`),
+		exportUrl: (format: 'csv' | 'json', status?: string, type_?: string): string => {
+			const query = new URLSearchParams({ format });
+			if (status) query.set('status', status);
+			if (type_) query.set('type', type_);
+			return `${BASE_URL}/api/approval/export?${query.toString()}`;
+		}
 	},
 
 	assist: {
@@ -741,6 +886,12 @@ export const api = {
 				method: 'PATCH',
 				body: JSON.stringify(data)
 			}),
+		listTemplates: () => request<McpPolicyTemplate[]>('/api/mcp/policy/templates'),
+		applyTemplate: (name: string) =>
+			request<{ applied_template: string; description: string }>(
+				`/api/mcp/policy/templates/${name}`,
+				{ method: 'POST' }
+			),
 		telemetrySummary: (hours: number = 24) =>
 			request<McpTelemetrySummary>(`/api/mcp/telemetry/summary?hours=${hours}`),
 		telemetryMetrics: (hours: number = 24) =>
@@ -752,8 +903,13 @@ export const api = {
 	},
 
 	discovery: {
-		feed: (minScore: number = 50, limit: number = 20) =>
-			request<
+		feed: (params: { minScore?: number; maxScore?: number; keyword?: string; limit?: number } = {}) => {
+			const query = new URLSearchParams();
+			query.set('min_score', (params.minScore ?? 50).toString());
+			query.set('limit', (params.limit ?? 20).toString());
+			if (params.maxScore !== undefined) query.set('max_score', params.maxScore.toString());
+			if (params.keyword) query.set('keyword', params.keyword);
+			return request<
 				Array<{
 					id: string;
 					author_username: string;
@@ -766,7 +922,9 @@ export const api = {
 					replied_to: boolean;
 					discovered_at: string;
 				}>
-			>(`/api/discovery/feed?min_score=${minScore}&limit=${limit}`),
+			>(`/api/discovery/feed?${query.toString()}`);
+		},
+		keywords: () => request<string[]>('/api/discovery/keywords'),
 		composeReply: (tweetId: string, mentionProduct: boolean = false) =>
 			request<{ content: string; tweet_id: string }>(
 				`/api/discovery/${tweetId}/compose-reply`,

@@ -25,6 +25,7 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 rand = "0.8"
 hex = "0.4"
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tuitbot-core = { version = "0.1.5", path = "../tuitbot-core", features = ["test-helpers"] }

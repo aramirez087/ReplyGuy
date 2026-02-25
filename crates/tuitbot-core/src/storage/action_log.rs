@@ -3,6 +3,7 @@
 //! Records every action taken by the agent with timestamps,
 //! status, and optional metadata in JSON format.
 
+use super::accounts::DEFAULT_ACCOUNT_ID;
 use super::DbPool;
 use crate::error::StorageError;
 use std::collections::HashMap;
@@ -24,20 +25,23 @@ pub struct ActionLogEntry {
     pub created_at: String,
 }
 
-/// Insert a new action log entry.
+/// Insert a new action log entry for a specific account.
 ///
 /// The `metadata` parameter is a pre-serialized JSON string; the caller
 /// is responsible for serialization. The `created_at` field uses the SQL default.
-pub async fn log_action(
+pub async fn log_action_for(
     pool: &DbPool,
+    account_id: &str,
     action_type: &str,
     status: &str,
     message: Option<&str>,
     metadata: Option<&str>,
 ) -> Result<(), StorageError> {
     sqlx::query(
-        "INSERT INTO action_log (action_type, status, message, metadata) VALUES (?, ?, ?, ?)",
+        "INSERT INTO action_log (account_id, action_type, status, message, metadata) \
+         VALUES (?, ?, ?, ?, ?)",
     )
+    .bind(account_id)
     .bind(action_type)
     .bind(status)
     .bind(message)
@@ -49,6 +53,61 @@ pub async fn log_action(
     Ok(())
 }
 
+/// Insert a new action log entry.
+///
+/// The `metadata` parameter is a pre-serialized JSON string; the caller
+/// is responsible for serialization. The `created_at` field uses the SQL default.
+pub async fn log_action(
+    pool: &DbPool,
+    action_type: &str,
+    status: &str,
+    message: Option<&str>,
+    metadata: Option<&str>,
+) -> Result<(), StorageError> {
+    log_action_for(
+        pool,
+        DEFAULT_ACCOUNT_ID,
+        action_type,
+        status,
+        message,
+        metadata,
+    )
+    .await
+}
+
+/// Fetch action log entries since a given timestamp for a specific account,
+/// optionally filtered by type.
+///
+/// Results are ordered by `created_at` ascending.
+pub async fn get_actions_since_for(
+    pool: &DbPool,
+    account_id: &str,
+    since: &str,
+    action_type: Option<&str>,
+) -> Result<Vec<ActionLogEntry>, StorageError> {
+    match action_type {
+        Some(at) => sqlx::query_as::<_, ActionLogEntry>(
+            "SELECT * FROM action_log WHERE created_at >= ? AND action_type = ? \
+                 AND account_id = ? ORDER BY created_at ASC",
+        )
+        .bind(since)
+        .bind(at)
+        .bind(account_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e }),
+        None => sqlx::query_as::<_, ActionLogEntry>(
+            "SELECT * FROM action_log WHERE created_at >= ? \
+                 AND account_id = ? ORDER BY created_at ASC",
+        )
+        .bind(since)
+        .bind(account_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e }),
+    }
+}
+
 /// Fetch action log entries since a given timestamp, optionally filtered by type.
 ///
 /// Results are ordered by `created_at` ascending.
@@ -57,24 +116,28 @@ pub async fn get_actions_since(
     since: &str,
     action_type: Option<&str>,
 ) -> Result<Vec<ActionLogEntry>, StorageError> {
-    match action_type {
-        Some(at) => sqlx::query_as::<_, ActionLogEntry>(
-            "SELECT * FROM action_log WHERE created_at >= ? AND action_type = ? \
-                 ORDER BY created_at ASC",
-        )
-        .bind(since)
-        .bind(at)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e }),
-        None => sqlx::query_as::<_, ActionLogEntry>(
-            "SELECT * FROM action_log WHERE created_at >= ? ORDER BY created_at ASC",
-        )
-        .bind(since)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e }),
-    }
+    get_actions_since_for(pool, DEFAULT_ACCOUNT_ID, since, action_type).await
+}
+
+/// Get counts of each action type since a given timestamp for a specific account.
+///
+/// Returns a HashMap mapping action types to their counts.
+pub async fn get_action_counts_since_for(
+    pool: &DbPool,
+    account_id: &str,
+    since: &str,
+) -> Result<HashMap<String, i64>, StorageError> {
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT action_type, COUNT(*) as count FROM action_log \
+         WHERE created_at >= ? AND account_id = ? GROUP BY action_type",
+    )
+    .bind(since)
+    .bind(account_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(rows.into_iter().collect())
 }
 
 /// Get counts of each action type since a given timestamp.
@@ -84,16 +147,23 @@ pub async fn get_action_counts_since(
     pool: &DbPool,
     since: &str,
 ) -> Result<HashMap<String, i64>, StorageError> {
-    let rows: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT action_type, COUNT(*) as count FROM action_log \
-         WHERE created_at >= ? GROUP BY action_type",
+    get_action_counts_since_for(pool, DEFAULT_ACCOUNT_ID, since).await
+}
+
+/// Get the most recent action log entries for a specific account, newest first.
+pub async fn get_recent_actions_for(
+    pool: &DbPool,
+    account_id: &str,
+    limit: u32,
+) -> Result<Vec<ActionLogEntry>, StorageError> {
+    sqlx::query_as::<_, ActionLogEntry>(
+        "SELECT * FROM action_log WHERE account_id = ? ORDER BY created_at DESC LIMIT ?",
     )
-    .bind(since)
+    .bind(account_id)
+    .bind(limit)
     .fetch_all(pool)
     .await
-    .map_err(|e| StorageError::Query { source: e })?;
-
-    Ok(rows.into_iter().collect())
+    .map_err(|e| StorageError::Query { source: e })
 }
 
 /// Get the most recent action log entries, newest first.
@@ -101,8 +171,41 @@ pub async fn get_recent_actions(
     pool: &DbPool,
     limit: u32,
 ) -> Result<Vec<ActionLogEntry>, StorageError> {
-    sqlx::query_as::<_, ActionLogEntry>("SELECT * FROM action_log ORDER BY created_at DESC LIMIT ?")
-        .bind(limit)
+    get_recent_actions_for(pool, DEFAULT_ACCOUNT_ID, limit).await
+}
+
+/// Fetch paginated action log entries for a specific account with optional
+/// type and status filters.
+///
+/// Results are ordered by `created_at` descending (newest first).
+pub async fn get_actions_paginated_for(
+    pool: &DbPool,
+    account_id: &str,
+    limit: u32,
+    offset: u32,
+    action_type: Option<&str>,
+    status: Option<&str>,
+) -> Result<Vec<ActionLogEntry>, StorageError> {
+    let mut sql = String::from("SELECT * FROM action_log WHERE 1=1 AND account_id = ?");
+    if action_type.is_some() {
+        sql.push_str(" AND action_type = ?");
+    }
+    if status.is_some() {
+        sql.push_str(" AND status = ?");
+    }
+    sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
+
+    let mut query = sqlx::query_as::<_, ActionLogEntry>(&sql);
+    query = query.bind(account_id);
+    if let Some(at) = action_type {
+        query = query.bind(at);
+    }
+    if let Some(st) = status {
+        query = query.bind(st);
+    }
+    query = query.bind(limit).bind(offset);
+
+    query
         .fetch_all(pool)
         .await
         .map_err(|e| StorageError::Query { source: e })
@@ -118,37 +221,18 @@ pub async fn get_actions_paginated(
     action_type: Option<&str>,
     status: Option<&str>,
 ) -> Result<Vec<ActionLogEntry>, StorageError> {
-    let mut sql = String::from("SELECT * FROM action_log WHERE 1=1");
-    if action_type.is_some() {
-        sql.push_str(" AND action_type = ?");
-    }
-    if status.is_some() {
-        sql.push_str(" AND status = ?");
-    }
-    sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
-
-    let mut query = sqlx::query_as::<_, ActionLogEntry>(&sql);
-    if let Some(at) = action_type {
-        query = query.bind(at);
-    }
-    if let Some(st) = status {
-        query = query.bind(st);
-    }
-    query = query.bind(limit).bind(offset);
-
-    query
-        .fetch_all(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e })
+    get_actions_paginated_for(pool, DEFAULT_ACCOUNT_ID, limit, offset, action_type, status).await
 }
 
-/// Get total count of action log entries with optional type and status filters.
-pub async fn get_actions_count(
+/// Get total count of action log entries for a specific account with optional
+/// type and status filters.
+pub async fn get_actions_count_for(
     pool: &DbPool,
+    account_id: &str,
     action_type: Option<&str>,
     status: Option<&str>,
 ) -> Result<i64, StorageError> {
-    let mut sql = String::from("SELECT COUNT(*) FROM action_log WHERE 1=1");
+    let mut sql = String::from("SELECT COUNT(*) FROM action_log WHERE 1=1 AND account_id = ?");
     if action_type.is_some() {
         sql.push_str(" AND action_type = ?");
     }
@@ -157,6 +241,7 @@ pub async fn get_actions_count(
     }
 
     let mut query = sqlx::query_as::<_, (i64,)>(&sql);
+    query = query.bind(account_id);
     if let Some(at) = action_type {
         query = query.bind(at);
     }
@@ -169,6 +254,15 @@ pub async fn get_actions_count(
         .await
         .map_err(|e| StorageError::Query { source: e })?;
     Ok(count)
+}
+
+/// Get total count of action log entries with optional type and status filters.
+pub async fn get_actions_count(
+    pool: &DbPool,
+    action_type: Option<&str>,
+    status: Option<&str>,
+) -> Result<i64, StorageError> {
+    get_actions_count_for(pool, DEFAULT_ACCOUNT_ID, action_type, status).await
 }
 
 #[cfg(test)]

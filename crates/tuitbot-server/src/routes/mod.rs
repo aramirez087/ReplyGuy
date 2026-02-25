@@ -1,5 +1,6 @@
 //! Route modules for the tuitbot API server.
 
+pub mod accounts;
 pub mod activity;
 pub mod analytics;
 pub mod approval;

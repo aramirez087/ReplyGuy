@@ -83,6 +83,10 @@ enum Commands {
     Tick(commands::TickArgs),
     /// MCP server for AI agent integration
     Mcp(commands::McpArgs),
+    /// Create a database backup
+    Backup(commands::BackupArgs),
+    /// Restore database from a backup
+    Restore(commands::RestoreArgs),
 }
 
 #[tokio::main]
@@ -133,6 +137,12 @@ async fn main() -> anyhow::Result<()> {
     if let Commands::Settings(args) = cli.command {
         return commands::settings::execute(args, &cli.config, output_format).await;
     }
+    if let Commands::Backup(args) = cli.command {
+        return commands::backup::execute(args).await;
+    }
+    if let Commands::Restore(args) = cli.command {
+        return commands::restore::execute(args).await;
+    }
 
     // Load configuration.
     let config = Config::load(Some(&cli.config)).map_err(|e| {
@@ -148,7 +158,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     match cli.command {
-        Commands::Init(_) | Commands::Update(_) | Commands::Upgrade(_) | Commands::Settings(_) => {
+        Commands::Init(_)
+        | Commands::Update(_)
+        | Commands::Upgrade(_)
+        | Commands::Settings(_)
+        | Commands::Backup(_)
+        | Commands::Restore(_) => {
             unreachable!()
         }
         Commands::Mcp(args) => match args.command {

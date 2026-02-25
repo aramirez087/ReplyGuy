@@ -3,6 +3,7 @@
 //! Provides functions to insert, query, and update tweets discovered
 //! from X search results.
 
+use super::accounts::DEFAULT_ACCOUNT_ID;
 use super::DbPool;
 use crate::error::StorageError;
 
@@ -35,18 +36,20 @@ pub struct DiscoveredTweet {
     pub replied_to: i64,
 }
 
-/// Insert a discovered tweet. Uses `INSERT OR IGNORE` to handle duplicates gracefully.
-pub async fn insert_discovered_tweet(
+/// Insert a discovered tweet for a specific account. Uses `INSERT OR IGNORE` to handle duplicates gracefully.
+pub async fn insert_discovered_tweet_for(
     pool: &DbPool,
+    account_id: &str,
     tweet: &DiscoveredTweet,
 ) -> Result<(), StorageError> {
     sqlx::query(
         "INSERT OR IGNORE INTO discovered_tweets \
-         (id, author_id, author_username, content, like_count, retweet_count, \
+         (account_id, id, author_id, author_username, content, like_count, retweet_count, \
           reply_count, impression_count, relevance_score, matched_keyword, \
           discovered_at, replied_to) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
+    .bind(account_id)
     .bind(&tweet.id)
     .bind(&tweet.author_id)
     .bind(&tweet.author_username)
@@ -66,21 +69,46 @@ pub async fn insert_discovered_tweet(
     Ok(())
 }
 
+/// Insert a discovered tweet. Uses `INSERT OR IGNORE` to handle duplicates gracefully.
+pub async fn insert_discovered_tweet(
+    pool: &DbPool,
+    tweet: &DiscoveredTweet,
+) -> Result<(), StorageError> {
+    insert_discovered_tweet_for(pool, DEFAULT_ACCOUNT_ID, tweet).await
+}
+
+/// Fetch a single tweet by its X ID for a specific account. Returns `None` if not found.
+pub async fn get_tweet_by_id_for(
+    pool: &DbPool,
+    account_id: &str,
+    tweet_id: &str,
+) -> Result<Option<DiscoveredTweet>, StorageError> {
+    sqlx::query_as::<_, DiscoveredTweet>(
+        "SELECT * FROM discovered_tweets WHERE account_id = ? AND id = ?",
+    )
+    .bind(account_id)
+    .bind(tweet_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })
+}
+
 /// Fetch a single tweet by its X ID. Returns `None` if not found.
 pub async fn get_tweet_by_id(
     pool: &DbPool,
     tweet_id: &str,
 ) -> Result<Option<DiscoveredTweet>, StorageError> {
-    sqlx::query_as::<_, DiscoveredTweet>("SELECT * FROM discovered_tweets WHERE id = ?")
-        .bind(tweet_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e })
+    get_tweet_by_id_for(pool, DEFAULT_ACCOUNT_ID, tweet_id).await
 }
 
-/// Mark a tweet as having been replied to.
-pub async fn mark_tweet_replied(pool: &DbPool, tweet_id: &str) -> Result<(), StorageError> {
-    sqlx::query("UPDATE discovered_tweets SET replied_to = 1 WHERE id = ?")
+/// Mark a tweet as having been replied to for a specific account.
+pub async fn mark_tweet_replied_for(
+    pool: &DbPool,
+    account_id: &str,
+    tweet_id: &str,
+) -> Result<(), StorageError> {
+    sqlx::query("UPDATE discovered_tweets SET replied_to = 1 WHERE account_id = ? AND id = ?")
+        .bind(account_id)
         .bind(tweet_id)
         .execute(pool)
         .await
@@ -89,18 +117,55 @@ pub async fn mark_tweet_replied(pool: &DbPool, tweet_id: &str) -> Result<(), Sto
     Ok(())
 }
 
+/// Mark a tweet as having been replied to.
+pub async fn mark_tweet_replied(pool: &DbPool, tweet_id: &str) -> Result<(), StorageError> {
+    mark_tweet_replied_for(pool, DEFAULT_ACCOUNT_ID, tweet_id).await
+}
+
+/// Fetch unreplied tweets with relevance score at or above the threshold for a specific account,
+/// ordered by score descending.
+pub async fn get_unreplied_tweets_above_score_for(
+    pool: &DbPool,
+    account_id: &str,
+    threshold: f64,
+) -> Result<Vec<DiscoveredTweet>, StorageError> {
+    sqlx::query_as::<_, DiscoveredTweet>(
+        "SELECT * FROM discovered_tweets \
+         WHERE account_id = ? AND replied_to = 0 AND relevance_score >= ? \
+         ORDER BY relevance_score DESC",
+    )
+    .bind(account_id)
+    .bind(threshold)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })
+}
+
 /// Fetch unreplied tweets with relevance score at or above the threshold,
 /// ordered by score descending.
 pub async fn get_unreplied_tweets_above_score(
     pool: &DbPool,
     threshold: f64,
 ) -> Result<Vec<DiscoveredTweet>, StorageError> {
+    get_unreplied_tweets_above_score_for(pool, DEFAULT_ACCOUNT_ID, threshold).await
+}
+
+/// Fetch discovered tweets above a score threshold for a specific account, ordered by discovery time (newest first).
+pub async fn get_discovery_feed_for(
+    pool: &DbPool,
+    account_id: &str,
+    min_score: f64,
+    limit: u32,
+) -> Result<Vec<DiscoveredTweet>, StorageError> {
     sqlx::query_as::<_, DiscoveredTweet>(
         "SELECT * FROM discovered_tweets \
-         WHERE replied_to = 0 AND relevance_score >= ? \
-         ORDER BY relevance_score DESC",
+         WHERE account_id = ? AND COALESCE(relevance_score, 0.0) >= ? \
+         ORDER BY discovered_at DESC \
+         LIMIT ?",
     )
-    .bind(threshold)
+    .bind(account_id)
+    .bind(min_score)
+    .bind(limit)
     .fetch_all(pool)
     .await
     .map_err(|e| StorageError::Query { source: e })
@@ -112,28 +177,109 @@ pub async fn get_discovery_feed(
     min_score: f64,
     limit: u32,
 ) -> Result<Vec<DiscoveredTweet>, StorageError> {
-    sqlx::query_as::<_, DiscoveredTweet>(
-        "SELECT * FROM discovered_tweets \
-         WHERE COALESCE(relevance_score, 0.0) >= ? \
-         ORDER BY discovered_at DESC \
-         LIMIT ?",
+    get_discovery_feed_for(pool, DEFAULT_ACCOUNT_ID, min_score, limit).await
+}
+
+/// Fetch discovered tweets with advanced filters for a specific account: score range, keyword, and limit.
+pub async fn get_discovery_feed_filtered_for(
+    pool: &DbPool,
+    account_id: &str,
+    min_score: f64,
+    max_score: Option<f64>,
+    keyword: Option<&str>,
+    limit: u32,
+) -> Result<Vec<DiscoveredTweet>, StorageError> {
+    let mut sql = String::from(
+        "SELECT * FROM discovered_tweets WHERE account_id = ? AND COALESCE(relevance_score, 0.0) >= ?",
+    );
+    if max_score.is_some() {
+        sql.push_str(" AND COALESCE(relevance_score, 0.0) <= ?");
+    }
+    if keyword.is_some() {
+        sql.push_str(" AND matched_keyword = ?");
+    }
+    sql.push_str(" ORDER BY discovered_at DESC LIMIT ?");
+
+    let mut query = sqlx::query_as::<_, DiscoveredTweet>(&sql)
+        .bind(account_id)
+        .bind(min_score);
+    if let Some(max) = max_score {
+        query = query.bind(max);
+    }
+    if let Some(kw) = keyword {
+        query = query.bind(kw);
+    }
+    query = query.bind(limit);
+
+    query
+        .fetch_all(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })
+}
+
+/// Fetch discovered tweets with advanced filters: score range, keyword, and limit.
+pub async fn get_discovery_feed_filtered(
+    pool: &DbPool,
+    min_score: f64,
+    max_score: Option<f64>,
+    keyword: Option<&str>,
+    limit: u32,
+) -> Result<Vec<DiscoveredTweet>, StorageError> {
+    get_discovery_feed_filtered_for(
+        pool,
+        DEFAULT_ACCOUNT_ID,
+        min_score,
+        max_score,
+        keyword,
+        limit,
     )
-    .bind(min_score)
-    .bind(limit)
+    .await
+}
+
+/// Get distinct matched keywords from discovered tweets for a specific account.
+pub async fn get_distinct_keywords_for(
+    pool: &DbPool,
+    account_id: &str,
+) -> Result<Vec<String>, StorageError> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT DISTINCT matched_keyword FROM discovered_tweets \
+         WHERE account_id = ? AND matched_keyword IS NOT NULL AND matched_keyword != '' \
+         ORDER BY matched_keyword",
+    )
+    .bind(account_id)
     .fetch_all(pool)
     .await
-    .map_err(|e| StorageError::Query { source: e })
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(rows.into_iter().map(|(kw,)| kw).collect())
+}
+
+/// Get distinct matched keywords from discovered tweets.
+pub async fn get_distinct_keywords(pool: &DbPool) -> Result<Vec<String>, StorageError> {
+    get_distinct_keywords_for(pool, DEFAULT_ACCOUNT_ID).await
+}
+
+/// Check if a tweet exists in the database for a specific account.
+pub async fn tweet_exists_for(
+    pool: &DbPool,
+    account_id: &str,
+    tweet_id: &str,
+) -> Result<bool, StorageError> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT EXISTS(SELECT 1 FROM discovered_tweets WHERE account_id = ? AND id = ?)",
+    )
+    .bind(account_id)
+    .bind(tweet_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(row.0 == 1)
 }
 
 /// Check if a tweet exists in the database.
 pub async fn tweet_exists(pool: &DbPool, tweet_id: &str) -> Result<bool, StorageError> {
-    let row: (i64,) = sqlx::query_as("SELECT EXISTS(SELECT 1 FROM discovered_tweets WHERE id = ?)")
-        .bind(tweet_id)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| StorageError::Query { source: e })?;
-
-    Ok(row.0 == 1)
+    tweet_exists_for(pool, DEFAULT_ACCOUNT_ID, tweet_id).await
 }
 
 #[cfg(test)]

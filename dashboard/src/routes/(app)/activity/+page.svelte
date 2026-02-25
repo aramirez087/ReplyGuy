@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { ChevronDown } from 'lucide-svelte';
+	import { ChevronDown, Download } from 'lucide-svelte';
+	import { api } from '$lib/api';
 	import RateLimitBar from '$lib/components/RateLimitBar.svelte';
 	import ActivityFilter from '$lib/components/ActivityFilter.svelte';
 	import ActivityItem from '$lib/components/ActivityItem.svelte';
@@ -22,6 +23,17 @@
 	} from '$lib/stores/activity';
 
 	let loadingMore = $state(false);
+	let exportOpen = $state(false);
+
+	function triggerExport(format: 'csv' | 'json') {
+		const filter = $selectedFilter === 'all' ? undefined : $selectedFilter;
+		const url = api.activity.exportUrl(format, filter);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `activity_export.${format}`;
+		a.click();
+		exportOpen = false;
+	}
 
 	async function handleLoadMore() {
 		loadingMore = true;
@@ -44,8 +56,24 @@
 </svelte:head>
 
 <div class="page-header">
-	<h1>Activity</h1>
-	<p class="subtitle">Real-time feed of automation actions</p>
+	<div class="page-header-row">
+		<div>
+			<h1>Activity</h1>
+			<p class="subtitle">Real-time feed of automation actions</p>
+		</div>
+		<div class="export-wrapper">
+			<button class="export-btn" onclick={() => (exportOpen = !exportOpen)}>
+				<Download size={14} />
+				Export
+			</button>
+			{#if exportOpen}
+				<div class="export-menu">
+					<button onclick={() => triggerExport('csv')}>Export CSV</button>
+					<button onclick={() => triggerExport('json')}>Export JSON</button>
+				</div>
+			{/if}
+		</div>
+	</div>
 </div>
 
 {#if $error && $actions.length === 0}
@@ -116,6 +144,66 @@
 <style>
 	.page-header {
 		margin-bottom: 24px;
+	}
+
+	.page-header-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 16px;
+	}
+
+	.export-wrapper {
+		position: relative;
+	}
+
+	.export-btn {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 14px;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		background: transparent;
+		color: var(--color-text);
+		font-size: 13px;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.export-btn:hover {
+		background: var(--color-surface-hover);
+	}
+
+	.export-menu {
+		position: absolute;
+		right: 0;
+		top: 100%;
+		margin-top: 4px;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		overflow: hidden;
+		z-index: 10;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+	}
+
+	.export-menu button {
+		display: block;
+		width: 100%;
+		padding: 8px 16px;
+		border: none;
+		background: transparent;
+		color: var(--color-text);
+		font-size: 13px;
+		text-align: left;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.export-menu button:hover {
+		background: var(--color-surface-hover);
 	}
 
 	h1 {

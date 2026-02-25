@@ -3,12 +3,15 @@
 //! Provides database initialization, connection pooling, and CRUD operations
 //! for all persistent entities. Uses SQLx with WAL mode for concurrent access.
 
+pub mod accounts;
 pub mod action_log;
 pub mod analytics;
 pub mod approval_queue;
 pub mod author_interactions;
+pub mod backup;
 pub mod cleanup;
 pub mod cursors;
+pub mod health;
 pub mod llm_usage;
 pub mod mcp_telemetry;
 pub mod media;
@@ -44,6 +47,24 @@ pub async fn init_db(db_path: &str) -> Result<DbPool, StorageError> {
                 format!("failed to create directory {}: {e}", parent.display()).into(),
             ),
         })?;
+    }
+
+    // Pre-migration backup: snapshot existing DB before running migrations.
+    let db_file = std::path::Path::new(&expanded);
+    if db_file.exists()
+        && std::fs::metadata(db_file)
+            .map(|m| m.len() > 0)
+            .unwrap_or(false)
+    {
+        match backup::preflight_migration_backup(db_file).await {
+            Ok(Some(path)) => {
+                tracing::info!(path = %path.display(), "Pre-migration backup created");
+            }
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "Pre-migration backup failed (non-fatal, continuing)");
+            }
+        }
     }
 
     let connect_options = SqliteConnectOptions::from_str(&format!("sqlite:{expanded}"))
@@ -126,6 +147,8 @@ mod tests {
         .expect("query tables");
 
         let table_names: Vec<&str> = tables.iter().map(|t| t.0.as_str()).collect();
+        assert!(table_names.contains(&"accounts"));
+        assert!(table_names.contains(&"account_roles"));
         assert!(table_names.contains(&"discovered_tweets"));
         assert!(table_names.contains(&"replies_sent"));
         assert!(table_names.contains(&"original_tweets"));
@@ -144,6 +167,7 @@ mod tests {
         assert!(table_names.contains(&"llm_usage"));
         assert!(table_names.contains(&"x_api_usage"));
         assert!(table_names.contains(&"mcp_telemetry"));
+        assert!(table_names.contains(&"approval_edit_history"));
     }
 
     #[tokio::test]

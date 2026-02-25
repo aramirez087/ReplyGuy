@@ -4,6 +4,7 @@
 	import { loadStats as loadApprovalStats } from "$lib/stores/approval";
 	import { connected } from "$lib/stores/websocket";
 	import { checkForUpdate } from "$lib/stores/update";
+	import { initAccounts, fetchAccounts } from "$lib/stores/accounts";
 	import { onMount, onDestroy } from "svelte";
 	import { page } from "$app/stores";
 	import { goto } from "$app/navigation";
@@ -18,7 +19,9 @@
 		'4': '/content',
 		'5': '/targets',
 		'6': '/strategy',
-		'7': '/settings',
+		'7': '/costs',
+		'8': '/observability',
+		'9': '/settings',
 	};
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -42,8 +45,10 @@
 	}
 
 	onMount(() => {
+		initAccounts();
 		loadApprovalStats();
 		checkForUpdate();
+		fetchAccounts();
 		window.addEventListener('keydown', handleKeydown);
 	});
 

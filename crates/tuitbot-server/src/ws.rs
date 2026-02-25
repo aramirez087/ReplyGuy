@@ -38,6 +38,8 @@ pub enum WsEvent {
         id: i64,
         status: String,
         action_type: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        actor: Option<String>,
     },
     /// Follower count changed.
     FollowerUpdate { count: i64, change: i64 },
@@ -64,6 +66,13 @@ pub enum WsEvent {
         id: i64,
         content_type: String,
         scheduled_for: Option<String>,
+    },
+    /// Circuit breaker state changed.
+    CircuitBreakerTripped {
+        state: String,
+        error_count: u32,
+        cooldown_remaining_seconds: u64,
+        timestamp: String,
     },
     /// An error occurred.
     Error { message: String },

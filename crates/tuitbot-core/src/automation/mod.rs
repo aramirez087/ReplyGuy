@@ -17,6 +17,7 @@
 pub mod adapters;
 pub mod analytics_loop;
 pub mod approval_poster;
+pub mod circuit_breaker;
 pub mod content_loop;
 pub mod discovery_loop;
 pub mod loop_helpers;

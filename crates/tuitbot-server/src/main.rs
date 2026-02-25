@@ -7,12 +7,15 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use clap::Parser;
+use std::collections::HashMap;
+
 use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 use tuitbot_core::config::Config;
 use tuitbot_core::content::ContentGenerator;
 use tuitbot_core::llm::factory::create_provider;
 use tuitbot_core::storage;
+use tuitbot_core::storage::accounts::DEFAULT_ACCOUNT_ID;
 
 use tuitbot_server::auth;
 use tuitbot_server::state::AppState;
@@ -82,14 +85,20 @@ async fn main() -> Result<()> {
         }
     };
 
+    let mut content_generators = HashMap::new();
+    if let Some(cg) = content_generator {
+        content_generators.insert(DEFAULT_ACCOUNT_ID.to_string(), cg);
+    }
+
     let state = Arc::new(AppState {
         db: pool,
         config_path,
         data_dir,
         event_tx,
         api_token,
-        runtime: Mutex::new(None),
-        content_generator,
+        runtimes: Mutex::new(HashMap::new()),
+        content_generators: Mutex::new(content_generators),
+        circuit_breaker: None,
     });
 
     let router = tuitbot_server::build_router(state);

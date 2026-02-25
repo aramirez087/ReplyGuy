@@ -6,10 +6,29 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tuitbot_core::content::ContentGenerator;
 use tuitbot_core::storage::{self, approval_queue};
 
+use crate::account::{require_mutate, AccountContext};
 use crate::error::ApiError;
 use crate::state::AppState;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+async fn get_generator(
+    state: &AppState,
+    account_id: &str,
+) -> Result<Arc<ContentGenerator>, ApiError> {
+    let generators = state.content_generators.lock().await;
+    generators
+        .get(account_id)
+        .cloned()
+        .ok_or(ApiError::BadRequest(
+            "LLM not configured — set llm.provider and llm.api_key in config.toml".to_string(),
+        ))
+}
 
 // ---------------------------------------------------------------------------
 // GET /api/discovery/feed
@@ -19,6 +38,8 @@ use crate::state::AppState;
 pub struct FeedQuery {
     #[serde(default = "default_min_score")]
     pub min_score: f64,
+    pub max_score: Option<f64>,
+    pub keyword: Option<String>,
     #[serde(default = "default_feed_limit")]
     pub limit: u32,
 }
@@ -46,9 +67,18 @@ pub struct DiscoveryTweet {
 
 pub async fn feed(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Query(q): Query<FeedQuery>,
 ) -> Result<Json<Vec<DiscoveryTweet>>, ApiError> {
-    let rows = storage::tweets::get_discovery_feed(&state.db, q.min_score, q.limit).await?;
+    let rows = storage::tweets::get_discovery_feed_filtered_for(
+        &state.db,
+        &ctx.account_id,
+        q.min_score,
+        q.max_score,
+        q.keyword.as_deref(),
+        q.limit,
+    )
+    .await?;
 
     let tweets = rows
         .into_iter()
@@ -70,6 +100,18 @@ pub async fn feed(
 }
 
 // ---------------------------------------------------------------------------
+// GET /api/discovery/keywords
+// ---------------------------------------------------------------------------
+
+pub async fn keywords(
+    State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
+) -> Result<Json<Vec<String>>, ApiError> {
+    let kws = storage::tweets::get_distinct_keywords_for(&state.db, &ctx.account_id).await?;
+    Ok(Json(kws))
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/discovery/{tweet_id}/compose-reply
 // ---------------------------------------------------------------------------
 
@@ -87,18 +129,14 @@ pub struct ComposeReplyResponse {
 
 pub async fn compose_reply(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Path(tweet_id): Path<String>,
     Json(body): Json<ComposeReplyRequest>,
 ) -> Result<Json<ComposeReplyResponse>, ApiError> {
-    let gen = state
-        .content_generator
-        .as_ref()
-        .ok_or(ApiError::BadRequest(
-            "LLM not configured — set llm.provider and llm.api_key in config.toml".to_string(),
-        ))?;
+    let gen = get_generator(&state, &ctx.account_id).await?;
 
     // Fetch the tweet content from discovered_tweets.
-    let tweet = storage::tweets::get_tweet_by_id(&state.db, &tweet_id)
+    let tweet = storage::tweets::get_tweet_by_id_for(&state.db, &ctx.account_id, &tweet_id)
         .await?
         .ok_or_else(|| {
             ApiError::NotFound(format!("Tweet {tweet_id} not found in discovered tweets"))
@@ -126,9 +164,12 @@ pub struct QueueReplyRequest {
 
 pub async fn queue_reply(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Path(tweet_id): Path<String>,
     Json(body): Json<QueueReplyRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    require_mutate(&ctx)?;
+
     if body.content.trim().is_empty() {
         return Err(ApiError::BadRequest(
             "content must not be empty".to_string(),
@@ -136,13 +177,14 @@ pub async fn queue_reply(
     }
 
     // Look up author from discovered_tweets.
-    let target_author = storage::tweets::get_tweet_by_id(&state.db, &tweet_id)
+    let target_author = storage::tweets::get_tweet_by_id_for(&state.db, &ctx.account_id, &tweet_id)
         .await?
         .map(|t| t.author_username)
         .unwrap_or_default();
 
-    let queue_id = approval_queue::enqueue(
+    let queue_id = approval_queue::enqueue_for(
         &state.db,
+        &ctx.account_id,
         "reply",
         &tweet_id,
         &target_author,
@@ -155,7 +197,8 @@ pub async fn queue_reply(
     .await?;
 
     // Auto-approve for immediate posting.
-    storage::approval_queue::update_status(&state.db, queue_id, "approved").await?;
+    storage::approval_queue::update_status_for(&state.db, &ctx.account_id, queue_id, "approved")
+        .await?;
 
     Ok(Json(json!({
         "approval_queue_id": queue_id,

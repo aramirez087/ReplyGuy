@@ -8,6 +8,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tuitbot_core::storage::replies;
 
+use crate::account::AccountContext;
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -29,8 +30,11 @@ fn default_limit() -> u32 {
 /// `GET /api/replies` — recent replies sent.
 pub async fn list_replies(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Query(params): Query<RepliesQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let replies = replies::get_recent_replies(&state.db, params.limit, params.offset).await?;
+    let replies =
+        replies::get_recent_replies_for(&state.db, &ctx.account_id, params.limit, params.offset)
+            .await?;
     Ok(Json(json!(replies)))
 }

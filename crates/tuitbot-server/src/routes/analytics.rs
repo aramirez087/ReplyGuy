@@ -8,6 +8,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tuitbot_core::storage::analytics;
 
+use crate::account::AccountContext;
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -50,17 +51,23 @@ fn default_recent_limit() -> u32 {
 /// `GET /api/analytics/followers` — follower snapshots over time.
 pub async fn followers(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Query(params): Query<FollowersQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let snapshots = analytics::get_follower_snapshots(&state.db, params.days).await?;
+    let snapshots =
+        analytics::get_follower_snapshots_for(&state.db, &ctx.account_id, params.days).await?;
     Ok(Json(json!(snapshots)))
 }
 
 /// `GET /api/analytics/performance` — reply and tweet performance summaries.
-pub async fn performance(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
-    let avg_reply = analytics::get_avg_reply_engagement(&state.db).await?;
-    let avg_tweet = analytics::get_avg_tweet_engagement(&state.db).await?;
-    let (reply_count, tweet_count) = analytics::get_performance_counts(&state.db).await?;
+pub async fn performance(
+    State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
+) -> Result<Json<Value>, ApiError> {
+    let avg_reply = analytics::get_avg_reply_engagement_for(&state.db, &ctx.account_id).await?;
+    let avg_tweet = analytics::get_avg_tweet_engagement_for(&state.db, &ctx.account_id).await?;
+    let (reply_count, tweet_count) =
+        analytics::get_performance_counts_for(&state.db, &ctx.account_id).await?;
 
     Ok(Json(json!({
         "avg_reply_engagement": avg_reply,
@@ -73,23 +80,30 @@ pub async fn performance(State(state): State<Arc<AppState>>) -> Result<Json<Valu
 /// `GET /api/analytics/topics` — topic performance scores.
 pub async fn topics(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Query(params): Query<TopicsQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let scores = analytics::get_top_topics(&state.db, params.limit).await?;
+    let scores = analytics::get_top_topics_for(&state.db, &ctx.account_id, params.limit).await?;
     Ok(Json(json!(scores)))
 }
 
 /// `GET /api/analytics/summary` — combined analytics dashboard summary.
-pub async fn summary(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
-    let data = analytics::get_analytics_summary(&state.db).await?;
+pub async fn summary(
+    State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
+) -> Result<Json<Value>, ApiError> {
+    let data = analytics::get_analytics_summary_for(&state.db, &ctx.account_id).await?;
     Ok(Json(json!(data)))
 }
 
 /// `GET /api/analytics/recent-performance` — recent content with performance metrics.
 pub async fn recent_performance(
     State(state): State<Arc<AppState>>,
+    ctx: AccountContext,
     Query(params): Query<RecentPerformanceQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let items = analytics::get_recent_performance_items(&state.db, params.limit).await?;
+    let items =
+        analytics::get_recent_performance_items_for(&state.db, &ctx.account_id, params.limit)
+            .await?;
     Ok(Json(json!(items)))
 }
