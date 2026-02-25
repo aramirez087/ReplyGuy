@@ -11,11 +11,7 @@ case "$OS" in
   Linux)
     case "$ARCH" in
       x86_64) TARGET="x86_64-unknown-linux-gnu" ;;
-      aarch64|arm64)
-        echo "Linux ARM64 builds are not published yet."
-        echo "Install from source with cargo for now."
-        exit 1
-        ;;
+      aarch64|arm64) TARGET="aarch64-unknown-linux-gnu" ;;
       *)
         echo "Unsupported Linux architecture: $ARCH"
         exit 1

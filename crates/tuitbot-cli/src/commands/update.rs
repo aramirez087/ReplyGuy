@@ -20,7 +20,7 @@ use super::upgrade;
 // ---------------------------------------------------------------------------
 
 const GITHUB_RELEASES_URL: &str =
-    "https://api.github.com/repos/aramirez087/TuitBot/releases/latest";
+    "https://api.github.com/repos/aramirez087/TuitBot/releases?per_page=50";
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -38,102 +38,176 @@ pub async fn execute(
     let bold = Style::new().bold();
     let dim = Style::new().dim();
     let green = Style::new().green().bold();
+    let current = Version::parse(CURRENT_VERSION).context("Failed to parse current version")?;
 
     // Phase 1: Binary update
     if !config_only {
         eprintln!("{}", bold.apply_to("Checking for updates..."));
         eprintln!();
 
-        match check_latest_release().await {
-            Ok(release) => {
-                let current =
-                    Version::parse(CURRENT_VERSION).context("Failed to parse current version")?;
+        match check_recent_releases().await {
+            Ok(releases) => match latest_known_release(&releases) {
+                Some((latest_release, latest)) if is_newer(&latest, &current) => {
+                    eprintln!(
+                        "  {} {} → {}",
+                        green.apply_to("New version available:"),
+                        current,
+                        latest
+                    );
 
-                match parse_version_from_tag(&release.tag_name) {
-                    Some(latest) if is_newer(&latest, &current) => {
+                    if check_only {
+                        eprintln!();
                         eprintln!(
-                            "  {} {} → {}",
-                            green.apply_to("New version available:"),
-                            current,
-                            latest
+                            "{}",
+                            dim.apply_to("Run 'tuitbot update' to install the update.")
                         );
+                        return Ok(());
+                    }
 
-                        if check_only {
+                    // Confirm with user in interactive mode
+                    if !non_interactive && std::io::stdin().is_terminal() {
+                        eprintln!();
+                        let proceed = Confirm::new()
+                            .with_prompt(format!("Update to v{latest}?"))
+                            .default(true)
+                            .interact()?;
+
+                        if !proceed {
+                            eprintln!("{}", dim.apply_to("Update skipped."));
+                            eprintln!();
+                            // Fall through to config upgrade
+                            return run_config_upgrade(
+                                non_interactive,
+                                config_path_str,
+                                &bold,
+                                &dim,
+                            );
+                        }
+                    }
+
+                    let asset_name = match platform_asset_name()
+                        .context("Unsupported platform for binary self-update")
+                    {
+                        Ok(name) => name,
+                        Err(e) => {
                             eprintln!();
                             eprintln!(
-                                "{}",
-                                dim.apply_to("Run 'tuitbot update' to install the update.")
+                                "  {} Binary update skipped: {e}",
+                                Style::new().yellow().bold().apply_to("⚠"),
                             );
-                            return Ok(());
-                        }
-
-                        // Confirm with user in interactive mode
-                        if !non_interactive && std::io::stdin().is_terminal() {
-                            eprintln!();
-                            let proceed = Confirm::new()
-                                .with_prompt(format!("Update to v{latest}?"))
-                                .default(true)
-                                .interact()?;
-
-                            if !proceed {
-                                eprintln!("{}", dim.apply_to("Update skipped."));
-                                eprintln!();
-                                // Fall through to config upgrade
-                                return run_config_upgrade(
-                                    non_interactive,
-                                    config_path_str,
-                                    &bold,
-                                    &dim,
-                                );
-                            }
-                        }
-
-                        // Download and replace binary
-                        match update_binary(&release).await {
-                            Ok(()) => {
-                                eprintln!();
-                                eprintln!("  {} Updated to v{}", green.apply_to("✓"), latest);
-                            }
-                            Err(e) => {
-                                eprintln!();
-                                eprintln!(
-                                    "  {} Binary update failed: {e}",
-                                    Style::new().red().bold().apply_to("✗"),
-                                );
-                                eprintln!(
+                            eprintln!(
                                     "  {}",
                                     dim.apply_to(
-                                        "You can download manually from: https://github.com/aramirez087/TuitBot/releases"
+                                        "No prebuilt binary is published for this platform. Build from source or install manually."
                                     )
                                 );
-                            }
+                            eprintln!(
+                                    "  {}",
+                                    dim.apply_to(
+                                        "Manual downloads: https://github.com/aramirez087/TuitBot/releases"
+                                    )
+                                );
+                            eprintln!();
+                            return run_config_upgrade(
+                                non_interactive,
+                                config_path_str,
+                                &bold,
+                                &dim,
+                            );
                         }
-                    }
-                    Some(latest) => {
-                        eprintln!("  Already up to date (v{current}).");
-                        if latest == current {
-                            // exact match
-                        } else {
-                            eprintln!("  {}", dim.apply_to(format!("(latest release: v{latest})")));
-                        }
+                    };
 
-                        if check_only {
-                            return Ok(());
+                    let (release_for_update, release_version) = match latest_compatible_release(
+                        &releases,
+                        &current,
+                        &asset_name,
+                    ) {
+                        Some(found) => found,
+                        None => {
+                            eprintln!();
+                            eprintln!(
+                                "  {} Binary update skipped: no compatible asset found for '{}'",
+                                Style::new().yellow().bold().apply_to("⚠"),
+                                asset_name,
+                            );
+                            eprintln!(
+                                "  {} Latest release checked: {}",
+                                dim.apply_to("Tag:"),
+                                latest_release.tag_name,
+                            );
+                            eprintln!(
+                                "  {} {}",
+                                dim.apply_to("Available assets:"),
+                                available_asset_names(latest_release),
+                            );
+                            eprintln!(
+                                    "  {}",
+                                    dim.apply_to(
+                                        "Manual downloads: https://github.com/aramirez087/TuitBot/releases"
+                                    )
+                                );
+                            eprintln!();
+                            return run_config_upgrade(
+                                non_interactive,
+                                config_path_str,
+                                &bold,
+                                &dim,
+                            );
                         }
-                    }
-                    None => {
+                    };
+
+                    if release_version != latest {
                         eprintln!(
-                            "  {} Could not parse version from tag: {}",
+                            "  {} Latest version v{} has no '{}' asset; installing newest compatible v{}.",
                             Style::new().yellow().bold().apply_to("⚠"),
-                            release.tag_name,
+                            latest,
+                            asset_name,
+                            release_version
                         );
+                    }
 
-                        if check_only {
-                            return Ok(());
+                    // Download and replace binary
+                    match update_binary(release_for_update).await {
+                        Ok(()) => {
+                            eprintln!();
+                            eprintln!("  {} Updated to v{}", green.apply_to("✓"), release_version);
+                        }
+                        Err(e) => {
+                            eprintln!();
+                            eprintln!(
+                                "  {} Binary update failed: {e}",
+                                Style::new().red().bold().apply_to("✗"),
+                            );
+                            eprintln!(
+                                "  {}",
+                                dim.apply_to(
+                                    "You can download manually from: https://github.com/aramirez087/TuitBot/releases"
+                                )
+                            );
                         }
                     }
                 }
-            }
+                Some((_, latest)) => {
+                    eprintln!("  Already up to date (v{current}).");
+                    if latest != current {
+                        eprintln!("  {}", dim.apply_to(format!("(latest release: v{latest})")));
+                    }
+
+                    if check_only {
+                        return Ok(());
+                    }
+                }
+                None => {
+                    eprintln!(
+                        "  {} Could not find a parseable CLI release tag",
+                        Style::new().yellow().bold().apply_to("⚠"),
+                    );
+
+                    if check_only {
+                        return Ok(());
+                    }
+                }
+            },
             Err(e) => {
                 eprintln!(
                     "  {} Could not check for updates: {e}",
@@ -258,6 +332,8 @@ fn run_config_upgrade(
 #[derive(Debug, serde::Deserialize)]
 struct GitHubRelease {
     tag_name: String,
+    draft: bool,
+    prerelease: bool,
     assets: Vec<GitHubAsset>,
 }
 
@@ -267,7 +343,7 @@ struct GitHubAsset {
     browser_download_url: String,
 }
 
-async fn check_latest_release() -> Result<GitHubRelease> {
+async fn check_recent_releases() -> Result<Vec<GitHubRelease>> {
     let client = reqwest::Client::builder()
         .user_agent(format!("tuitbot/{CURRENT_VERSION}"))
         .timeout(std::time::Duration::from_secs(15))
@@ -285,7 +361,7 @@ async fn check_latest_release() -> Result<GitHubRelease> {
         bail!("GitHub API returned {status}");
     }
 
-    resp.json::<GitHubRelease>()
+    resp.json::<Vec<GitHubRelease>>()
         .await
         .context("Failed to parse GitHub release response")
 }
@@ -308,6 +384,48 @@ fn parse_version_from_tag(tag: &str) -> Option<Version> {
 /// Returns true if `latest` is strictly newer than `current`.
 fn is_newer(latest: &Version, current: &Version) -> bool {
     latest > current
+}
+
+/// Return the newest parseable, non-draft, non-prerelease release.
+fn latest_known_release(releases: &[GitHubRelease]) -> Option<(&GitHubRelease, Version)> {
+    releases
+        .iter()
+        .filter(|r| !r.draft && !r.prerelease)
+        .filter_map(|r| parse_version_from_tag(&r.tag_name).map(|v| (r, v)))
+        .max_by(|(_, a), (_, b)| a.cmp(b))
+}
+
+/// Return the newest release newer than `current` that includes this platform asset.
+fn latest_compatible_release<'a>(
+    releases: &'a [GitHubRelease],
+    current: &Version,
+    asset_name: &str,
+) -> Option<(&'a GitHubRelease, Version)> {
+    releases
+        .iter()
+        .filter(|r| !r.draft && !r.prerelease)
+        .filter(|r| has_update_assets(r, asset_name))
+        .filter_map(|r| parse_version_from_tag(&r.tag_name).map(|v| (r, v)))
+        .filter(|(_, v)| is_newer(v, current))
+        .max_by(|(_, a), (_, b)| a.cmp(b))
+}
+
+fn has_update_assets(release: &GitHubRelease, asset_name: &str) -> bool {
+    release.assets.iter().any(|a| a.name == asset_name)
+        && release.assets.iter().any(|a| a.name == "SHA256SUMS")
+}
+
+fn available_asset_names(release: &GitHubRelease) -> String {
+    if release.assets.is_empty() {
+        return "(none)".to_string();
+    }
+
+    release
+        .assets
+        .iter()
+        .map(|a| a.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 // ---------------------------------------------------------------------------
@@ -372,7 +490,14 @@ async fn update_binary(release: &GitHubRelease) -> Result<()> {
         .assets
         .iter()
         .find(|a| a.name == asset_name)
-        .with_context(|| format!("Release has no asset named '{asset_name}'"))?;
+        .with_context(|| {
+            format!(
+                "Release '{}' has no asset named '{}'. Available assets: {}",
+                release.tag_name,
+                asset_name,
+                available_asset_names(release)
+            )
+        })?;
 
     // Find the SHA256SUMS asset
     let checksums_asset = release
@@ -609,6 +734,21 @@ fn replace_binary(new_binary: &[u8]) -> Result<()> {
 mod tests {
     use super::*;
 
+    fn release_with_assets(tag: &str, assets: &[&str]) -> GitHubRelease {
+        GitHubRelease {
+            tag_name: tag.to_string(),
+            draft: false,
+            prerelease: false,
+            assets: assets
+                .iter()
+                .map(|name| GitHubAsset {
+                    name: (*name).to_string(),
+                    browser_download_url: String::new(),
+                })
+                .collect(),
+        }
+    }
+
     #[test]
     fn parse_version_from_cli_tag() {
         let v = parse_version_from_tag("tuitbot-cli-v0.2.0").unwrap();
@@ -667,6 +807,58 @@ mod tests {
         let prerelease = Version::parse("1.0.0-rc.1").unwrap();
         // A release is "newer" than its own prerelease
         assert!(is_newer(&release, &prerelease));
+    }
+
+    #[test]
+    fn latest_known_release_skips_draft_and_prerelease() {
+        let mut draft = release_with_assets("tuitbot-cli-v9.9.9", &[]);
+        draft.draft = true;
+
+        let mut prerelease = release_with_assets("tuitbot-cli-v8.8.8-rc.1", &[]);
+        prerelease.prerelease = true;
+
+        let releases = vec![
+            release_with_assets("tuitbot-core-v0.1.6", &[]),
+            prerelease,
+            release_with_assets("tuitbot-cli-v0.1.4", &[]),
+            draft,
+            release_with_assets("tuitbot-cli-v0.1.6", &[]),
+        ];
+
+        let (_, version) = latest_known_release(&releases).expect("release");
+        assert_eq!(version, Version::new(0, 1, 6));
+    }
+
+    #[test]
+    fn latest_compatible_release_picks_newest_with_required_assets() {
+        let releases = vec![
+            release_with_assets(
+                "tuitbot-cli-v0.1.2",
+                &[
+                    "SHA256SUMS",
+                    "tuitbot-aarch64-unknown-linux-gnu.tar.gz",
+                    "tuitbot-x86_64-unknown-linux-gnu.tar.gz",
+                ],
+            ),
+            release_with_assets(
+                "tuitbot-cli-v0.1.5",
+                &["SHA256SUMS", "tuitbot-x86_64-unknown-linux-gnu.tar.gz"],
+            ),
+            release_with_assets(
+                "tuitbot-cli-v0.1.4",
+                &["SHA256SUMS", "tuitbot-aarch64-unknown-linux-gnu.tar.gz"],
+            ),
+        ];
+
+        let current = Version::new(0, 1, 1);
+        let (_, version) = latest_compatible_release(
+            &releases,
+            &current,
+            "tuitbot-aarch64-unknown-linux-gnu.tar.gz",
+        )
+        .expect("compatible release");
+
+        assert_eq!(version, Version::new(0, 1, 4));
     }
 
     #[test]
