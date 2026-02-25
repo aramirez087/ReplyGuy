@@ -18,7 +18,9 @@
 		'4': '/content',
 		'5': '/targets',
 		'6': '/strategy',
-		'7': '/settings',
+		'7': '/costs',
+		'8': '/observability',
+		'9': '/settings',
 	};
 
 	function handleKeydown(e: KeyboardEvent) {

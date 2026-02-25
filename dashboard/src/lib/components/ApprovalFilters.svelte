@@ -12,11 +12,31 @@
 	interface Props {
 		selectedStatus: string;
 		selectedType: string;
+		reviewerFilter: string;
+		dateFilter: string;
 		onStatusChange: (status: string) => void;
 		onTypeChange: (type: string) => void;
+		onReviewerChange: (reviewer: string) => void;
+		onDateChange: (range: string) => void;
 	}
 
-	let { selectedStatus, selectedType, onStatusChange, onTypeChange }: Props = $props();
+	let {
+		selectedStatus,
+		selectedType,
+		reviewerFilter,
+		dateFilter,
+		onStatusChange,
+		onTypeChange,
+		onReviewerChange,
+		onDateChange
+	}: Props = $props();
+
+	const dateRanges = [
+		{ value: 'all', label: 'All Time' },
+		{ value: '24h', label: '24h' },
+		{ value: '7d', label: '7d' },
+		{ value: '30d', label: '30d' }
+	] as const;
 
 	const statusFilters = [
 		{ value: 'all', label: 'All', icon: List },
@@ -66,6 +86,32 @@
 				</button>
 			{/each}
 		</div>
+	</div>
+
+	<div class="filter-row">
+		<span class="filter-label">Period</span>
+		<div class="filter-chips">
+			{#each dateRanges as range}
+				<button
+					class="chip"
+					class:active={dateFilter === range.value}
+					onclick={() => onDateChange(range.value)}
+				>
+					<span>{range.label}</span>
+				</button>
+			{/each}
+		</div>
+	</div>
+
+	<div class="filter-row">
+		<span class="filter-label">Reviewer</span>
+		<input
+			type="text"
+			class="reviewer-input"
+			placeholder="Filter by reviewer..."
+			value={reviewerFilter}
+			oninput={(e) => onReviewerChange((e.target as HTMLInputElement).value)}
+		/>
 	</div>
 </div>
 
@@ -120,5 +166,25 @@
 		background-color: var(--color-accent);
 		border-color: var(--color-accent);
 		color: white;
+	}
+
+	.reviewer-input {
+		padding: 6px 12px;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		background-color: var(--color-surface);
+		color: var(--color-text);
+		font-size: 13px;
+		width: 200px;
+		outline: none;
+		transition: border-color 0.15s ease;
+	}
+
+	.reviewer-input:focus {
+		border-color: var(--color-accent);
+	}
+
+	.reviewer-input::placeholder {
+		color: var(--color-text-subtle);
 	}
 </style>

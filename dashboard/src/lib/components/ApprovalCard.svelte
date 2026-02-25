@@ -198,10 +198,32 @@
 			</div>
 		{/if}
 
+		{#if item.qa_score > 0}
+			<div class="card-qa">
+				<span
+					class="qa-score-badge"
+					class:qa-good={item.qa_score > 80}
+					class:qa-warn={item.qa_score > 60 && item.qa_score <= 80}
+					class:qa-bad={item.qa_score <= 60}
+				>
+					QA {Math.round(item.qa_score)}
+				</span>
+				{#if item.qa_hard_flags?.length > 0}
+					<span class="qa-flag-count hard">{item.qa_hard_flags.length} hard</span>
+				{/if}
+				{#if item.qa_soft_flags?.length > 0}
+					<span class="qa-flag-count soft">{item.qa_soft_flags.length} soft</span>
+				{/if}
+				{#if item.qa_override_by}
+					<span class="qa-override">override by {item.qa_override_by}</span>
+				{/if}
+			</div>
+		{/if}
+
 		{#if item.status !== 'pending' && (item.reviewed_by || item.review_notes)}
 			<div class="card-review-info">
 				{#if item.reviewed_by}
-					<span class="review-by">by {item.reviewed_by}</span>
+					<span class="review-by">Reviewed by {item.reviewed_by}</span>
 				{/if}
 				{#if item.review_notes}
 					<span class="review-notes">{item.review_notes}</span>
@@ -544,6 +566,60 @@
 		border-radius: 3px;
 		background-color: color-mix(in srgb, var(--color-warning) 10%, transparent);
 		color: var(--color-warning);
+	}
+
+	.card-qa {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-bottom: 8px;
+		flex-wrap: wrap;
+	}
+
+	.qa-score-badge {
+		font-size: 11px;
+		font-weight: 700;
+		padding: 2px 8px;
+		border-radius: 4px;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.qa-score-badge.qa-good {
+		background-color: color-mix(in srgb, var(--color-success) 15%, transparent);
+		color: var(--color-success);
+	}
+
+	.qa-score-badge.qa-warn {
+		background-color: color-mix(in srgb, var(--color-warning) 15%, transparent);
+		color: var(--color-warning);
+	}
+
+	.qa-score-badge.qa-bad {
+		background-color: color-mix(in srgb, var(--color-danger) 15%, transparent);
+		color: var(--color-danger);
+	}
+
+	.qa-flag-count {
+		font-size: 10px;
+		font-weight: 600;
+		padding: 1px 6px;
+		border-radius: 3px;
+	}
+
+	.qa-flag-count.hard {
+		background-color: color-mix(in srgb, var(--color-danger) 10%, transparent);
+		color: var(--color-danger);
+	}
+
+	.qa-flag-count.soft {
+		background-color: color-mix(in srgb, var(--color-warning) 10%, transparent);
+		color: var(--color-warning);
+	}
+
+	.qa-override {
+		font-size: 10px;
+		color: var(--color-text-subtle);
+		font-style: italic;
 	}
 
 	.card-review-info {

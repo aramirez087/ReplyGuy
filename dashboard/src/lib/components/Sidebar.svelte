@@ -55,6 +55,7 @@
 		{ href: "/strategy", label: "Strategy", icon: Compass },
 		{ href: "/costs", label: "Costs", icon: DollarSign },
 		{ href: "/mcp", label: "MCP", icon: Shield },
+		{ href: "/observability", label: "Observability", icon: Activity },
 		{ href: "/settings", label: "Settings", icon: Settings },
 	];
 

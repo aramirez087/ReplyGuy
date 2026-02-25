@@ -235,6 +235,54 @@ pub async fn get_by_statuses(
     Ok(rows.into_iter().map(ApprovalItem::from).collect())
 }
 
+/// Get approval items with optional filters for reviewer, date range, statuses, and action type.
+pub async fn get_filtered(
+    pool: &DbPool,
+    statuses: &[&str],
+    action_type: Option<&str>,
+    reviewed_by: Option<&str>,
+    since: Option<&str>,
+) -> Result<Vec<ApprovalItem>, StorageError> {
+    if statuses.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders: Vec<&str> = statuses.iter().map(|_| "?").collect();
+    let in_clause = placeholders.join(", ");
+
+    let mut sql = format!("SELECT {SELECT_COLS} FROM approval_queue WHERE status IN ({in_clause})");
+    if action_type.is_some() {
+        sql.push_str(" AND action_type = ?");
+    }
+    if reviewed_by.is_some() {
+        sql.push_str(" AND reviewed_by = ?");
+    }
+    if since.is_some() {
+        sql.push_str(" AND created_at >= ?");
+    }
+    sql.push_str(" ORDER BY created_at ASC");
+
+    let mut q = sqlx::query_as::<_, ApprovalRow>(&sql);
+    for s in statuses {
+        q = q.bind(*s);
+    }
+    if let Some(at) = action_type {
+        q = q.bind(at);
+    }
+    if let Some(rb) = reviewed_by {
+        q = q.bind(rb);
+    }
+    if let Some(s) = since {
+        q = q.bind(s);
+    }
+
+    let rows = q
+        .fetch_all(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })?;
+    Ok(rows.into_iter().map(ApprovalItem::from).collect())
+}
+
 /// Update the generated content of an item without changing its status.
 pub async fn update_content(pool: &DbPool, id: i64, new_content: &str) -> Result<(), StorageError> {
     sqlx::query("UPDATE approval_queue SET generated_content = ? WHERE id = ?")

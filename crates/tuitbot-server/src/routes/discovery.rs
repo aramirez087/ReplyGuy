@@ -19,6 +19,8 @@ use crate::state::AppState;
 pub struct FeedQuery {
     #[serde(default = "default_min_score")]
     pub min_score: f64,
+    pub max_score: Option<f64>,
+    pub keyword: Option<String>,
     #[serde(default = "default_feed_limit")]
     pub limit: u32,
 }
@@ -48,7 +50,14 @@ pub async fn feed(
     State(state): State<Arc<AppState>>,
     Query(q): Query<FeedQuery>,
 ) -> Result<Json<Vec<DiscoveryTweet>>, ApiError> {
-    let rows = storage::tweets::get_discovery_feed(&state.db, q.min_score, q.limit).await?;
+    let rows = storage::tweets::get_discovery_feed_filtered(
+        &state.db,
+        q.min_score,
+        q.max_score,
+        q.keyword.as_deref(),
+        q.limit,
+    )
+    .await?;
 
     let tweets = rows
         .into_iter()
@@ -67,6 +76,15 @@ pub async fn feed(
         .collect();
 
     Ok(Json(tweets))
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/discovery/keywords
+// ---------------------------------------------------------------------------
+
+pub async fn keywords(State(state): State<Arc<AppState>>) -> Result<Json<Vec<String>>, ApiError> {
+    let kws = storage::tweets::get_distinct_keywords(&state.db).await?;
+    Ok(Json(kws))
 }
 
 // ---------------------------------------------------------------------------

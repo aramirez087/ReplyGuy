@@ -10,6 +10,8 @@ export const loading = writable(true);
 export const error = writable<string | null>(null);
 export const selectedStatus = writable('pending');
 export const selectedType = writable('all');
+export const reviewerFilter = writable('');
+export const dateFilter = writable('all');
 export const focusedIndex = writable(0);
 
 // --- Derived stores ---
@@ -31,11 +33,26 @@ export async function loadItems(reset = false) {
 	try {
 		const status = get(selectedStatus);
 		const type = get(selectedType);
+		const reviewer = get(reviewerFilter);
+		const dateFilt = get(dateFilter);
 
 		const statusParam = status === 'all' ? 'pending,approved,rejected' : status;
 		const typeParam = type === 'all' ? undefined : type;
+		const reviewerParam = reviewer.trim() || undefined;
 
-		const data = await api.approval.list({ status: statusParam, type: typeParam });
+		let sinceParam: string | undefined;
+		if (dateFilt !== 'all') {
+			const now = new Date();
+			const hours = dateFilt === '24h' ? 24 : dateFilt === '7d' ? 168 : 720;
+			sinceParam = new Date(now.getTime() - hours * 3600_000).toISOString();
+		}
+
+		const data = await api.approval.list({
+			status: statusParam,
+			type: typeParam,
+			reviewed_by: reviewerParam,
+			since: sinceParam,
+		});
 		items.set(data);
 	} catch (e) {
 		error.set(e instanceof Error ? e.message : 'Failed to load approval items');
@@ -108,6 +125,16 @@ export function setStatusFilter(status: string) {
 
 export function setTypeFilter(type: string) {
 	selectedType.set(type);
+	loadItems(true);
+}
+
+export function setReviewerFilter(reviewer: string) {
+	reviewerFilter.set(reviewer);
+	loadItems(true);
+}
+
+export function setDateFilter(range: string) {
+	dateFilter.set(range);
 	loadItems(true);
 }
 

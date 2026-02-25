@@ -125,6 +125,53 @@ pub async fn get_discovery_feed(
     .map_err(|e| StorageError::Query { source: e })
 }
 
+/// Fetch discovered tweets with advanced filters: score range, keyword, and limit.
+pub async fn get_discovery_feed_filtered(
+    pool: &DbPool,
+    min_score: f64,
+    max_score: Option<f64>,
+    keyword: Option<&str>,
+    limit: u32,
+) -> Result<Vec<DiscoveredTweet>, StorageError> {
+    let mut sql =
+        String::from("SELECT * FROM discovered_tweets WHERE COALESCE(relevance_score, 0.0) >= ?");
+    if max_score.is_some() {
+        sql.push_str(" AND COALESCE(relevance_score, 0.0) <= ?");
+    }
+    if keyword.is_some() {
+        sql.push_str(" AND matched_keyword = ?");
+    }
+    sql.push_str(" ORDER BY discovered_at DESC LIMIT ?");
+
+    let mut query = sqlx::query_as::<_, DiscoveredTweet>(&sql).bind(min_score);
+    if let Some(max) = max_score {
+        query = query.bind(max);
+    }
+    if let Some(kw) = keyword {
+        query = query.bind(kw);
+    }
+    query = query.bind(limit);
+
+    query
+        .fetch_all(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })
+}
+
+/// Get distinct matched keywords from discovered tweets.
+pub async fn get_distinct_keywords(pool: &DbPool) -> Result<Vec<String>, StorageError> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT DISTINCT matched_keyword FROM discovered_tweets \
+         WHERE matched_keyword IS NOT NULL AND matched_keyword != '' \
+         ORDER BY matched_keyword",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(rows.into_iter().map(|(kw,)| kw).collect())
+}
+
 /// Check if a tweet exists in the database.
 pub async fn tweet_exists(pool: &DbPool, tweet_id: &str) -> Result<bool, StorageError> {
     let row: (i64,) = sqlx::query_as("SELECT EXISTS(SELECT 1 FROM discovered_tweets WHERE id = ?)")

@@ -22,21 +22,28 @@ pub struct ApprovalQuery {
     /// Filter by action type (reply, tweet, thread_tweet).
     #[serde(rename = "type")]
     pub action_type: Option<String>,
+    /// Filter by reviewer name.
+    pub reviewed_by: Option<String>,
+    /// Filter by items created since this ISO-8601 timestamp.
+    pub since: Option<String>,
 }
 
 fn default_status() -> String {
     "pending".to_string()
 }
 
-/// `GET /api/approval` — list approval items with optional status/type filters.
+/// `GET /api/approval` — list approval items with optional status/type/reviewer/date filters.
 pub async fn list_items(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ApprovalQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let statuses: Vec<&str> = params.status.split(',').map(|s| s.trim()).collect();
     let action_type = params.action_type.as_deref();
+    let reviewed_by = params.reviewed_by.as_deref();
+    let since = params.since.as_deref();
 
-    let items = approval_queue::get_by_statuses(&state.db, &statuses, action_type).await?;
+    let items =
+        approval_queue::get_filtered(&state.db, &statuses, action_type, reviewed_by, since).await?;
     Ok(Json(json!(items)))
 }
 
@@ -286,6 +293,98 @@ pub async fn approve_all(
     Ok(Json(
         json!({"status": "approved", "count": count, "ids": approved_ids, "max_batch": max_batch}),
     ))
+}
+
+/// Query parameters for the approval export endpoint.
+#[derive(Deserialize)]
+pub struct ExportQuery {
+    /// Export format: "csv" or "json" (default: "csv").
+    #[serde(default = "default_csv")]
+    pub format: String,
+    /// Comma-separated status values (default: all).
+    #[serde(default = "default_export_status")]
+    pub status: String,
+    /// Filter by action type.
+    #[serde(rename = "type")]
+    pub action_type: Option<String>,
+}
+
+fn default_csv() -> String {
+    "csv".to_string()
+}
+
+fn default_export_status() -> String {
+    "pending,approved,rejected,posted".to_string()
+}
+
+/// `GET /api/approval/export` — export approval items as CSV or JSON.
+pub async fn export_items(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<ExportQuery>,
+) -> Result<axum::response::Response, ApiError> {
+    use axum::response::IntoResponse;
+
+    let statuses: Vec<&str> = params.status.split(',').map(|s| s.trim()).collect();
+    let action_type = params.action_type.as_deref();
+
+    let items = approval_queue::get_by_statuses(&state.db, &statuses, action_type).await?;
+
+    if params.format == "json" {
+        let body = serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string());
+        Ok((
+            [
+                (
+                    axum::http::header::CONTENT_TYPE,
+                    "application/json; charset=utf-8",
+                ),
+                (
+                    axum::http::header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"approval_export.json\"",
+                ),
+            ],
+            body,
+        )
+            .into_response())
+    } else {
+        let mut csv = String::from(
+            "id,action_type,target_author,generated_content,topic,score,status,reviewed_by,review_notes,created_at\n",
+        );
+        for item in &items {
+            csv.push_str(&format!(
+                "{},{},{},{},{},{},{},{},{},{}\n",
+                item.id,
+                escape_csv(&item.action_type),
+                escape_csv(&item.target_author),
+                escape_csv(&item.generated_content),
+                escape_csv(&item.topic),
+                item.score,
+                escape_csv(&item.status),
+                escape_csv(item.reviewed_by.as_deref().unwrap_or("")),
+                escape_csv(item.review_notes.as_deref().unwrap_or("")),
+                escape_csv(&item.created_at),
+            ));
+        }
+        Ok((
+            [
+                (axum::http::header::CONTENT_TYPE, "text/csv; charset=utf-8"),
+                (
+                    axum::http::header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"approval_export.csv\"",
+                ),
+            ],
+            csv,
+        )
+            .into_response())
+    }
+}
+
+/// Escape a value for CSV output.
+fn escape_csv(value: &str) -> String {
+    if value.contains(',') || value.contains('"') || value.contains('\n') {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
 }
 
 /// `GET /api/approval/:id/history` — get edit history for an item.

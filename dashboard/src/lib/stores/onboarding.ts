@@ -16,6 +16,9 @@ export interface OnboardingData {
 	llm_api_key: string;
 	llm_model: string;
 	llm_base_url: string;
+	// Language & Brand
+	language: string;
+	brand_voice: string;
 	// Settings
 	approval_mode: boolean;
 }
@@ -34,6 +37,8 @@ function createOnboardingStore() {
 		llm_api_key: '',
 		llm_model: 'gpt-4o-mini',
 		llm_base_url: '',
+		language: 'en',
+		brand_voice: 'balanced',
 		approval_mode: true,
 	});
 

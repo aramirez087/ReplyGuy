@@ -126,6 +126,13 @@ export interface ApprovalItem {
 	review_notes?: string;
 	reason?: string;
 	detected_risks: string[];
+	qa_score: number;
+	qa_hard_flags: string[];
+	qa_soft_flags: string[];
+	qa_requires_override: boolean;
+	qa_override_by?: string;
+	qa_override_note?: string;
+	qa_override_at?: string;
 }
 
 export interface EditHistoryEntry {
@@ -595,7 +602,13 @@ export const api = {
 			const qs = query.toString();
 			return request<ActivityResponse>(`/api/activity${qs ? `?${qs}` : ''}`);
 		},
-		rateLimits: () => request<RateLimitUsage>('/api/activity/rate-limits')
+		rateLimits: () => request<RateLimitUsage>('/api/activity/rate-limits'),
+		exportUrl: (format: 'csv' | 'json', type_?: string, status?: string): string => {
+			const query = new URLSearchParams({ format });
+			if (type_) query.set('type', type_);
+			if (status) query.set('status', status);
+			return `${BASE_URL}/api/activity/export?${query.toString()}`;
+		}
 	},
 
 	content: {
@@ -709,10 +722,12 @@ export const api = {
 	},
 
 	approval: {
-		list: (params: { status?: string; type?: string } = {}) => {
+		list: (params: { status?: string; type?: string; reviewed_by?: string; since?: string } = {}) => {
 			const query = new URLSearchParams();
 			if (params.status) query.set('status', params.status);
 			if (params.type) query.set('type', params.type);
+			if (params.reviewed_by) query.set('reviewed_by', params.reviewed_by);
+			if (params.since) query.set('since', params.since);
 			const qs = query.toString();
 			return request<ApprovalItem[]>(`/api/approval${qs ? `?${qs}` : ''}`);
 		},
@@ -749,7 +764,13 @@ export const api = {
 				}
 			),
 		editHistory: (id: number) =>
-			request<EditHistoryEntry[]>(`/api/approval/${id}/history`)
+			request<EditHistoryEntry[]>(`/api/approval/${id}/history`),
+		exportUrl: (format: 'csv' | 'json', status?: string, type_?: string): string => {
+			const query = new URLSearchParams({ format });
+			if (status) query.set('status', status);
+			if (type_) query.set('type', type_);
+			return `${BASE_URL}/api/approval/export?${query.toString()}`;
+		}
 	},
 
 	assist: {
@@ -841,8 +862,13 @@ export const api = {
 	},
 
 	discovery: {
-		feed: (minScore: number = 50, limit: number = 20) =>
-			request<
+		feed: (params: { minScore?: number; maxScore?: number; keyword?: string; limit?: number } = {}) => {
+			const query = new URLSearchParams();
+			query.set('min_score', (params.minScore ?? 50).toString());
+			query.set('limit', (params.limit ?? 20).toString());
+			if (params.maxScore !== undefined) query.set('max_score', params.maxScore.toString());
+			if (params.keyword) query.set('keyword', params.keyword);
+			return request<
 				Array<{
 					id: string;
 					author_username: string;
@@ -855,7 +881,9 @@ export const api = {
 					replied_to: boolean;
 					discovered_at: string;
 				}>
-			>(`/api/discovery/feed?min_score=${minScore}&limit=${limit}`),
+			>(`/api/discovery/feed?${query.toString()}`);
+		},
+		keywords: () => request<string[]>('/api/discovery/keywords'),
 		composeReply: (tweetId: string, mentionProduct: boolean = false) =>
 			request<{ content: string; tweet_id: string }>(
 				`/api/discovery/${tweetId}/compose-reply`,

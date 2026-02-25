@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { CheckCircle } from 'lucide-svelte';
+	import { CheckCircle, Download } from 'lucide-svelte';
+	import { api } from '$lib/api';
 	import ApprovalStats from '$lib/components/ApprovalStats.svelte';
 	import ApprovalFilters from '$lib/components/ApprovalFilters.svelte';
 	import ApprovalCard from '$lib/components/ApprovalCard.svelte';
@@ -12,6 +13,8 @@
 		error,
 		selectedStatus,
 		selectedType,
+		reviewerFilter,
+		dateFilter,
 		focusedIndex,
 		focusedItem,
 		isEmpty,
@@ -24,12 +27,26 @@
 		approveAllItems,
 		setStatusFilter,
 		setTypeFilter,
+		setReviewerFilter,
+		setDateFilter,
 		moveFocus,
 		startAutoRefresh,
 		stopAutoRefresh
 	} from '$lib/stores/approval';
 
 	let editingId = $state<number | null>(null);
+	let exportOpen = $state(false);
+
+	function triggerExport(format: 'csv' | 'json') {
+		const status = $selectedStatus === 'all' ? undefined : $selectedStatus;
+		const type_ = $selectedType === 'all' ? undefined : $selectedType;
+		const url = api.approval.exportUrl(format, status, type_);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `approval_export.${format}`;
+		a.click();
+		exportOpen = false;
+	}
 
 	async function handleSaveEdit(id: number, content: string) {
 		await editItem(id, content);
@@ -107,9 +124,23 @@
 			<h1>Approval</h1>
 			<p class="subtitle">Review and approve queued actions</p>
 		</div>
-		{#if $selectedStatus === 'pending' && $pendingCount > 0}
-			<BulkActions pendingCount={$pendingCount} maxBatch={25} onApproveAll={approveAllItems} />
-		{/if}
+		<div class="header-actions">
+			<div class="export-wrapper">
+				<button class="export-btn" onclick={() => (exportOpen = !exportOpen)}>
+					<Download size={14} />
+					Export
+				</button>
+				{#if exportOpen}
+					<div class="export-menu">
+						<button onclick={() => triggerExport('csv')}>Export CSV</button>
+						<button onclick={() => triggerExport('json')}>Export JSON</button>
+					</div>
+				{/if}
+			</div>
+			{#if $selectedStatus === 'pending' && $pendingCount > 0}
+				<BulkActions pendingCount={$pendingCount} maxBatch={25} onApproveAll={approveAllItems} />
+			{/if}
+		</div>
 	</div>
 	<div class="page-header-stats">
 		<ApprovalStats stats={$stats} />
@@ -127,8 +158,12 @@
 	<ApprovalFilters
 		selectedStatus={$selectedStatus}
 		selectedType={$selectedType}
+		reviewerFilter={$reviewerFilter}
+		dateFilter={$dateFilter}
 		onStatusChange={setStatusFilter}
 		onTypeChange={setTypeFilter}
+		onReviewerChange={setReviewerFilter}
+		onDateChange={setDateFilter}
 	/>
 </div>
 
@@ -197,6 +232,65 @@
 		align-items: flex-start;
 		gap: 16px;
 		margin-bottom: 8px;
+	}
+
+	.header-actions {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.export-wrapper {
+		position: relative;
+	}
+
+	.export-btn {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 14px;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		background: transparent;
+		color: var(--color-text);
+		font-size: 13px;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.export-btn:hover {
+		background: var(--color-surface-hover);
+	}
+
+	.export-menu {
+		position: absolute;
+		right: 0;
+		top: 100%;
+		margin-top: 4px;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		overflow: hidden;
+		z-index: 10;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+	}
+
+	.export-menu button {
+		display: block;
+		width: 100%;
+		padding: 8px 16px;
+		border: none;
+		background: transparent;
+		color: var(--color-text);
+		font-size: 13px;
+		text-align: left;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.export-menu button:hover {
+		background: var(--color-surface-hover);
 	}
 
 	h1 {

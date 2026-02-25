@@ -36,6 +36,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             get(routes::analytics::recent_performance),
         )
         // Approval
+        .route("/approval/export", get(routes::approval::export_items))
         .route("/approval", get(routes::approval::list_items))
         .route("/approval/stats", get(routes::approval::stats))
         .route("/approval/approve-all", post(routes::approval::approve_all))
@@ -50,6 +51,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         .route("/approval/{id}/reject", post(routes::approval::reject_item))
         // Activity
+        .route("/activity/export", get(routes::activity::export_activity))
         .route("/activity", get(routes::activity::list_activity))
         .route(
             "/activity/rate-limits",
@@ -137,6 +139,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/assist/mode", get(routes::assist::get_mode))
         // Discovery feed
         .route("/discovery/feed", get(routes::discovery::feed))
+        .route("/discovery/keywords", get(routes::discovery::keywords))
         .route(
             "/discovery/{tweet_id}/compose-reply",
             post(routes::discovery::compose_reply),
