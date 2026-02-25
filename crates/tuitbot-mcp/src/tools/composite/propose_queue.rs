@@ -181,6 +181,22 @@ pub async fn execute(state: &SharedState, items: &[ProposeItem], mention_product
     let _ = McpPolicyEvaluator::record_mutation(&state.pool).await;
 
     let elapsed = start.elapsed().as_millis() as u64;
+    let has_error = results
+        .iter()
+        .any(|r| matches!(r, ProposeResult::Blocked { .. }));
+    crate::tools::telemetry::record(
+        &state.pool,
+        "propose_and_queue_replies",
+        "composite_mutation",
+        elapsed,
+        !has_error
+            || results
+                .iter()
+                .any(|r| !matches!(r, ProposeResult::Blocked { .. })),
+        None,
+        Some("allow"),
+    )
+    .await;
     ToolResponse::success(&results)
         .with_meta(ToolMeta::new(elapsed).with_mode(
             state.config.mode.to_string(),

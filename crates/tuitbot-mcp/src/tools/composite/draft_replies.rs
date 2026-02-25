@@ -135,6 +135,16 @@ pub async fn execute(
     }
 
     let elapsed = start.elapsed().as_millis() as u64;
+    crate::tools::telemetry::record(
+        &state.pool,
+        "draft_replies_for_candidates",
+        "composite",
+        elapsed,
+        true,
+        None,
+        None,
+    )
+    .await;
     ToolResponse::success(&results)
         .with_meta(ToolMeta::new(elapsed).with_mode(
             state.config.mode.to_string(),

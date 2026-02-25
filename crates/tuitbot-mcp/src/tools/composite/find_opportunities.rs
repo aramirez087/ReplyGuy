@@ -191,6 +191,16 @@ pub async fn execute(
 
     let total = candidates.len();
     let elapsed = start.elapsed().as_millis() as u64;
+    crate::tools::telemetry::record(
+        &state.pool,
+        "find_reply_opportunities",
+        "composite",
+        elapsed,
+        true,
+        None,
+        None,
+    )
+    .await;
     ToolResponse::success(serde_json::json!({
         "candidates": candidates,
         "total_found": total,

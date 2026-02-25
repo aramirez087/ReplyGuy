@@ -40,3 +40,55 @@ This single command:
 Use `--check` to see if an update is available without installing. Use `--config-only` to skip the binary update. Use `--non-interactive` in CI to apply config defaults automatically.
 
 After updating, run `tuitbot test` to validate auth and connectivity.
+
+## MCP Observability & Quality Gates
+
+### Telemetry
+
+Every MCP tool invocation is recorded in the `mcp_telemetry` table with:
+
+- `tool_name` — which tool was called
+- `category` — tool category (`composite`, `composite_mutation`, `mutation`, `analytics`, etc.)
+- `latency_ms` — wall-clock execution time
+- `success` — whether the call succeeded
+- `error_code` — machine-readable error code on failure
+- `policy_decision` — policy gate outcome (`allow`, `deny`, `route_to_approval`, `dry_run`)
+
+Query telemetry via MCP tools:
+
+- `get_mcp_tool_metrics` — time-windowed aggregates per tool (call counts, success rates, latency percentiles)
+- `get_mcp_error_breakdown` — error distribution grouped by tool and error code
+
+### Quality Gates
+
+The eval harness (`cargo test -p tuitbot-mcp eval_harness`) enforces two quality gates:
+
+| Gate | Threshold | Description |
+|------|-----------|-------------|
+| Schema validation | >= 95% | All MCP tool responses must conform to the `ToolResponse` envelope (`success` key present) |
+| Unknown errors | <= 5% | Error responses must use typed error codes — unclassified errors indicate missing handling |
+
+**Running the eval harness:**
+
+```bash
+cargo test -p tuitbot-mcp eval_harness -- --nocapture
+```
+
+This executes three scenarios:
+
+1. **Scenario A** — Raw direct reply: draft a reply and queue it
+2. **Scenario B** — Composite flow: find opportunities → draft replies → queue replies
+3. **Scenario C** — Policy-blocked mutation: verify denied calls are captured in telemetry
+
+Results are written to `docs/roadmap/artifacts/task-07-eval-results.json` and `task-07-eval-summary.md`.
+
+### CI Integration
+
+Add to your CI pipeline after the standard test suite:
+
+```bash
+# Quality gates (fail build if thresholds breached)
+cargo test -p tuitbot-mcp eval_harness
+```
+
+The eval harness asserts quality gates directly — test failure means a gate was breached.

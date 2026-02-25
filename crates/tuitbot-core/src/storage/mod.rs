@@ -10,6 +10,7 @@ pub mod author_interactions;
 pub mod cleanup;
 pub mod cursors;
 pub mod llm_usage;
+pub mod mcp_telemetry;
 pub mod media;
 pub mod rate_limits;
 pub mod replies;
@@ -142,6 +143,7 @@ mod tests {
         assert!(table_names.contains(&"scheduled_content"));
         assert!(table_names.contains(&"llm_usage"));
         assert!(table_names.contains(&"x_api_usage"));
+        assert!(table_names.contains(&"mcp_telemetry"));
     }
 
     #[tokio::test]

@@ -581,6 +581,30 @@ impl TuitbotMcpServer {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    // --- Telemetry ---
+
+    /// Get time-windowed MCP tool execution metrics: call counts, success rates, latency percentiles, per tool.
+    #[tool]
+    async fn get_mcp_tool_metrics(
+        &self,
+        Parameters(req): Parameters<GetMcpToolMetricsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let hours = req.since_hours.unwrap_or(24);
+        let result = tools::telemetry::get_mcp_tool_metrics(&self.state.pool, hours).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Get MCP tool error distribution grouped by tool and error code in a time window.
+    #[tool]
+    async fn get_mcp_error_breakdown(
+        &self,
+        Parameters(req): Parameters<GetMcpErrorBreakdownRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let hours = req.since_hours.unwrap_or(24);
+        let result = tools::telemetry::get_mcp_error_breakdown(&self.state.pool, hours).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     // --- Composite Tools ---
 
     /// Search X for tweets, score them, persist to DB, and return ranked reply opportunities. Read-only (no posts made).

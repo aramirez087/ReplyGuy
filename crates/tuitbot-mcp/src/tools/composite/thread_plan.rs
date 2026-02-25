@@ -102,6 +102,16 @@ pub async fn execute(
     let structure_used = structure_str.unwrap_or("auto_selected");
 
     let elapsed = start.elapsed().as_millis() as u64;
+    crate::tools::telemetry::record(
+        &state.pool,
+        "generate_thread_plan",
+        "composite",
+        elapsed,
+        true,
+        None,
+        None,
+    )
+    .await;
     ToolResponse::success(serde_json::json!({
         "thread_tweets": thread.tweets,
         "tweet_count": tweet_count,

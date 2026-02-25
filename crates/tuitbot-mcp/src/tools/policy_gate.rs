@@ -60,7 +60,8 @@ pub async fn check_policy(
     match decision {
         PolicyDecision::Allow => GateResult::Proceed,
 
-        PolicyDecision::RouteToApproval { reason } => {
+        PolicyDecision::RouteToApproval { ref reason } => {
+            let reason = reason.clone();
             // Enqueue into approval queue
             let enqueue_result = tuitbot_core::storage::approval_queue::enqueue(
                 &state.pool,
@@ -76,6 +77,16 @@ pub async fn check_policy(
             .await;
 
             let elapsed = start.elapsed().as_millis() as u64;
+            super::telemetry::record(
+                &state.pool,
+                tool_name,
+                "mutation",
+                elapsed,
+                true,
+                None,
+                Some("route_to_approval"),
+            )
+            .await;
             let json = match enqueue_result {
                 Ok(id) => ToolResponse::success(serde_json::json!({
                     "routed_to_approval": true,
@@ -101,6 +112,16 @@ pub async fn check_policy(
                 PolicyDenialReason::ToolBlocked => "policy_denied_blocked",
                 PolicyDenialReason::RateLimited => "policy_denied_rate_limited",
             };
+            super::telemetry::record(
+                &state.pool,
+                tool_name,
+                "mutation",
+                elapsed,
+                false,
+                Some(code),
+                Some("deny"),
+            )
+            .await;
             let json = ToolResponse::error(code, format!("Policy denied: {reason}"), false)
                 .with_meta(ToolMeta::new(elapsed))
                 .to_json();
@@ -109,6 +130,16 @@ pub async fn check_policy(
 
         PolicyDecision::DryRun => {
             let elapsed = start.elapsed().as_millis() as u64;
+            super::telemetry::record(
+                &state.pool,
+                tool_name,
+                "mutation",
+                elapsed,
+                true,
+                None,
+                Some("dry_run"),
+            )
+            .await;
             let json = ToolResponse::success(serde_json::json!({
                 "dry_run": true,
                 "would_execute": tool_name,

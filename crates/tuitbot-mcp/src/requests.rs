@@ -208,6 +208,20 @@ pub struct TopicPerformanceSnapshotRequest {
     pub lookback_days: Option<u32>,
 }
 
+// --- Telemetry ---
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetMcpToolMetricsRequest {
+    /// Hours to look back (default: 24)
+    pub since_hours: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetMcpErrorBreakdownRequest {
+    /// Hours to look back (default: 24)
+    pub since_hours: Option<u32>,
+}
+
 // --- Composite Tools ---
 
 #[derive(Debug, Deserialize, JsonSchema)]

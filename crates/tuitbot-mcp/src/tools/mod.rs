@@ -18,7 +18,10 @@ pub mod replies;
 pub mod response;
 pub mod scoring;
 pub mod targets;
+pub mod telemetry;
 pub mod x_actions;
 
 #[cfg(test)]
 mod benchmark;
+#[cfg(test)]
+mod eval_harness;
