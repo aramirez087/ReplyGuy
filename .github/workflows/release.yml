@@ -174,7 +174,7 @@ jobs:
     needs:
       - release
       - build-assets
-    if: needs.release.outputs.cli_released == 'true'
+    if: ${{ !cancelled() && needs.release.outputs.cli_released == 'true' }}
     permissions:
       contents: write
     steps:
@@ -184,6 +184,16 @@ jobs:
           pattern: tuitbot-*
           merge-multiple: true
           path: dist
+
+      - name: Verify artifacts were downloaded
+        run: |
+          set -euo pipefail
+          count=$(find dist -type f -name 'tuitbot-*' | wc -l)
+          echo "Found $count artifact(s)"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No artifacts downloaded — all build-assets matrix legs failed."
+            exit 1
+          fi
 
       - name: Build checksum manifest
         run: |
@@ -198,3 +208,10 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "$TAG" dist/* --clobber
+
+      - name: Fail workflow if any build leg failed
+        if: ${{ needs.build-assets.result != 'success' }}
+        run: |
+          echo "::warning::Some build-assets matrix legs failed. Assets were uploaded for successful builds only."
+          echo "build-assets result: ${{ needs.build-assets.result }}"
+          exit 1
