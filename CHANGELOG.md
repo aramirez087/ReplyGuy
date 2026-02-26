@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8](https://github.com/aramirez087/TuitBot/compare/tuitbot-cli-v0.1.7...tuitbot-cli-v0.1.8) - 2026-02-26
+
+### Other
+
+- update mcp-reference docs tool count back to 64 tools and add update features
+
 ## [0.1.7](https://github.com/aramirez087/TuitBot/compare/tuitbot-cli-v0.1.6...tuitbot-cli-v0.1.7) - 2026-02-26
 
 ### Added
