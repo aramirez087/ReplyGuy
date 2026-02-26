@@ -305,3 +305,339 @@ fn render_config_toml_updated_defaults() {
         vec!["check out", "you should try", "I recommend", "link in bio"]
     );
 }
+
+#[test]
+fn render_quickstart_minimal_is_valid_toml() {
+    let result = WizardResult {
+        client_id: "qs-client".to_string(),
+        client_secret: None,
+        product_name: "QuickApp".to_string(),
+        product_description: String::new(),
+        product_url: None,
+        target_audience: String::new(),
+        product_keywords: vec!["rust cli".to_string()],
+        industry_topics: vec![],
+        brand_voice: None,
+        reply_style: None,
+        content_style: None,
+        persona_opinions: vec![],
+        persona_experiences: vec![],
+        content_pillars: vec![],
+        target_accounts: vec![],
+        approval_mode: true,
+        llm_provider: "ollama".to_string(),
+        llm_api_key: None,
+        llm_model: "llama3.2".to_string(),
+        llm_base_url: None,
+        timezone: "UTC".to_string(),
+        active_hours_start: 8,
+        active_hours_end: 22,
+        active_days: vec![
+            "Mon".into(),
+            "Tue".into(),
+            "Wed".into(),
+            "Thu".into(),
+            "Fri".into(),
+            "Sat".into(),
+            "Sun".into(),
+        ],
+    };
+
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("quickstart-minimal TOML should parse");
+
+    // Quickstart fields survive roundtrip
+    assert_eq!(config.business.product_name, "QuickApp");
+    assert_eq!(config.business.product_keywords, vec!["rust cli"]);
+    assert_eq!(config.llm.provider, "ollama");
+
+    // Empty optional fields should be absent / default
+    assert!(config.business.product_description.is_empty());
+    assert!(config.business.target_audience.is_empty());
+    assert!(config.business.industry_topics.is_empty());
+
+    // Config should pass validation
+    assert!(config.validate().is_ok());
+}
+
+#[test]
+fn render_quickstart_omits_empty_fields() {
+    let result = WizardResult {
+        product_description: String::new(),
+        target_audience: String::new(),
+        industry_topics: vec![],
+        ..test_wizard_result()
+    };
+
+    let toml_str = render_config_toml(&result);
+
+    // Empty fields should be rendered as comments
+    assert!(
+        toml_str.contains("# product_description"),
+        "empty product_description should be commented"
+    );
+    assert!(
+        toml_str.contains("# target_audience"),
+        "empty target_audience should be commented"
+    );
+    assert!(
+        toml_str.contains("# industry_topics"),
+        "empty industry_topics should be commented"
+    );
+
+    // Should still parse as valid TOML
+    let _config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("TOML with commented fields should parse");
+}
+
+/// Helper to create a WizardResult matching quickstart defaults.
+fn quickstart_wizard_result() -> WizardResult {
+    WizardResult {
+        client_id: "qs-cid".to_string(),
+        client_secret: None,
+        product_name: "QuickApp".to_string(),
+        product_description: String::new(),
+        product_url: None,
+        target_audience: String::new(),
+        product_keywords: vec!["rust".to_string(), "cli".to_string()],
+        industry_topics: vec![],
+        brand_voice: None,
+        reply_style: None,
+        content_style: None,
+        persona_opinions: vec![],
+        persona_experiences: vec![],
+        content_pillars: vec![],
+        target_accounts: vec![],
+        approval_mode: true,
+        llm_provider: "openai".to_string(),
+        llm_api_key: Some("sk-test".to_string()),
+        llm_model: "gpt-4o-mini".to_string(),
+        llm_base_url: None,
+        timezone: "UTC".to_string(),
+        active_hours_start: 8,
+        active_hours_end: 22,
+        active_days: vec![
+            "Mon".into(),
+            "Tue".into(),
+            "Wed".into(),
+            "Thu".into(),
+            "Fri".into(),
+            "Sat".into(),
+            "Sun".into(),
+        ],
+    }
+}
+
+#[test]
+fn quickstart_wizard_result_renders_valid_toml() {
+    let result = quickstart_wizard_result();
+    let toml_str = render_config_toml(&result);
+
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("quickstart TOML should parse");
+
+    assert_eq!(config.business.product_name, "QuickApp");
+    assert_eq!(config.business.product_keywords, vec!["rust", "cli"]);
+    assert_eq!(config.llm.provider, "openai");
+    assert_eq!(config.llm.model, "gpt-4o-mini");
+    assert_eq!(config.x_api.client_id, "qs-cid");
+    assert!(config.approval_mode);
+
+    // Empty optional fields should be absent / default
+    assert!(config.business.product_description.is_empty());
+    assert!(config.business.target_audience.is_empty());
+    assert!(config.business.industry_topics.is_empty());
+
+    // Config should pass validation
+    assert!(config.validate().is_ok());
+}
+
+#[test]
+fn quickstart_wizard_result_defaults_are_correct() {
+    let result = quickstart_wizard_result();
+
+    assert!(result.approval_mode);
+    assert_eq!(result.timezone, "UTC");
+    assert_eq!(result.active_hours_start, 8);
+    assert_eq!(result.active_hours_end, 22);
+    assert_eq!(result.active_days.len(), 7);
+    assert_eq!(result.active_days[0], "Mon");
+    assert_eq!(result.active_days[6], "Sun");
+
+    // Enrichment fields should all be empty
+    assert!(result.product_description.is_empty());
+    assert!(result.target_audience.is_empty());
+    assert!(result.industry_topics.is_empty());
+    assert!(result.brand_voice.is_none());
+    assert!(result.reply_style.is_none());
+    assert!(result.content_style.is_none());
+    assert!(result.persona_opinions.is_empty());
+    assert!(result.persona_experiences.is_empty());
+    assert!(result.content_pillars.is_empty());
+    assert!(result.target_accounts.is_empty());
+    assert!(result.client_secret.is_none());
+    assert!(result.product_url.is_none());
+}
+
+#[test]
+fn advanced_wizard_result_still_renders_valid_toml() {
+    // Simulates a fully-filled advanced wizard result
+    let result = WizardResult {
+        client_id: "adv-cid".to_string(),
+        client_secret: Some("adv-secret".to_string()),
+        product_name: "AdvancedApp".to_string(),
+        product_description: "A full-featured app for devs".to_string(),
+        product_url: Some("https://advanced.example.com".to_string()),
+        target_audience: "developers and founders".to_string(),
+        product_keywords: vec!["devtools".to_string(), "productivity".to_string()],
+        industry_topics: vec!["Developer tools".to_string(), "SaaS".to_string()],
+        brand_voice: Some("Friendly expert".to_string()),
+        reply_style: Some("Lead with help".to_string()),
+        content_style: Some("Practical tips".to_string()),
+        persona_opinions: vec!["Rust is great".to_string()],
+        persona_experiences: vec!["Built 3 startups".to_string()],
+        content_pillars: vec!["Dev tools".to_string()],
+        target_accounts: vec!["levelsio".to_string()],
+        approval_mode: false,
+        llm_provider: "anthropic".to_string(),
+        llm_api_key: Some("sk-ant-test".to_string()),
+        llm_model: "claude-sonnet-4-6".to_string(),
+        llm_base_url: None,
+        timezone: "America/New_York".to_string(),
+        active_hours_start: 9,
+        active_hours_end: 21,
+        active_days: vec![
+            "Mon".into(),
+            "Tue".into(),
+            "Wed".into(),
+            "Thu".into(),
+            "Fri".into(),
+        ],
+    };
+
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("advanced TOML should parse");
+
+    assert_eq!(config.business.product_name, "AdvancedApp");
+    assert_eq!(
+        config.business.product_description,
+        "A full-featured app for devs"
+    );
+    assert_eq!(config.business.target_audience, "developers and founders");
+    assert_eq!(
+        config.business.industry_topics,
+        vec!["Developer tools", "SaaS"]
+    );
+    assert_eq!(
+        config.business.brand_voice,
+        Some("Friendly expert".to_string())
+    );
+    assert_eq!(config.targets.accounts, vec!["levelsio"]);
+    assert!(!config.approval_mode);
+    assert_eq!(config.schedule.timezone, "America/New_York");
+    assert_eq!(config.schedule.active_hours_start, 9);
+    assert_eq!(config.schedule.active_hours_end, 21);
+    assert_eq!(config.schedule.active_days.len(), 5);
+
+    assert!(config.validate().is_ok());
+}
+
+// ============================================================================
+// Quickstart → enrichment invariant tests
+// ============================================================================
+
+use tuitbot_core::config::EnrichmentStage;
+
+#[test]
+fn quickstart_config_not_enriched() {
+    let result = quickstart_wizard_result();
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("quickstart TOML should parse");
+
+    let pc = config.profile_completeness();
+    assert!(
+        !pc.is_fully_enriched(),
+        "quickstart config should NOT be fully enriched"
+    );
+}
+
+#[test]
+fn quickstart_config_all_enrichment_stages_incomplete() {
+    let result = quickstart_wizard_result();
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("quickstart TOML should parse");
+
+    let pc = config.profile_completeness();
+    assert_eq!(
+        pc.completed_count(),
+        0,
+        "quickstart config should have 0 completed enrichment stages"
+    );
+}
+
+#[test]
+fn quickstart_config_next_incomplete_is_voice() {
+    let result = quickstart_wizard_result();
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("quickstart TOML should parse");
+
+    let pc = config.profile_completeness();
+    assert_eq!(
+        pc.next_incomplete(),
+        Some(EnrichmentStage::Voice),
+        "first incomplete stage should be Voice"
+    );
+}
+
+#[test]
+fn quickstart_config_one_line_summary_all_dashes() {
+    let result = quickstart_wizard_result();
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("quickstart TOML should parse");
+
+    let pc = config.profile_completeness();
+    assert_eq!(pc.one_line_summary(), "Voice --  Persona --  Targeting --");
+}
+
+#[test]
+fn advanced_config_voice_shows_partial_enrichment() {
+    let result = WizardResult {
+        brand_voice: Some("Friendly technical expert".to_string()),
+        ..quickstart_wizard_result()
+    };
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("advanced TOML should parse");
+
+    let pc = config.profile_completeness();
+    assert_eq!(pc.completed_count(), 1);
+    assert_eq!(pc.one_line_summary(), "Voice OK  Persona --  Targeting --");
+}
+
+#[test]
+fn advanced_config_fully_enriched() {
+    let result = WizardResult {
+        brand_voice: Some("Friendly".to_string()),
+        reply_style: Some("Helpful".to_string()),
+        content_style: Some("Practical".to_string()),
+        persona_opinions: vec!["Rust is great".to_string()],
+        persona_experiences: vec!["Built startups".to_string()],
+        content_pillars: vec!["Dev tools".to_string()],
+        target_accounts: vec!["levelsio".to_string()],
+        ..quickstart_wizard_result()
+    };
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("fully enriched TOML should parse");
+
+    let pc = config.profile_completeness();
+    assert!(pc.is_fully_enriched());
+    assert_eq!(pc.completed_count(), 3);
+    assert!(pc.next_incomplete().is_none());
+}

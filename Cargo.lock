@@ -3156,6 +3156,7 @@ dependencies = [
  "dirs",
  "flate2",
  "fs2",
+ "libc",
  "open",
  "reqwest 0.12.28",
  "semver",

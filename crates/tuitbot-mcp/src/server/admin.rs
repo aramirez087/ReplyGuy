@@ -1,7 +1,7 @@
-//! MCP server definition with tool routing.
+//! Admin-profile MCP server (all tools including universal requests).
 //!
-//! Implements `ServerHandler` for the Tuitbot MCP server, registering all
-//! tools and dispatching calls to the appropriate tool modules.
+//! Superset of the write profile. Adds `x_get`, `x_post`, `x_put`, `x_delete`
+//! for arbitrary X API endpoint access. Only available when explicitly configured.
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -14,15 +14,15 @@ use crate::tools;
 use crate::tools::response::{ToolMeta, ToolResponse};
 use crate::tools::workflow;
 
-/// Tuitbot MCP server.
+/// Admin-profile MCP server (all tools including universal requests).
 #[derive(Clone)]
-pub struct TuitbotMcpServer {
+pub struct AdminMcpServer {
     state: SharedState,
     tool_router: ToolRouter<Self>,
 }
 
-impl TuitbotMcpServer {
-    /// Create a new MCP server with the given shared state.
+impl AdminMcpServer {
+    /// Create a new admin-profile MCP server with the given shared state.
     pub fn new(state: SharedState) -> Self {
         Self {
             state,
@@ -32,7 +32,7 @@ impl TuitbotMcpServer {
 }
 
 #[tool_router]
-impl TuitbotMcpServer {
+impl AdminMcpServer {
     // --- Analytics ---
 
     /// Get analytics dashboard: follower trend, top topics, engagement rates, and content measurement stats.
@@ -88,6 +88,40 @@ impl TuitbotMcpServer {
         let hours = req.since_hours.unwrap_or(24);
         let result =
             workflow::actions::get_action_counts(&self.state.pool, hours, &self.state.config).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    // --- Mutation Audit ---
+
+    /// Get recent mutation audit entries. Shows what writes the agent has performed, with status and timing.
+    #[tool]
+    async fn get_recent_mutations(
+        &self,
+        Parameters(req): Parameters<GetRecentMutationsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = workflow::mutation_audit::get_recent_mutations(
+            &self.state.pool,
+            req.limit.unwrap_or(20),
+            req.tool_name.as_deref(),
+            req.status.as_deref(),
+            &self.state.config,
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Get full detail of a single mutation by correlation ID, including rollback guidance.
+    #[tool]
+    async fn get_mutation_detail(
+        &self,
+        Parameters(req): Parameters<GetMutationDetailRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = workflow::mutation_audit::get_mutation_detail(
+            &self.state.pool,
+            &req.correlation_id,
+            &self.state.config,
+        )
+        .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -260,7 +294,7 @@ impl TuitbotMcpServer {
             self.state
                 .config
                 .business
-                .industry_topics
+                .effective_industry_topics()
                 .first()
                 .cloned()
                 .unwrap_or_else(|| "general industry trends".to_string())
@@ -290,7 +324,7 @@ impl TuitbotMcpServer {
             self.state
                 .config
                 .business
-                .industry_topics
+                .effective_industry_topics()
                 .first()
                 .cloned()
                 .unwrap_or_else(|| "general industry trends".to_string())
@@ -307,8 +341,9 @@ impl TuitbotMcpServer {
 
     // --- Capabilities ---
 
-    /// Get current capabilities, tier info, rate-limit remaining, and safe recommended max actions.
-    /// Use this before taking actions to know what's available and how many actions are safe.
+    /// Get current capabilities, tier info, scope analysis, endpoint group availability,
+    /// rate-limit remaining, and actionable guidance. Use this before taking actions to know
+    /// what's available, which scopes are missing, and how many actions are safe.
     #[tool]
     async fn get_capabilities(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let llm_available = self.state.llm_provider.is_some();
@@ -319,6 +354,7 @@ impl TuitbotMcpServer {
             llm_available,
             x_available,
             self.state.authenticated_user_id.as_deref(),
+            &self.state.granted_scopes,
         )
         .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
@@ -686,13 +722,49 @@ impl TuitbotMcpServer {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    /// Upload a media file (image/gif/video) for attaching to tweets. Returns a media_id.
+    /// Upload a media file (image/gif/video) for attaching to tweets. Returns a media_id with upload metadata. Set dry_run=true to validate without uploading.
     #[tool]
     async fn x_upload_media(
         &self,
         Parameters(req): Parameters<UploadMediaMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = workflow::x_actions::upload_media(&self.state, &req.file_path).await;
+        let result = workflow::x_actions::upload_media(
+            &self.state,
+            &req.file_path,
+            req.alt_text.as_deref(),
+            req.dry_run,
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Validate a tweet without posting. Checks length, media IDs, and policy. Returns what would be posted.
+    #[tool]
+    async fn x_post_tweet_dry_run(
+        &self,
+        Parameters(req): Parameters<PostTweetDryRunRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = workflow::x_actions::post_tweet_dry_run(
+            &self.state,
+            &req.text,
+            req.media_ids.as_deref(),
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Validate a thread without posting. Checks all lengths, media per tweet, policy, and reply chain plan. Returns deterministic validation result.
+    #[tool]
+    async fn x_post_thread_dry_run(
+        &self,
+        Parameters(req): Parameters<PostThreadDryRunRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = workflow::x_actions::post_thread_dry_run(
+            &self.state,
+            &req.tweets,
+            req.media_ids.as_deref(),
+        )
+        .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -992,16 +1064,108 @@ impl TuitbotMcpServer {
         .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    // --- Universal X API Request Tools ---
+
+    /// Send a GET request to any authorized X API endpoint. Supports auto-pagination with next_token. Host is restricted to api.x.com, upload.x.com, upload.twitter.com.
+    #[tool]
+    async fn x_get(
+        &self,
+        Parameters(req): Parameters<XGetRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = kv_to_tuples(req.query.as_deref());
+        let headers = kv_to_tuples(req.headers.as_deref());
+        let result = workflow::x_actions::x_request::x_get(
+            &self.state,
+            &req.path,
+            req.host.as_deref(),
+            query.as_deref(),
+            headers.as_deref(),
+            req.auto_paginate,
+            req.max_pages,
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Send a POST request to any authorized X API endpoint. Host is restricted to api.x.com, upload.x.com, upload.twitter.com. MUTATION — admin-only, host-constrained.
+    #[tool]
+    async fn x_post(
+        &self,
+        Parameters(req): Parameters<XPostRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = kv_to_tuples(req.query.as_deref());
+        let headers = kv_to_tuples(req.headers.as_deref());
+        let result = workflow::x_actions::x_request::x_post(
+            &self.state,
+            &req.path,
+            req.host.as_deref(),
+            query.as_deref(),
+            req.body.as_deref(),
+            headers.as_deref(),
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Send a PUT request to any authorized X API endpoint. Host is restricted to api.x.com, upload.x.com, upload.twitter.com. MUTATION — admin-only, host-constrained.
+    #[tool]
+    async fn x_put(
+        &self,
+        Parameters(req): Parameters<XPutRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = kv_to_tuples(req.query.as_deref());
+        let headers = kv_to_tuples(req.headers.as_deref());
+        let result = workflow::x_actions::x_request::x_put(
+            &self.state,
+            &req.path,
+            req.host.as_deref(),
+            query.as_deref(),
+            req.body.as_deref(),
+            headers.as_deref(),
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Send a DELETE request to any authorized X API endpoint. Host is restricted to api.x.com, upload.x.com, upload.twitter.com. MUTATION — admin-only, host-constrained.
+    #[tool]
+    async fn x_delete(
+        &self,
+        Parameters(req): Parameters<XDeleteRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = kv_to_tuples(req.query.as_deref());
+        let headers = kv_to_tuples(req.headers.as_deref());
+        let result = workflow::x_actions::x_request::x_delete(
+            &self.state,
+            &req.path,
+            req.host.as_deref(),
+            query.as_deref(),
+            headers.as_deref(),
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+}
+
+/// Convert `Option<&[KeyValue]>` to `Option<Vec<(String, String)>>`.
+fn kv_to_tuples(kv: Option<&[crate::requests::KeyValue]>) -> Option<Vec<(String, String)>> {
+    kv.map(|pairs| {
+        pairs
+            .iter()
+            .map(|kv| (kv.key.clone(), kv.value.clone()))
+            .collect()
+    })
 }
 
 #[tool_handler(router = self.tool_router)]
-impl ServerHandler for TuitbotMcpServer {
+impl ServerHandler for AdminMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "Tuitbot MCP Server — autonomous X growth assistant. \
-                 Provides tools for analytics, content generation, approval queue management, \
-                 tweet scoring, and configuration."
+                "Tuitbot Admin MCP Server — full X growth assistant with universal request tools. \
+                 Includes all write-profile tools plus x_get/x_post/x_put/x_delete for \
+                 arbitrary X API endpoint access."
                     .into(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),

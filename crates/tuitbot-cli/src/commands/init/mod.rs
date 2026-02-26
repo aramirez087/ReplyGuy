@@ -26,11 +26,14 @@ use dialoguer::Confirm;
 use tuitbot_core::config::Config;
 use tuitbot_core::startup::data_dir;
 
-use display::{print_remaining_steps, print_summary, print_welcome_banner};
+use display::{
+    print_quickstart_banner, print_quickstart_next_steps, print_quickstart_summary,
+    print_remaining_steps, print_summary, print_welcome_banner,
+};
 use render::render_config_toml;
 use steps::{
     step_approval_mode, step_brand_voice, step_business_profile, step_llm_provider, step_persona,
-    step_schedule, step_target_accounts, step_x_api,
+    step_quickstart, step_schedule, step_target_accounts, step_x_api,
 };
 
 use super::{auth, run, test};
@@ -44,7 +47,7 @@ pub(crate) use prompts::{
 const EXAMPLE_CONFIG: &str = include_str!("../../../config.example.toml");
 
 /// Run the init command.
-pub async fn execute(force: bool, non_interactive: bool) -> Result<()> {
+pub async fn execute(force: bool, non_interactive: bool, advanced: bool) -> Result<()> {
     let dir = data_dir();
     let config_path: PathBuf = dir.join("config.toml");
 
@@ -69,7 +72,11 @@ pub async fn execute(force: bool, non_interactive: bool) -> Result<()> {
         );
     }
 
-    run_wizard(&dir, &config_path).await
+    if advanced {
+        run_advanced_wizard(&dir, &config_path).await
+    } else {
+        run_quickstart(&dir, &config_path)
+    }
 }
 
 /// Non-interactive path: copy the embedded template.
@@ -90,9 +97,37 @@ fn write_template(dir: &PathBuf, config_path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Interactive wizard: collect credentials, write config, then offer to
-/// continue through auth → test → run inline.
-async fn run_wizard(dir: &PathBuf, config_path: &PathBuf) -> Result<()> {
+/// Quickstart path: 5 prompts → usable config, no chaining.
+fn run_quickstart(dir: &PathBuf, config_path: &PathBuf) -> Result<()> {
+    print_quickstart_banner();
+
+    let result = step_quickstart()?;
+
+    print_quickstart_summary(&result);
+
+    let confirm = Confirm::new()
+        .with_prompt("Save configuration?")
+        .default(true)
+        .interact()?;
+
+    if !confirm {
+        eprintln!("Aborted. No files were written.");
+        return Ok(());
+    }
+
+    fs::create_dir_all(dir)?;
+    let toml = render_config_toml(&result);
+    fs::write(config_path, &toml)
+        .with_context(|| format!("Failed to write {}", config_path.display()))?;
+
+    eprintln!("\nWrote {}", config_path.display());
+    print_quickstart_next_steps();
+
+    Ok(())
+}
+
+/// Advanced wizard: full 8-step setup with auth → test → run chaining.
+async fn run_advanced_wizard(dir: &PathBuf, config_path: &PathBuf) -> Result<()> {
     print_welcome_banner();
 
     let result = step_x_api()?;

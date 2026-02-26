@@ -1,10 +1,12 @@
 //! Implementation of the `tuitbot mcp` command.
 //!
 //! Starts the MCP server on stdio transport for AI agent integration.
-//! Supports three runtime profiles: `full` (default), `readonly`, and `api-readonly`.
+//! Supports four runtime profiles: `write` (default), `readonly`, `api-readonly`, and `admin`.
 
 use tuitbot_core::config::Config;
 use tuitbot_mcp::Profile;
+
+use crate::output::write_stdout;
 
 /// Execute the `tuitbot mcp serve` subcommand.
 pub async fn execute(config: &Config, profile_str: &str) -> anyhow::Result<()> {
@@ -22,6 +24,5 @@ pub fn print_manifest(profile_str: &str) -> anyhow::Result<()> {
     let manifest = tuitbot_mcp::generate_profile_manifest(profile);
     let json = serde_json::to_string_pretty(&manifest)
         .map_err(|e| anyhow::anyhow!("Failed to serialize manifest: {e}"))?;
-    println!("{json}");
-    Ok(())
+    write_stdout(&json)
 }

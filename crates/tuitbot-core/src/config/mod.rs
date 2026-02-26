@@ -154,12 +154,31 @@ pub struct AuthConfig {
 }
 
 /// Business profile for content targeting and keyword matching.
+///
+/// Fields are grouped into two tiers:
+///
+/// **Quickstart fields** (required for a working config):
+/// - `product_name`, `product_keywords`
+///
+/// **Optional context** (improve targeting but have sane defaults):
+/// - `product_description`, `product_url`, `target_audience`,
+///   `competitor_keywords`, `industry_topics`
+///
+/// **Enrichment fields** (shape voice/persona — unlocked via progressive setup):
+/// - `brand_voice`, `reply_style`, `content_style`,
+///   `persona_opinions`, `persona_experiences`, `content_pillars`
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct BusinessProfile {
+    // -- Quickstart fields --
     /// Name of the user's product.
     #[serde(default)]
     pub product_name: String,
 
+    /// Keywords for tweet discovery.
+    #[serde(default)]
+    pub product_keywords: Vec<String>,
+
+    // -- Optional context --
     /// One-line description of the product.
     #[serde(default)]
     pub product_description: String,
@@ -172,18 +191,16 @@ pub struct BusinessProfile {
     #[serde(default)]
     pub target_audience: String,
 
-    /// Keywords for tweet discovery.
-    #[serde(default)]
-    pub product_keywords: Vec<String>,
-
     /// Competitor-related keywords for discovery.
     #[serde(default)]
     pub competitor_keywords: Vec<String>,
 
-    /// Topics for content generation.
+    /// Topics for content generation. Defaults to `product_keywords` when empty
+    /// (see [`Self::effective_industry_topics`]).
     #[serde(default)]
     pub industry_topics: Vec<String>,
 
+    // -- Enrichment fields --
     /// Brand voice / personality description for all generated content.
     #[serde(default)]
     pub brand_voice: Option<String>,
@@ -207,6 +224,164 @@ pub struct BusinessProfile {
     /// Core content pillars (broad themes the account focuses on).
     #[serde(default)]
     pub content_pillars: Vec<String>,
+}
+
+impl BusinessProfile {
+    /// Create a quickstart profile with only the required fields.
+    ///
+    /// Copies `product_keywords` into `industry_topics` so content loops
+    /// have topics to work with even without explicit configuration.
+    pub fn quickstart(product_name: String, product_keywords: Vec<String>) -> Self {
+        Self {
+            product_name,
+            industry_topics: product_keywords.clone(),
+            product_keywords,
+            ..Default::default()
+        }
+    }
+
+    /// Returns the effective industry topics for content generation.
+    ///
+    /// If `industry_topics` is non-empty, returns it directly.
+    /// Otherwise falls back to `product_keywords`, so quickstart users
+    /// never need to configure topics separately.
+    pub fn effective_industry_topics(&self) -> &[String] {
+        if self.industry_topics.is_empty() {
+            &self.product_keywords
+        } else {
+            &self.industry_topics
+        }
+    }
+
+    /// Returns `true` if any enrichment field has been set.
+    ///
+    /// Enrichment fields are: `brand_voice`, `reply_style`, `content_style`,
+    /// `persona_opinions`, `persona_experiences`, `content_pillars`.
+    /// Used by progressive enrichment to decide whether to show setup hints.
+    pub fn is_enriched(&self) -> bool {
+        self.brand_voice.as_ref().is_some_and(|v| !v.is_empty())
+            || self.reply_style.as_ref().is_some_and(|v| !v.is_empty())
+            || self.content_style.as_ref().is_some_and(|v| !v.is_empty())
+            || !self.persona_opinions.is_empty()
+            || !self.persona_experiences.is_empty()
+            || !self.content_pillars.is_empty()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Progressive enrichment stages
+// ---------------------------------------------------------------------------
+
+/// An enrichment stage that groups related configuration fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnrichmentStage {
+    /// Brand voice, reply style, content style — shapes every LLM output.
+    Voice,
+    /// Opinions, experiences, content pillars — makes content authentic.
+    Persona,
+    /// Target accounts, competitor keywords — focuses discovery.
+    Targeting,
+}
+
+impl EnrichmentStage {
+    /// Human-readable label for display.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Voice => "Voice",
+            Self::Persona => "Persona",
+            Self::Targeting => "Targeting",
+        }
+    }
+
+    /// Short description of what this stage unlocks.
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::Voice => "shapes every LLM-generated reply and tweet",
+            Self::Persona => "makes content authentic with opinions and experiences",
+            Self::Targeting => "focuses discovery on specific accounts and competitors",
+        }
+    }
+
+    /// All stages in recommended order.
+    pub fn all() -> &'static [EnrichmentStage] {
+        &[Self::Voice, Self::Persona, Self::Targeting]
+    }
+}
+
+impl std::fmt::Display for EnrichmentStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label())
+    }
+}
+
+/// Snapshot of profile completeness across all enrichment stages.
+pub struct ProfileCompleteness {
+    /// Each stage paired with its completion status.
+    pub stages: Vec<(EnrichmentStage, bool)>,
+}
+
+impl ProfileCompleteness {
+    /// Number of completed stages.
+    pub fn completed_count(&self) -> usize {
+        self.stages.iter().filter(|(_, done)| *done).count()
+    }
+
+    /// Total number of stages.
+    pub fn total_count(&self) -> usize {
+        self.stages.len()
+    }
+
+    /// Whether all enrichment stages are complete.
+    pub fn is_fully_enriched(&self) -> bool {
+        self.stages.iter().all(|(_, done)| *done)
+    }
+
+    /// The next incomplete stage, if any.
+    pub fn next_incomplete(&self) -> Option<EnrichmentStage> {
+        self.stages
+            .iter()
+            .find(|(_, done)| !*done)
+            .map(|(stage, _)| *stage)
+    }
+
+    /// One-line summary like "Voice OK  Persona --  Targeting OK".
+    pub fn one_line_summary(&self) -> String {
+        self.stages
+            .iter()
+            .map(|(stage, done)| {
+                let status = if *done { "OK" } else { "--" };
+                format!("{} {}", stage.label(), status)
+            })
+            .collect::<Vec<_>>()
+            .join("  ")
+    }
+}
+
+impl Config {
+    /// Compute profile completeness across all enrichment stages.
+    pub fn profile_completeness(&self) -> ProfileCompleteness {
+        let opt_non_empty =
+            |opt: &Option<String>| opt.as_ref().is_some_and(|v| !v.trim().is_empty());
+
+        let voice = opt_non_empty(&self.business.brand_voice)
+            || opt_non_empty(&self.business.reply_style)
+            || opt_non_empty(&self.business.content_style);
+
+        let persona = !self.business.persona_opinions.is_empty()
+            || !self.business.persona_experiences.is_empty()
+            || !self.business.content_pillars.is_empty();
+
+        let targeting =
+            !self.targets.accounts.is_empty() || !self.business.competitor_keywords.is_empty();
+
+        ProfileCompleteness {
+            stages: vec![
+                (EnrichmentStage::Voice, voice),
+                (EnrichmentStage::Persona, persona),
+                (EnrichmentStage::Targeting, targeting),
+            ],
+        }
+    }
 }
 
 /// Scoring engine weights and threshold.
@@ -1260,6 +1435,131 @@ fn parse_env_bool(var_name: &str, val: &str) -> Result<bool, ConfigError> {
 }
 
 #[cfg(test)]
+mod enrichment_tests {
+    use super::*;
+
+    fn empty_config() -> Config {
+        Config::default()
+    }
+
+    #[test]
+    fn all_empty_has_zero_completeness() {
+        let config = empty_config();
+        let pc = config.profile_completeness();
+        assert_eq!(pc.completed_count(), 0);
+        assert_eq!(pc.total_count(), 3);
+        assert!(!pc.is_fully_enriched());
+    }
+
+    #[test]
+    fn voice_stage_complete_when_brand_voice_set() {
+        let mut config = empty_config();
+        config.business.brand_voice = Some("witty and concise".to_string());
+        let pc = config.profile_completeness();
+        assert_eq!(pc.completed_count(), 1);
+        assert!(pc.stages[0].1); // Voice = true
+    }
+
+    #[test]
+    fn voice_stage_complete_when_reply_style_set() {
+        let mut config = empty_config();
+        config.business.reply_style = Some("helpful".to_string());
+        let pc = config.profile_completeness();
+        assert!(pc.stages[0].1);
+    }
+
+    #[test]
+    fn voice_stage_complete_when_content_style_set() {
+        let mut config = empty_config();
+        config.business.content_style = Some("educational".to_string());
+        let pc = config.profile_completeness();
+        assert!(pc.stages[0].1);
+    }
+
+    #[test]
+    fn persona_stage_complete_when_opinions_set() {
+        let mut config = empty_config();
+        config.business.persona_opinions = vec!["types are good".to_string()];
+        let pc = config.profile_completeness();
+        assert!(pc.stages[1].1); // Persona = true
+    }
+
+    #[test]
+    fn targeting_stage_complete_when_accounts_set() {
+        let mut config = empty_config();
+        config.targets.accounts = vec!["elonmusk".to_string()];
+        let pc = config.profile_completeness();
+        assert!(pc.stages[2].1); // Targeting = true
+    }
+
+    #[test]
+    fn targeting_stage_complete_when_competitor_keywords_set() {
+        let mut config = empty_config();
+        config.business.competitor_keywords = vec!["rival_tool".to_string()];
+        let pc = config.profile_completeness();
+        assert!(pc.stages[2].1);
+    }
+
+    #[test]
+    fn empty_string_voice_not_counted() {
+        let mut config = empty_config();
+        config.business.brand_voice = Some("".to_string());
+        let pc = config.profile_completeness();
+        assert!(!pc.stages[0].1);
+    }
+
+    #[test]
+    fn whitespace_only_voice_not_counted() {
+        let mut config = empty_config();
+        config.business.brand_voice = Some("   ".to_string());
+        let pc = config.profile_completeness();
+        assert!(!pc.stages[0].1);
+    }
+
+    #[test]
+    fn fully_enriched_config() {
+        let mut config = empty_config();
+        config.business.brand_voice = Some("witty".to_string());
+        config.business.persona_opinions = vec!["opinion".to_string()];
+        config.targets.accounts = vec!["target".to_string()];
+        let pc = config.profile_completeness();
+        assert_eq!(pc.completed_count(), 3);
+        assert!(pc.is_fully_enriched());
+        assert!(pc.next_incomplete().is_none());
+    }
+
+    #[test]
+    fn next_incomplete_returns_first_missing() {
+        let mut config = empty_config();
+        config.business.brand_voice = Some("witty".to_string());
+        // Persona is missing, targeting is missing
+        let pc = config.profile_completeness();
+        assert_eq!(pc.next_incomplete(), Some(EnrichmentStage::Persona));
+    }
+
+    #[test]
+    fn one_line_summary_format() {
+        let mut config = empty_config();
+        config.business.brand_voice = Some("witty".to_string());
+        config.targets.accounts = vec!["target".to_string()];
+        let pc = config.profile_completeness();
+        assert_eq!(pc.one_line_summary(), "Voice OK  Persona --  Targeting OK");
+    }
+
+    #[test]
+    fn enrichment_stage_all_returns_three() {
+        assert_eq!(EnrichmentStage::all().len(), 3);
+    }
+
+    #[test]
+    fn enrichment_stage_display() {
+        assert_eq!(format!("{}", EnrichmentStage::Voice), "Voice");
+        assert_eq!(format!("{}", EnrichmentStage::Persona), "Persona");
+        assert_eq!(format!("{}", EnrichmentStage::Targeting), "Targeting");
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::env;
@@ -1656,5 +1956,58 @@ thread_preferred_time = "10:00"
         assert!(!config.approval_mode);
         env::remove_var("OPENCLAW_AGENT_ID");
         env::remove_var("TUITBOT_APPROVAL_MODE");
+    }
+
+    // --- BusinessProfile quickstart/enrichment tests ---
+
+    #[test]
+    fn quickstart_minimal_config_validates() {
+        let mut config = Config::default();
+        config.business = BusinessProfile::quickstart(
+            "MyApp".to_string(),
+            vec!["rust cli".to_string(), "developer tools".to_string()],
+        );
+        config.llm.provider = "ollama".to_string();
+        config.x_api.client_id = "test-client-id".to_string();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn quickstart_industry_topics_derived_from_keywords() {
+        let profile = BusinessProfile {
+            product_keywords: vec!["rust".to_string(), "cli".to_string()],
+            industry_topics: vec![],
+            ..Default::default()
+        };
+        assert_eq!(
+            profile.effective_industry_topics(),
+            &["rust".to_string(), "cli".to_string()]
+        );
+    }
+
+    #[test]
+    fn explicit_industry_topics_override_derived() {
+        let profile = BusinessProfile {
+            product_keywords: vec!["rust".to_string()],
+            industry_topics: vec!["Rust development".to_string()],
+            ..Default::default()
+        };
+        assert_eq!(
+            profile.effective_industry_topics(),
+            &["Rust development".to_string()]
+        );
+    }
+
+    #[test]
+    fn is_enriched_false_for_quickstart() {
+        let profile = BusinessProfile::quickstart("App".to_string(), vec!["test".to_string()]);
+        assert!(!profile.is_enriched());
+    }
+
+    #[test]
+    fn is_enriched_true_with_brand_voice() {
+        let mut profile = BusinessProfile::quickstart("App".to_string(), vec!["test".to_string()]);
+        profile.brand_voice = Some("Friendly and casual".to_string());
+        assert!(profile.is_enriched());
     }
 }

@@ -2,11 +2,13 @@
 //!
 //! Split into submodules by concern: read, write, engage, media, validate.
 
+pub(crate) mod audit;
 mod engage;
 mod media;
 mod read;
 mod validate;
 mod write;
+pub mod x_request;
 
 #[cfg(test)]
 mod tests;
@@ -30,7 +32,10 @@ pub use read::{
     get_tweet_by_id, get_tweet_liking_users, get_user_by_id, get_user_by_username,
     get_user_mentions, get_user_tweets, get_users_by_ids, get_x_usage, search_tweets,
 };
-pub use write::{delete_tweet, post_thread, post_tweet, quote_tweet, reply_to_tweet};
+pub use write::{
+    delete_tweet, post_thread, post_thread_dry_run, post_tweet, post_tweet_dry_run, quote_tweet,
+    reply_to_tweet,
+};
 
 /// Return an error response when the X client is not configured.
 fn not_configured_response(start: Instant) -> String {
@@ -41,6 +46,7 @@ fn not_configured_response(start: Instant) -> String {
 }
 
 /// Helper: build an error response from an XApiError via the ProviderError path.
+#[allow(dead_code)]
 fn error_response(e: &XApiError, start: Instant) -> String {
     provider_error_to_response(&map_x_error(e), start)
 }

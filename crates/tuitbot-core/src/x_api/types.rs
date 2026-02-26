@@ -234,6 +234,20 @@ pub struct RateLimitInfo {
     pub reset_at: Option<u64>,
 }
 
+/// Raw HTTP response from the X API, returned by [`XApiClient::raw_request`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawApiResponse {
+    /// HTTP status code.
+    pub status: u16,
+    /// Selected response headers (rate limit headers, content-type).
+    pub headers: std::collections::HashMap<String, String>,
+    /// Response body as a string.
+    pub body: String,
+    /// Parsed rate limit information from response headers.
+    #[serde(skip)]
+    pub rate_limit: Option<RateLimitInfo>,
+}
+
 /// X API error response body.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct XApiErrorResponse {

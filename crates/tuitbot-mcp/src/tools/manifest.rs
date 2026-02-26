@@ -35,10 +35,23 @@ pub struct ToolEntry {
     pub requires_llm: bool,
     /// Whether the tool requires database access.
     pub requires_db: bool,
+    /// OAuth scopes required by this tool (empty for non-X tools).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires_scopes: Vec<String>,
+    /// Whether the tool requires OAuth user-context authentication.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub requires_user_auth: bool,
+    /// Whether the tool requires elevated (admin) access.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub requires_elevated_access: bool,
     /// Which profiles include this tool.
     pub profiles: Vec<Profile>,
     /// Error codes this tool may return.
     pub possible_error_codes: Vec<ErrorCode>,
+}
+
+fn is_false(v: &bool) -> bool {
+    !v
 }
 
 /// Functional category for grouping tools.
@@ -61,15 +74,18 @@ pub enum ToolCategory {
     Context,
     Composite,
     Meta,
+    List,
+    Moderation,
 }
 
 /// MCP server profile.
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum Profile {
-    Workflow,
     Readonly,
     ApiReadonly,
+    Write,
+    Admin,
 }
 
 /// Module lane: whether a tool lives in the shared `tools/` root or
@@ -84,9 +100,12 @@ pub enum Lane {
 }
 
 /// Build the complete tool manifest from the source-of-truth lookup table.
+///
+/// Merges curated Layer 1 tools with generated Layer 2 tools from the spec pack.
+/// Output is sorted alphabetically by tool name for determinism.
 pub fn generate_manifest() -> ToolManifest {
     ToolManifest {
-        version: "1.0",
+        version: crate::spec::MCP_SCHEMA_VERSION,
         tools: all_tools(),
     }
 }
@@ -96,18 +115,25 @@ pub fn generate_manifest() -> ToolManifest {
 impl From<crate::state::Profile> for Profile {
     fn from(p: crate::state::Profile) -> Self {
         match p {
-            crate::state::Profile::Full => Self::Workflow,
             crate::state::Profile::Readonly => Self::Readonly,
             crate::state::Profile::ApiReadonly => Self::ApiReadonly,
+            crate::state::Profile::Write => Self::Write,
+            crate::state::Profile::Admin => Self::Admin,
         }
     }
 }
 
 /// Profile-specific manifest with version metadata and filtered tool list.
+///
+/// Contains a version triplet:
+/// - `tuitbot_mcp_version`: crate version from `CARGO_PKG_VERSION`
+/// - `mcp_schema_version`: manifest format version
+/// - `x_api_spec_version`: spec pack version for generated tools
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ProfileManifest {
-    pub tuitbot_version: String,
+    pub tuitbot_mcp_version: String,
     pub mcp_schema_version: String,
+    pub x_api_spec_version: String,
     pub profile: String,
     pub tool_count: usize,
     pub tools: Vec<ToolEntry>,
@@ -115,19 +141,23 @@ pub struct ProfileManifest {
 
 /// Generate a profile-specific manifest with version metadata.
 ///
-/// Filters `all_tools()` to the requested profile, sorts alphabetically
-/// by tool name for deterministic output, and populates version fields.
+/// Merges curated + generated tools, filters to the requested profile,
+/// sorts alphabetically by tool name for deterministic output, and
+/// populates the version triplet.
 pub fn generate_profile_manifest(profile: crate::state::Profile) -> ProfileManifest {
+    let manifest = generate_manifest();
     let manifest_profile = Profile::from(profile);
-    let mut tools: Vec<ToolEntry> = all_tools()
+    let mut tools: Vec<ToolEntry> = manifest
+        .tools
         .into_iter()
         .filter(|t| t.profiles.contains(&manifest_profile))
         .collect();
     tools.sort_by(|a, b| a.name.cmp(&b.name));
 
     ProfileManifest {
-        tuitbot_version: env!("CARGO_PKG_VERSION").to_string(),
-        mcp_schema_version: "1.0".to_string(),
+        tuitbot_mcp_version: env!("CARGO_PKG_VERSION").to_string(),
+        mcp_schema_version: crate::spec::MCP_SCHEMA_VERSION.to_string(),
+        x_api_spec_version: crate::spec::X_API_SPEC_VERSION.to_string(),
         profile: profile.to_string(),
         tool_count: tools.len(),
         tools,
@@ -157,17 +187,57 @@ fn tool(
         requires_x_client,
         requires_llm,
         requires_db,
+        requires_scopes: vec![],
+        requires_user_auth: false,
+        requires_elevated_access: false,
         profiles: profiles.to_vec(),
         possible_error_codes: error_codes.to_vec(),
     }
 }
 
-/// All three profiles.
-const ALL_THREE: &[Profile] = &[Profile::Workflow, Profile::Readonly, Profile::ApiReadonly];
-/// Workflow + api-readonly (not minimal readonly).
-const WF_AND_API_RO: &[Profile] = &[Profile::Workflow, Profile::ApiReadonly];
-/// Workflow only.
-const WF: &[Profile] = &[Profile::Workflow];
+/// Shorthand for X API tools that need scope and auth metadata.
+#[allow(clippy::too_many_arguments)]
+fn x_tool(
+    name: &str,
+    category: ToolCategory,
+    lane: Lane,
+    mutation: bool,
+    requires_db: bool,
+    scopes: &[&str],
+    requires_user_auth: bool,
+    requires_elevated_access: bool,
+    profiles: &[Profile],
+    error_codes: &[ErrorCode],
+) -> ToolEntry {
+    ToolEntry {
+        name: name.to_owned(),
+        category,
+        lane,
+        mutation,
+        requires_x_client: true,
+        requires_llm: false,
+        requires_db,
+        requires_scopes: scopes.iter().map(|s| (*s).to_string()).collect(),
+        requires_user_auth,
+        requires_elevated_access,
+        profiles: profiles.to_vec(),
+        possible_error_codes: error_codes.to_vec(),
+    }
+}
+
+/// All four profiles.
+const ALL_FOUR: &[Profile] = &[
+    Profile::Readonly,
+    Profile::ApiReadonly,
+    Profile::Write,
+    Profile::Admin,
+];
+/// Write + Admin + ApiReadonly (not minimal readonly).
+const WRITE_UP_AND_API_RO: &[Profile] = &[Profile::ApiReadonly, Profile::Write, Profile::Admin];
+/// Write + Admin (standard operating profiles).
+const WRITE_UP: &[Profile] = &[Profile::Write, Profile::Admin];
+/// Admin only — universal request tools for ad-hoc X API v2 access.
+const ADMIN_ONLY: &[Profile] = &[Profile::Admin];
 /// Api-readonly only.
 const API_RO: &[Profile] = &[Profile::ApiReadonly];
 
@@ -225,13 +295,33 @@ const X_ENGAGE_ERR: &[ErrorCode] = &[
     ErrorCode::PolicyError,
 ];
 
+/// Universal X API request errors.
+const X_REQUEST_ERR: &[ErrorCode] = &[
+    ErrorCode::XNotConfigured,
+    ErrorCode::XRateLimited,
+    ErrorCode::XAuthExpired,
+    ErrorCode::XForbidden,
+    ErrorCode::XNetworkError,
+    ErrorCode::XApiError,
+    ErrorCode::XRequestBlocked,
+];
+
 /// Database-only errors.
 const DB_ERR: &[ErrorCode] = &[ErrorCode::DbError];
 
 /// LLM errors.
 const LLM_ERR: &[ErrorCode] = &[ErrorCode::LlmNotConfigured, ErrorCode::LlmError];
 
-fn all_tools() -> Vec<ToolEntry> {
+/// All tools (curated + generated), sorted by name.
+pub fn all_tools() -> Vec<ToolEntry> {
+    let mut tools = all_curated_tools();
+    tools.extend(crate::spec::generate_spec_tools());
+    tools.sort_by(|a, b| a.name.cmp(&b.name));
+    tools
+}
+
+/// Hand-crafted curated tools (Layer 1).
+fn all_curated_tools() -> Vec<ToolEntry> {
     vec![
         // ── Analytics ────────────────────────────────────────────────
         tool(
@@ -242,7 +332,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         tool(
@@ -253,7 +343,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         // ── Action Log ───────────────────────────────────────────────
@@ -265,7 +355,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         tool(
@@ -276,7 +366,30 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
+            DB_ERR,
+        ),
+        // ── Mutation Audit ──────────────────────────────────────────
+        tool(
+            "get_recent_mutations",
+            ToolCategory::Analytics,
+            Lane::Workflow,
+            false,
+            false,
+            false,
+            true,
+            WRITE_UP,
+            DB_ERR,
+        ),
+        tool(
+            "get_mutation_detail",
+            ToolCategory::Analytics,
+            Lane::Workflow,
+            false,
+            false,
+            false,
+            true,
+            WRITE_UP,
             DB_ERR,
         ),
         // ── Rate Limits ──────────────────────────────────────────────
@@ -288,7 +401,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         // ── Replies ──────────────────────────────────────────────────
@@ -300,7 +413,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         tool(
@@ -311,7 +424,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         // ── Target Accounts ──────────────────────────────────────────
@@ -323,7 +436,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         // ── Discovery ────────────────────────────────────────────────
@@ -335,7 +448,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         // ── Scoring (pure function on &Config — no DB needed) ────────
@@ -347,7 +460,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             false,
-            ALL_THREE,
+            ALL_FOUR,
             &[ErrorCode::InvalidInput],
         ),
         // ── Approval Queue ───────────────────────────────────────────
@@ -359,7 +472,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         tool(
@@ -370,7 +483,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         tool(
@@ -381,7 +494,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             true,
-            WF,
+            WRITE_UP,
             &[
                 ErrorCode::DbError,
                 ErrorCode::NotFound,
@@ -397,7 +510,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             &[ErrorCode::DbError, ErrorCode::NotFound],
         ),
         tool(
@@ -408,7 +521,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             true,
-            WF,
+            WRITE_UP,
             &[
                 ErrorCode::DbError,
                 ErrorCode::XNotConfigured,
@@ -424,7 +537,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             true,
             true,
-            WF,
+            WRITE_UP,
             LLM_ERR,
         ),
         tool(
@@ -435,7 +548,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             true,
             true,
-            WF,
+            WRITE_UP,
             LLM_ERR,
         ),
         tool(
@@ -446,7 +559,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             true,
             true,
-            WF,
+            WRITE_UP,
             LLM_ERR,
         ),
         // ── Config ───────────────────────────────────────────────────
@@ -458,7 +571,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             false,
-            ALL_THREE,
+            ALL_FOUR,
             &[],
         ),
         tool(
@@ -469,7 +582,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             false,
-            WF_AND_API_RO,
+            WRITE_UP_AND_API_RO,
             &[],
         ),
         // ── Capabilities & Health ────────────────────────────────────
@@ -481,7 +594,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             false,
-            WF_AND_API_RO,
+            WRITE_UP_AND_API_RO,
             &[],
         ),
         tool(
@@ -492,7 +605,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             false,
-            ALL_THREE,
+            ALL_FOUR,
             &[],
         ),
         // ── Mode & Policy ────────────────────────────────────────────
@@ -504,7 +617,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             false,
-            WF_AND_API_RO,
+            WRITE_UP_AND_API_RO,
             &[],
         ),
         tool(
@@ -515,7 +628,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         tool(
@@ -526,7 +639,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             true,
-            WF,
+            WRITE_UP,
             &[
                 ErrorCode::XNotConfigured,
                 ErrorCode::XApiError,
@@ -549,7 +662,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         tool(
@@ -560,152 +673,165 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         // ── X API Core Read (in all 3 profiles) ─────────────────────
-        tool(
+        x_tool(
             "get_tweet_by_id",
             ToolCategory::Read,
             Lane::Shared,
             false,
+            false,
+            &["tweet.read", "users.read"],
             true,
             false,
-            false,
-            ALL_THREE,
+            ALL_FOUR,
             X_READ_ERR,
         ),
-        tool(
+        x_tool(
             "x_get_user_by_username",
             ToolCategory::Read,
             Lane::Shared,
             false,
+            false,
+            &["users.read"],
             true,
             false,
-            false,
-            ALL_THREE,
+            ALL_FOUR,
             X_READ_ERR,
         ),
-        tool(
+        x_tool(
             "x_search_tweets",
             ToolCategory::Read,
             Lane::Shared,
             false,
+            false,
+            &["tweet.read", "users.read"],
             true,
             false,
-            false,
-            ALL_THREE,
+            ALL_FOUR,
             X_READ_ERR,
         ),
-        tool(
+        x_tool(
             "x_get_user_mentions",
             ToolCategory::Read,
             Lane::Shared,
             false,
+            false,
+            &["tweet.read", "users.read"],
             true,
             false,
-            false,
-            ALL_THREE,
+            ALL_FOUR,
             X_READ_USER_ERR,
         ),
-        tool(
+        x_tool(
             "x_get_user_tweets",
             ToolCategory::Read,
             Lane::Shared,
             false,
+            false,
+            &["tweet.read", "users.read"],
             true,
             false,
-            false,
-            ALL_THREE,
+            ALL_FOUR,
             X_READ_ERR,
         ),
-        tool(
+        x_tool(
             "x_get_home_timeline",
             ToolCategory::Read,
             Lane::Shared,
             false,
+            false,
+            &["tweet.read", "users.read"],
             true,
             false,
-            false,
-            ALL_THREE,
+            ALL_FOUR,
             X_READ_USER_ERR,
         ),
-        tool(
+        x_tool(
             "x_get_user_by_id",
             ToolCategory::Read,
             Lane::Shared,
             false,
+            false,
+            &["users.read"],
             true,
             false,
-            false,
-            ALL_THREE,
+            ALL_FOUR,
             X_READ_ERR,
         ),
         // ── X API Extended Read (workflow + api-readonly) ────────────
-        tool(
+        x_tool(
             "x_get_followers",
             ToolCategory::Read,
             Lane::Shared,
             false,
+            false,
+            &["follows.read", "users.read"],
             true,
             false,
-            false,
-            WF_AND_API_RO,
+            WRITE_UP_AND_API_RO,
             X_READ_ERR,
         ),
-        tool(
+        x_tool(
             "x_get_following",
             ToolCategory::Read,
             Lane::Shared,
             false,
+            false,
+            &["follows.read", "users.read"],
             true,
             false,
-            false,
-            WF_AND_API_RO,
+            WRITE_UP_AND_API_RO,
             X_READ_ERR,
         ),
-        tool(
+        x_tool(
             "x_get_liked_tweets",
             ToolCategory::Read,
             Lane::Shared,
             false,
+            false,
+            &["like.read", "users.read"],
             true,
             false,
-            false,
-            WF_AND_API_RO,
+            WRITE_UP_AND_API_RO,
             X_READ_ERR,
         ),
-        tool(
+        x_tool(
             "x_get_bookmarks",
             ToolCategory::Read,
             Lane::Shared,
             false,
+            false,
+            &["bookmark.read", "users.read"],
             true,
             false,
-            false,
-            WF_AND_API_RO,
+            WRITE_UP_AND_API_RO,
             X_READ_USER_ERR,
         ),
-        tool(
+        x_tool(
             "x_get_users_by_ids",
             ToolCategory::Read,
             Lane::Shared,
             false,
+            false,
+            &["users.read"],
             true,
             false,
-            false,
-            WF_AND_API_RO,
+            WRITE_UP_AND_API_RO,
             X_READ_ERR,
         ),
-        tool(
+        x_tool(
             "x_get_tweet_liking_users",
             ToolCategory::Read,
             Lane::Shared,
             false,
+            false,
+            &["tweet.read", "users.read"],
             true,
             false,
-            false,
-            WF_AND_API_RO,
+            WRITE_UP_AND_API_RO,
             X_READ_ERR,
         ),
         tool(
@@ -716,75 +842,81 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         // ── X API Read (api-readonly only) ──────────────────────────
-        tool(
+        x_tool(
             "x_get_me",
             ToolCategory::Read,
             Lane::Shared,
             false,
-            true,
             false,
+            &["users.read"],
+            true,
             false,
             API_RO,
             X_READ_ERR,
         ),
         // ── X API Write (workflow only) ─────────────────────────────
-        tool(
+        x_tool(
             "x_post_tweet",
             ToolCategory::Write,
             Lane::Workflow,
             true,
             true,
-            false,
+            &["tweet.read", "tweet.write", "users.read"],
             true,
-            WF,
+            false,
+            WRITE_UP,
             X_WRITE_ERR,
         ),
-        tool(
+        x_tool(
             "x_reply_to_tweet",
             ToolCategory::Write,
             Lane::Workflow,
             true,
             true,
-            false,
+            &["tweet.read", "tweet.write", "users.read"],
             true,
-            WF,
+            false,
+            WRITE_UP,
             X_WRITE_ERR,
         ),
-        tool(
+        x_tool(
             "x_quote_tweet",
             ToolCategory::Write,
             Lane::Workflow,
             true,
             true,
-            false,
+            &["tweet.read", "tweet.write", "users.read"],
             true,
-            WF,
+            false,
+            WRITE_UP,
             X_WRITE_ERR,
         ),
-        tool(
+        x_tool(
             "x_delete_tweet",
             ToolCategory::Write,
             Lane::Workflow,
             true,
             true,
-            false,
+            &["tweet.read", "tweet.write", "users.read"],
             true,
-            WF,
+            false,
+            WRITE_UP,
             X_WRITE_ERR,
         ),
-        tool(
+        x_tool(
             "x_post_thread",
             ToolCategory::Write,
             Lane::Workflow,
             true,
             true,
-            false,
+            &["tweet.read", "tweet.write", "users.read"],
             true,
-            WF,
+            false,
+            WRITE_UP,
             &[
                 ErrorCode::XNotConfigured,
                 ErrorCode::XRateLimited,
@@ -804,104 +936,113 @@ fn all_tools() -> Vec<ToolEntry> {
             ],
         ),
         // ── X API Engage (workflow only) ─────────────────────────────
-        tool(
+        x_tool(
             "x_like_tweet",
             ToolCategory::Engage,
             Lane::Workflow,
             true,
             true,
-            false,
+            &["like.read", "like.write", "users.read"],
             true,
-            WF,
+            false,
+            WRITE_UP,
             X_ENGAGE_ERR,
         ),
-        tool(
+        x_tool(
             "x_unlike_tweet",
             ToolCategory::Engage,
             Lane::Workflow,
             true,
             true,
-            false,
+            &["like.read", "like.write", "users.read"],
             true,
-            WF,
+            false,
+            WRITE_UP,
             X_ENGAGE_ERR,
         ),
-        tool(
+        x_tool(
             "x_follow_user",
             ToolCategory::Engage,
             Lane::Workflow,
             true,
             true,
-            false,
+            &["follows.read", "follows.write", "users.read"],
             true,
-            WF,
+            false,
+            WRITE_UP,
             X_ENGAGE_ERR,
         ),
-        tool(
+        x_tool(
             "x_unfollow_user",
             ToolCategory::Engage,
             Lane::Workflow,
             true,
             true,
-            false,
+            &["follows.read", "follows.write", "users.read"],
             true,
-            WF,
+            false,
+            WRITE_UP,
             X_ENGAGE_ERR,
         ),
-        tool(
+        x_tool(
             "x_retweet",
             ToolCategory::Engage,
             Lane::Workflow,
             true,
             true,
-            false,
+            &["tweet.read", "tweet.write", "users.read"],
             true,
-            WF,
+            false,
+            WRITE_UP,
             X_ENGAGE_ERR,
         ),
-        tool(
+        x_tool(
             "x_unretweet",
             ToolCategory::Engage,
             Lane::Workflow,
             true,
             true,
-            false,
+            &["tweet.read", "tweet.write", "users.read"],
             true,
-            WF,
+            false,
+            WRITE_UP,
             X_ENGAGE_ERR,
         ),
-        tool(
+        x_tool(
             "x_bookmark_tweet",
             ToolCategory::Engage,
             Lane::Workflow,
             true,
             true,
-            false,
+            &["bookmark.read", "bookmark.write", "users.read"],
             true,
-            WF,
+            false,
+            WRITE_UP,
             X_ENGAGE_ERR,
         ),
-        tool(
+        x_tool(
             "x_unbookmark_tweet",
             ToolCategory::Engage,
             Lane::Workflow,
             true,
             true,
-            false,
+            &["bookmark.read", "bookmark.write", "users.read"],
             true,
-            WF,
+            false,
+            WRITE_UP,
             X_ENGAGE_ERR,
         ),
         // ── X API Media (workflow only) ─────────────────────────────
-        tool(
+        x_tool(
             "x_upload_media",
             ToolCategory::Media,
             Lane::Workflow,
             true,
+            false,
+            &["tweet.write", "users.read"],
             true,
             false,
-            false,
-            WF,
+            WRITE_UP,
             &[
                 ErrorCode::XNotConfigured,
                 ErrorCode::UnsupportedMediaType,
@@ -909,6 +1050,37 @@ fn all_tools() -> Vec<ToolEntry> {
                 ErrorCode::MediaUploadError,
                 ErrorCode::XApiError,
                 ErrorCode::ScraperMutationBlocked,
+            ],
+        ),
+        // ── Dry-run validation tools ──────────────────────────────────
+        tool(
+            "x_post_tweet_dry_run",
+            ToolCategory::Write,
+            Lane::Workflow,
+            false, // dry-run is not a mutation
+            false,
+            false,
+            true,
+            WRITE_UP,
+            &[
+                ErrorCode::TweetTooLong,
+                ErrorCode::InvalidInput,
+                ErrorCode::PolicyError,
+            ],
+        ),
+        tool(
+            "x_post_thread_dry_run",
+            ToolCategory::Write,
+            Lane::Workflow,
+            false,
+            false,
+            false,
+            true,
+            WRITE_UP,
+            &[
+                ErrorCode::TweetTooLong,
+                ErrorCode::InvalidInput,
+                ErrorCode::PolicyError,
             ],
         ),
         // ── Context Intelligence ─────────────────────────────────────
@@ -920,7 +1092,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             true,
-            WF,
+            WRITE_UP,
             &[
                 ErrorCode::XNotConfigured,
                 ErrorCode::ContextError,
@@ -935,7 +1107,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             true,
-            WF,
+            WRITE_UP,
             &[
                 ErrorCode::XNotConfigured,
                 ErrorCode::RecommendationError,
@@ -950,7 +1122,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             &[ErrorCode::TopicError, ErrorCode::DbError],
         ),
         // ── Telemetry ────────────────────────────────────────────────
@@ -962,7 +1134,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         tool(
@@ -973,7 +1145,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             true,
-            WF,
+            WRITE_UP,
             DB_ERR,
         ),
         // ── Composite ────────────────────────────────────────────────
@@ -985,7 +1157,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             true,
-            WF,
+            WRITE_UP,
             &[
                 ErrorCode::XNotConfigured,
                 ErrorCode::InvalidInput,
@@ -1001,7 +1173,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             true,
             true,
-            WF,
+            WRITE_UP,
             &[
                 ErrorCode::InvalidInput,
                 ErrorCode::LlmNotConfigured,
@@ -1017,7 +1189,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             true,
-            WF,
+            WRITE_UP,
             &[
                 ErrorCode::InvalidInput,
                 ErrorCode::XNotConfigured,
@@ -1038,12 +1210,61 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             true,
             false,
-            WF,
+            WRITE_UP,
             &[
                 ErrorCode::LlmNotConfigured,
                 ErrorCode::LlmError,
                 ErrorCode::InvalidInput,
             ],
+        ),
+        // ── Universal X API Request (admin only) ────────────────────
+        x_tool(
+            "x_get",
+            ToolCategory::Read,
+            Lane::Workflow,
+            false,
+            false,
+            &[],
+            true,
+            true,
+            ADMIN_ONLY,
+            X_REQUEST_ERR,
+        ),
+        x_tool(
+            "x_post",
+            ToolCategory::Write,
+            Lane::Workflow,
+            true,
+            false,
+            &[],
+            true,
+            true,
+            ADMIN_ONLY,
+            X_REQUEST_ERR,
+        ),
+        x_tool(
+            "x_put",
+            ToolCategory::Write,
+            Lane::Workflow,
+            true,
+            false,
+            &[],
+            true,
+            true,
+            ADMIN_ONLY,
+            X_REQUEST_ERR,
+        ),
+        x_tool(
+            "x_delete",
+            ToolCategory::Write,
+            Lane::Workflow,
+            true,
+            false,
+            &[],
+            true,
+            true,
+            ADMIN_ONLY,
+            X_REQUEST_ERR,
         ),
     ]
 }
@@ -1056,7 +1277,7 @@ mod tests {
     #[test]
     fn manifest_generates_without_panic() {
         let manifest = generate_manifest();
-        assert_eq!(manifest.version, "1.0");
+        assert_eq!(manifest.version, crate::spec::MCP_SCHEMA_VERSION);
         assert!(!manifest.tools.is_empty());
     }
 
@@ -1133,14 +1354,16 @@ mod tests {
         let json = serde_json::to_string_pretty(&manifest).unwrap();
         let expected_path = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../roadmap/artifacts/session-05-tool-manifest.json"
+            "/../../roadmap/artifacts/session-06-tool-manifest.json"
         );
         let expected = std::fs::read_to_string(expected_path);
         match expected {
             Ok(content) => {
+                // Normalize CRLF/LF so snapshot checks are stable across OSes.
+                let normalize_newlines = |s: &str| s.replace("\r\n", "\n");
                 assert_eq!(
-                    json.trim(),
-                    content.trim(),
+                    normalize_newlines(&json).trim(),
+                    normalize_newlines(&content).trim(),
                     "Tool manifest has drifted from snapshot. \
                      Regenerate with: cargo test -p tuitbot-mcp manifest -- --ignored"
                 );

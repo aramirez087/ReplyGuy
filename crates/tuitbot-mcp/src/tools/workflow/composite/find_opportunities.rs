@@ -95,7 +95,7 @@ pub async fn execute(
         .product_keywords
         .iter()
         .chain(state.config.business.competitor_keywords.iter())
-        .chain(state.config.business.industry_topics.iter())
+        .chain(state.config.business.effective_industry_topics().iter())
         .cloned()
         .collect();
     let engine = ScoringEngine::new(state.config.scoring.clone(), keywords.clone());

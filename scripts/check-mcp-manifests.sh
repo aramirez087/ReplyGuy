@@ -13,7 +13,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 COMMITTED_DIR="$REPO_ROOT/docs/generated"
-PROFILES=(full readonly api-readonly)
+PROFILES=(write admin readonly api-readonly)
 
 TMPDIR_FRESH="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_FRESH"' EXIT
@@ -42,10 +42,10 @@ for profile in "${PROFILES[@]}"; do
     continue
   fi
 
-  # Strip tuitbot_version before comparison — it changes on release bumps
+  # Strip tuitbot_mcp_version before comparison — it changes on release bumps
   # and is not a drift signal.
-  committed_stripped="$(grep -v '^\s*"tuitbot_version"' "$committed")"
-  fresh_stripped="$(grep -v '^\s*"tuitbot_version"' "$fresh")"
+  committed_stripped="$(grep -v '^\s*"tuitbot_mcp_version"' "$committed")"
+  fresh_stripped="$(grep -v '^\s*"tuitbot_mcp_version"' "$fresh")"
 
   if ! diff_output="$(diff -u <(echo "$committed_stripped") <(echo "$fresh_stripped"))"; then
     echo "FAIL: $profile manifest has drifted from source."

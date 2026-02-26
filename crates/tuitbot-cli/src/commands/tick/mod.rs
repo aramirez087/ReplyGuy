@@ -5,6 +5,9 @@
 //! Acquires a process lock to prevent concurrent ticks, respects schedule
 //! gates and rate limits, and outputs a structured JSON summary.
 
+#[cfg(test)]
+mod tests;
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -20,6 +23,7 @@ use tuitbot_core::config::{Config, OperatingMode};
 
 use super::{OutputFormat, TickArgs};
 use crate::deps::RuntimeDeps;
+use crate::output::write_stdout;
 
 // ============================================================================
 // JSON output types
@@ -35,6 +39,8 @@ struct TickOutput {
     duration_ms: u64,
     loops: LoopResults,
     errors: Vec<LoopErrorJson>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enrichment_tip: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -146,6 +152,12 @@ pub async fn execute(
             .map_or(true, |s| s.is_active())
     };
 
+    // Print dry-run banner so the user knows no posts will be made.
+    if args.dry_run && !output_format.is_json() {
+        eprintln!("Dry run: showing what the bot would do. No posts will be made.");
+        eprintln!();
+    }
+
     if !schedule_active {
         let output = TickOutput {
             success: true,
@@ -175,6 +187,7 @@ pub async fn execute(
                 },
             },
             errors: Vec::new(),
+            enrichment_tip: None,
         };
 
         print_output(&output, output_format);
@@ -261,7 +274,10 @@ pub async fn execute(
     // 7. Close DB pool.
     deps.pool.close().await;
 
-    // 8. Output summary.
+    // 8. Compute enrichment tip for text output.
+    let enrichment_tip = compute_enrichment_tip(config);
+
+    // 9. Output summary.
     let output = TickOutput {
         success: errors.is_empty(),
         tier: deps.tier.to_string(),
@@ -278,6 +294,7 @@ pub async fn execute(
             thread: thread_outcome,
         },
         errors,
+        enrichment_tip,
     };
 
     print_output(&output, output_format);
@@ -535,7 +552,8 @@ async fn run_content(
         };
     }
 
-    if config.business.industry_topics.is_empty() {
+    let effective_topics = config.business.effective_industry_topics();
+    if effective_topics.is_empty() {
         return LoopOutcome::Skipped {
             reason: "no industry topics configured".to_string(),
         };
@@ -545,7 +563,7 @@ async fn run_content(
         deps.tweet_gen.clone(),
         deps.content_safety.clone(),
         deps.content_storage.clone(),
-        config.business.industry_topics.clone(),
+        effective_topics.to_vec(),
         config.intervals.content_post_window_seconds,
         deps.target_loop_config.dry_run,
     )
@@ -594,7 +612,8 @@ async fn run_thread(
         };
     }
 
-    if config.business.industry_topics.is_empty() {
+    let effective_topics = config.business.effective_industry_topics();
+    if effective_topics.is_empty() {
         return LoopOutcome::Skipped {
             reason: "no industry topics configured".to_string(),
         };
@@ -605,7 +624,7 @@ async fn run_thread(
         deps.content_safety.clone(),
         deps.content_storage.clone(),
         deps.thread_poster.clone(),
-        config.business.industry_topics.clone(),
+        effective_topics.to_vec(),
         config.intervals.thread_interval_seconds,
         deps.target_loop_config.dry_run,
     );
@@ -670,10 +689,8 @@ async fn run_thread(
 
 fn print_output(output: &TickOutput, format: OutputFormat) {
     if format.is_json() {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(output).expect("serialization cannot fail")
-        );
+        let json = serde_json::to_string_pretty(output).expect("serialization cannot fail");
+        let _ = write_stdout(&json);
     } else {
         print_text_output(output);
     }
@@ -725,4 +742,29 @@ fn print_text_output(output: &TickOutput) {
         "Result: {}",
         if output.success { "success" } else { "failure" }
     );
+
+    if output.dry_run && output.success {
+        eprintln!();
+        if let Some(tip) = &output.enrichment_tip {
+            eprintln!("Tip: {tip}");
+        } else {
+            eprintln!("Tip: Use `tuitbot settings` to fine-tune your configuration");
+        }
+    }
+}
+
+/// Compute a context-aware enrichment tip from profile completeness.
+fn compute_enrichment_tip(config: &Config) -> Option<String> {
+    let completeness = config.profile_completeness();
+    if completeness.is_fully_enriched() {
+        return None;
+    }
+
+    completeness.next_incomplete().map(|stage| {
+        format!(
+            "Run `tuitbot settings enrich` to configure {} \u{2014} {}",
+            stage.label().to_lowercase(),
+            stage.description()
+        )
+    })
 }

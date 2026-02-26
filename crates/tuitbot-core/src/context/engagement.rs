@@ -63,7 +63,7 @@ pub async fn recommend_engagement(
     // --- 1. Keyword relevance (weight: 30) ---
     let mut keywords: Vec<String> = config.business.product_keywords.clone();
     keywords.extend(config.business.competitor_keywords.clone());
-    keywords.extend(config.business.industry_topics.clone());
+    keywords.extend(config.business.effective_industry_topics().to_vec());
     let matched = find_matched_keywords(tweet_text, &keywords);
     let relevance_score = if matched.is_empty() {
         factors.push(ContributingFactor {

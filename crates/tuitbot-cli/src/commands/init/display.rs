@@ -169,3 +169,57 @@ pub(super) fn print_remaining_steps(steps: &[&str]) {
         eprintln!("  {}. {step}", i + 1);
     }
 }
+
+/// Print the quickstart welcome banner (replaces the 8-step banner).
+pub(super) fn print_quickstart_banner() {
+    let bold = Style::new().bold();
+    let dim = Style::new().dim();
+
+    eprintln!();
+    eprintln!("{}", bold.apply_to("Tuitbot Quick Setup"));
+    eprintln!("{}", dim.apply_to("───────────────────"));
+    eprintln!(
+        "{}",
+        dim.apply_to("5 questions to get you running. Use --advanced for full configuration.")
+    );
+    eprintln!();
+}
+
+/// Print the 3-step getting-started guide after quickstart config is written.
+pub(super) fn print_quickstart_next_steps() {
+    let bold = Style::new().bold();
+
+    eprintln!();
+    eprintln!("{}", bold.apply_to("Get started:"));
+    eprintln!("  1. tuitbot auth           \u{2014} connect your X account");
+    eprintln!("  2. tuitbot test           \u{2014} verify everything works");
+    eprintln!("  3. tuitbot tick --dry-run \u{2014} see the bot in action (no posts)");
+}
+
+/// Print a compact summary of quickstart-collected values.
+pub(super) fn print_quickstart_summary(result: &WizardResult) {
+    let bold = Style::new().bold();
+    let dim = Style::new().dim();
+
+    eprintln!();
+    eprintln!("{}", bold.apply_to("Configuration Summary"));
+    eprintln!("{}", dim.apply_to("─────────────────────"));
+    eprintln!("  Product:     {}", result.product_name);
+    eprintln!("  Keywords:    {}", result.product_keywords.join(", "));
+    eprintln!(
+        "  LLM:         {} ({})",
+        result.llm_provider, result.llm_model
+    );
+    eprintln!("  X API:       {} (Client ID set)", result.client_id);
+    eprintln!("  Approval:    on (all posts queued for review)");
+    eprintln!();
+    eprintln!(
+        "  {}",
+        dim.apply_to("Defaults applied: UTC schedule, no brand voice, no persona.")
+    );
+    eprintln!(
+        "  {}",
+        dim.apply_to("Customize later: tuitbot init --advanced  or  tuitbot settings")
+    );
+    eprintln!();
+}

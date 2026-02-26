@@ -4,6 +4,7 @@
 /// initializes logging, and dispatches to subcommand handlers.
 mod commands;
 mod deps;
+pub mod output;
 
 use std::io::IsTerminal;
 
@@ -90,7 +91,26 @@ enum Commands {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
+    // Restore default SIGPIPE handling so piped commands (e.g. `| head`)
+    // terminate this process cleanly instead of triggering a panic.
+    output::reset_sigpipe();
+
+    let result = run().await;
+    match result {
+        Ok(()) => {}
+        Err(e) if output::is_broken_pipe(&e) => {
+            // Consumer closed the pipe — exit silently with success.
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("Error: {e:#}");
+            std::process::exit(1);
+        }
+    }
+}
+
+async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Initialize tracing-subscriber.
@@ -120,7 +140,7 @@ async fn main() -> anyhow::Result<()> {
     // Handle `init`, `update`, `upgrade`, and `settings` before general config
     // loading (they manage their own config lifecycle).
     if let Commands::Init(args) = cli.command {
-        return commands::init::execute(args.force, args.non_interactive).await;
+        return commands::init::execute(args.force, args.non_interactive, args.advanced).await;
     }
     if let Commands::Update(args) = cli.command {
         return commands::update::execute(

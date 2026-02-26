@@ -3,6 +3,8 @@ use console::Style;
 use tuitbot_core::config::Config;
 use tuitbot_core::safety::redact::mask_optional_secret;
 
+use crate::output::write_stdout;
+
 pub(super) fn show_config(config: &Config) {
     let bold = Style::new().bold();
     let dim = Style::new().dim();
@@ -292,7 +294,7 @@ pub(super) fn show_config_json(config: &Config) -> Result<()> {
         .client_secret
         .as_ref()
         .map(|_| "***REDACTED***".to_string());
-    println!("{}", serde_json::to_string(&config)?);
+    write_stdout(&serde_json::to_string(&config)?)?;
     Ok(())
 }
 

@@ -14,8 +14,9 @@ use crate::storage::{self, DbPool};
 use super::types::{
     ActionResultResponse, BookmarkTweetRequest, DeleteTweetResponse, FollowUserRequest,
     LikeTweetRequest, MediaId, MediaPayload, MediaType, MentionResponse, PostTweetRequest,
-    PostTweetResponse, PostedTweet, RateLimitInfo, ReplyTo, RetweetRequest, SearchResponse,
-    SingleTweetResponse, Tweet, User, UserResponse, UsersResponse, XApiErrorResponse,
+    PostTweetResponse, PostedTweet, RateLimitInfo, RawApiResponse, ReplyTo, RetweetRequest,
+    SearchResponse, SingleTweetResponse, Tweet, User, UserResponse, UsersResponse,
+    XApiErrorResponse,
 };
 use super::XApiClient;
 
@@ -858,6 +859,85 @@ impl XApiClient for XApiHttpClient {
             .json::<UsersResponse>()
             .await
             .map_err(|e| XApiError::Network { source: e })
+    }
+
+    async fn raw_request(
+        &self,
+        method: &str,
+        url: &str,
+        query: Option<&[(String, String)]>,
+        body: Option<&str>,
+        headers: Option<&[(String, String)]>,
+    ) -> Result<RawApiResponse, XApiError> {
+        let token = self.access_token.read().await;
+        let req_method = match method.to_ascii_uppercase().as_str() {
+            "GET" => reqwest::Method::GET,
+            "POST" => reqwest::Method::POST,
+            "PUT" => reqwest::Method::PUT,
+            "DELETE" => reqwest::Method::DELETE,
+            other => {
+                return Err(XApiError::ApiError {
+                    status: 0,
+                    message: format!("unsupported HTTP method: {other}"),
+                })
+            }
+        };
+
+        let mut builder = self.client.request(req_method, url).bearer_auth(&*token);
+
+        if let Some(pairs) = query {
+            builder = builder.query(pairs);
+        }
+        if let Some(json_body) = body {
+            builder = builder
+                .header("Content-Type", "application/json")
+                .body(json_body.to_string());
+        }
+        if let Some(extra_headers) = headers {
+            for (k, v) in extra_headers {
+                builder = builder.header(k.as_str(), v.as_str());
+            }
+        }
+
+        let response = builder
+            .send()
+            .await
+            .map_err(|e| XApiError::Network { source: e })?;
+
+        let status = response.status().as_u16();
+        let rate_limit = Self::parse_rate_limit_headers(response.headers());
+
+        // Extract a small set of useful headers.
+        let mut resp_headers = std::collections::HashMap::new();
+        for key in [
+            "content-type",
+            "x-rate-limit-remaining",
+            "x-rate-limit-reset",
+            "x-rate-limit-limit",
+        ] {
+            if let Some(val) = response.headers().get(key) {
+                if let Ok(s) = val.to_str() {
+                    resp_headers.insert(key.to_string(), s.to_string());
+                }
+            }
+        }
+
+        // Extract path for usage tracking (best-effort parse from URL).
+        if let Ok(parsed) = reqwest::Url::parse(url) {
+            self.record_usage(parsed.path(), method, status);
+        }
+
+        let response_body = response
+            .text()
+            .await
+            .map_err(|e| XApiError::Network { source: e })?;
+
+        Ok(RawApiResponse {
+            status,
+            headers: resp_headers,
+            body: response_body,
+            rate_limit: Some(rate_limit),
+        })
     }
 }
 

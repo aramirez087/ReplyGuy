@@ -34,6 +34,24 @@ pub struct SinceHoursRequest {
     pub since_hours: Option<u32>,
 }
 
+// --- Mutation Audit ---
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetRecentMutationsRequest {
+    /// Max entries to return (default: 20, max: 100)
+    pub limit: Option<u32>,
+    /// Filter by tool name (e.g., "post_tweet", "like_tweet")
+    pub tool_name: Option<String>,
+    /// Filter by status: "pending", "success", "failure", "duplicate"
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetMutationDetailRequest {
+    /// The correlation ID of the mutation to look up
+    pub correlation_id: String,
+}
+
 // --- Discovery ---
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -308,6 +326,27 @@ pub struct PostThreadMcpRequest {
 pub struct UploadMediaMcpRequest {
     /// Local file path of the media to upload.
     pub file_path: String,
+    /// Optional alt text for accessibility.
+    pub alt_text: Option<String>,
+    /// If true, validate the file without uploading (default: false).
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct PostTweetDryRunRequest {
+    /// The tweet text content (max 280 characters).
+    pub text: String,
+    /// Optional media IDs to attach (from x_upload_media).
+    pub media_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct PostThreadDryRunRequest {
+    /// Ordered list of tweet texts forming the thread.
+    pub tweets: Vec<String>,
+    /// Optional media IDs per tweet (outer index matches tweet index).
+    pub media_ids: Option<Vec<Vec<String>>>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -412,4 +451,72 @@ pub struct GenerateThreadPlanRequest {
     pub target_audience: Option<String>,
     /// Thread structure override (e.g., "transformation", "framework", "mistakes", "analysis").
     pub structure: Option<String>,
+}
+
+// --- Universal X API Request Tools ---
+
+/// Key-value pair for query parameters and headers.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct KeyValue {
+    /// Parameter key.
+    pub key: String,
+    /// Parameter value.
+    pub value: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct XGetRequest {
+    /// API path (e.g., "/2/tweets/123"). Must start with "/".
+    pub path: String,
+    /// Target host (default: "api.x.com"). Only api.x.com, upload.x.com, upload.twitter.com allowed.
+    pub host: Option<String>,
+    /// Query parameters as key-value pairs.
+    pub query: Option<Vec<KeyValue>>,
+    /// Extra headers as key-value pairs. Authorization/Host/Cookie are blocked.
+    pub headers: Option<Vec<KeyValue>>,
+    /// Auto-paginate by following next_token (default: false). Only for GET.
+    #[serde(default)]
+    pub auto_paginate: bool,
+    /// Maximum pages to fetch when auto_paginate is true (default: 10, max: 10).
+    pub max_pages: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct XPostRequest {
+    /// API path (e.g., "/2/tweets"). Must start with "/".
+    pub path: String,
+    /// Target host (default: "api.x.com"). Only api.x.com, upload.x.com, upload.twitter.com allowed.
+    pub host: Option<String>,
+    /// Query parameters as key-value pairs.
+    pub query: Option<Vec<KeyValue>>,
+    /// JSON request body as a string.
+    pub body: Option<String>,
+    /// Extra headers as key-value pairs. Authorization/Host/Cookie are blocked.
+    pub headers: Option<Vec<KeyValue>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct XPutRequest {
+    /// API path (e.g., "/2/lists/123"). Must start with "/".
+    pub path: String,
+    /// Target host (default: "api.x.com"). Only api.x.com, upload.x.com, upload.twitter.com allowed.
+    pub host: Option<String>,
+    /// Query parameters as key-value pairs.
+    pub query: Option<Vec<KeyValue>>,
+    /// JSON request body as a string.
+    pub body: Option<String>,
+    /// Extra headers as key-value pairs. Authorization/Host/Cookie are blocked.
+    pub headers: Option<Vec<KeyValue>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct XDeleteRequest {
+    /// API path (e.g., "/2/tweets/123"). Must start with "/".
+    pub path: String,
+    /// Target host (default: "api.x.com"). Only api.x.com, upload.x.com, upload.twitter.com allowed.
+    pub host: Option<String>,
+    /// Query parameters as key-value pairs.
+    pub query: Option<Vec<KeyValue>>,
+    /// Extra headers as key-value pairs. Authorization/Host/Cookie are blocked.
+    pub headers: Option<Vec<KeyValue>>,
 }

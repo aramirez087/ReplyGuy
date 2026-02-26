@@ -8,6 +8,7 @@ use tuitbot_core::config::Config;
 use tuitbot_core::storage;
 
 use super::OutputFormat;
+use crate::output::write_stdout;
 
 #[derive(Serialize)]
 struct FollowerSnapshotJson {
@@ -54,7 +55,7 @@ pub async fn execute(config: &Config, output: OutputFormat) -> anyhow::Result<()
         let result = collect_stats_json(&pool).await;
         pool.close().await;
         let stats = result?;
-        println!("{}", serde_json::to_string(&stats)?);
+        write_stdout(&serde_json::to_string(&stats)?)?;
         return Ok(());
     }
 

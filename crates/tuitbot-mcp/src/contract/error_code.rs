@@ -88,6 +88,10 @@ pub enum ErrorCode {
     #[serde(rename = "not_found")]
     NotFound,
 
+    // ── Universal Request ──────────────────────────────────────────
+    #[serde(rename = "x_request_blocked")]
+    XRequestBlocked,
+
     // ── Internal ────────────────────────────────────────────────────
     #[serde(rename = "serialization_error")]
     SerializationError,
@@ -123,6 +127,7 @@ impl ErrorCode {
         Self::RecommendationError,
         Self::TopicError,
         Self::NotFound,
+        Self::XRequestBlocked,
         Self::SerializationError,
     ];
 
@@ -177,6 +182,7 @@ impl ErrorCode {
             Self::RecommendationError => "recommendation_error",
             Self::TopicError => "topic_error",
             Self::NotFound => "not_found",
+            Self::XRequestBlocked => "x_request_blocked",
             Self::SerializationError => "serialization_error",
         }
     }
@@ -194,7 +200,7 @@ mod tests {
 
     #[test]
     fn all_constant_has_correct_count() {
-        assert_eq!(ErrorCode::ALL.len(), 28);
+        assert_eq!(ErrorCode::ALL.len(), 29);
     }
 
     #[test]
