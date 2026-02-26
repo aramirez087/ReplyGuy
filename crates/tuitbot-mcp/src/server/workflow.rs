@@ -224,7 +224,7 @@ impl TuitbotMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         if self.state.llm_provider.is_none() {
             return Ok(CallToolResult::success(vec![Content::text(
-                ToolResponse::not_configured("llm").to_json(),
+                ToolResponse::llm_not_configured().to_json(),
             )]));
         }
         let mention = req.mention_product.unwrap_or(false);
@@ -248,7 +248,7 @@ impl TuitbotMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         if self.state.llm_provider.is_none() {
             return Ok(CallToolResult::success(vec![Content::text(
-                ToolResponse::not_configured("llm").to_json(),
+                ToolResponse::llm_not_configured().to_json(),
             )]));
         }
         let topic = req.topic.unwrap_or_else(|| {
@@ -278,7 +278,7 @@ impl TuitbotMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         if self.state.llm_provider.is_none() {
             return Ok(CallToolResult::success(vec![Content::text(
-                ToolResponse::not_configured("llm").to_json(),
+                ToolResponse::llm_not_configured().to_json(),
             )]));
         }
         let topic = req.topic.unwrap_or_else(|| {
@@ -353,7 +353,7 @@ impl TuitbotMcpServer {
         let mode = self.state.config.mode.to_string();
         let approval = self.state.config.effective_approval_mode();
         let elapsed = start.elapsed().as_millis() as u64;
-        let meta = ToolMeta::new(elapsed).with_mode(&mode, approval);
+        let meta = ToolMeta::new(elapsed).with_workflow(&mode, approval);
         let result = ToolResponse::success(serde_json::json!({
             "mode": mode,
             "approval_mode": approval,
@@ -409,7 +409,7 @@ impl TuitbotMcpServer {
                     .await;
                     let elapsed = start.elapsed().as_millis() as u64;
                     let meta = ToolMeta::new(elapsed)
-                        .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                        .with_workflow(config.mode.to_string(), config.effective_approval_mode());
                     ToolResponse::success(serde_json::json!({
                         "scheduled_item_id": id,
                         "content_type": content_type,
@@ -421,7 +421,7 @@ impl TuitbotMcpServer {
                 Err(e) => {
                     let elapsed = start.elapsed().as_millis() as u64;
                     let meta = ToolMeta::new(elapsed)
-                        .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                        .with_workflow(config.mode.to_string(), config.effective_approval_mode());
                     ToolResponse::db_error(format!("Error scheduling content: {e}"))
                         .with_meta(meta)
                         .to_json()
@@ -445,7 +445,7 @@ impl TuitbotMcpServer {
                     .await;
                     let elapsed = start.elapsed().as_millis() as u64;
                     let meta = ToolMeta::new(elapsed)
-                        .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                        .with_workflow(config.mode.to_string(), config.effective_approval_mode());
                     ToolResponse::success(serde_json::json!({
                         "draft_id": id,
                         "content_type": content_type,
@@ -456,7 +456,7 @@ impl TuitbotMcpServer {
                 Err(e) => {
                     let elapsed = start.elapsed().as_millis() as u64;
                     let meta = ToolMeta::new(elapsed)
-                        .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                        .with_workflow(config.mode.to_string(), config.effective_approval_mode());
                     ToolResponse::db_error(format!("Error creating draft: {e}"))
                         .with_meta(meta)
                         .to_json()
@@ -934,7 +934,7 @@ impl TuitbotMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         if self.state.llm_provider.is_none() {
             return Ok(CallToolResult::success(vec![Content::text(
-                ToolResponse::not_configured("llm").to_json(),
+                ToolResponse::llm_not_configured().to_json(),
             )]));
         }
         let mention = req.mention_product.unwrap_or(false);
@@ -968,7 +968,7 @@ impl TuitbotMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         if self.state.llm_provider.is_none() {
             return Ok(CallToolResult::success(vec![Content::text(
-                ToolResponse::not_configured("llm").to_json(),
+                ToolResponse::llm_not_configured().to_json(),
             )]));
         }
         let result = tools::composite::thread_plan::execute(

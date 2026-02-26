@@ -10,7 +10,7 @@ use tuitbot_core::LlmError;
 
 use crate::state::AppState;
 
-use super::response::{ToolMeta, ToolResponse};
+use super::response::{ErrorCode, ToolMeta, ToolResponse};
 
 /// A thin LlmProvider that delegates to the provider inside shared AppState.
 ///
@@ -72,7 +72,7 @@ pub async fn generate_reply(
         Ok(output) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(serde_json::json!({
                 "reply": output.text,
                 "char_count": output.text.len(),
@@ -83,8 +83,8 @@ pub async fn generate_reply(
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
-            ToolResponse::error("llm_error", format!("Error generating reply: {e}"), true)
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::error(ErrorCode::LlmError, format!("Error generating reply: {e}"))
                 .with_meta(meta)
                 .to_json()
         }
@@ -108,7 +108,7 @@ pub async fn generate_tweet(
         Ok(output) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(serde_json::json!({
                 "tweet": output.text,
                 "char_count": output.text.len(),
@@ -119,8 +119,8 @@ pub async fn generate_tweet(
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
-            ToolResponse::error("llm_error", format!("Error generating tweet: {e}"), true)
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::error(ErrorCode::LlmError, format!("Error generating tweet: {e}"))
                 .with_meta(meta)
                 .to_json()
         }
@@ -144,7 +144,7 @@ pub async fn generate_thread(
         Ok(output) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(serde_json::json!({
                 "thread": output.tweets,
                 "tweet_count": output.tweets.len(),
@@ -155,8 +155,8 @@ pub async fn generate_thread(
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
-            ToolResponse::error("llm_error", format!("Error generating thread: {e}"), true)
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
+            ToolResponse::error(ErrorCode::LlmError, format!("Error generating thread: {e}"))
                 .with_meta(meta)
                 .to_json()
         }

@@ -12,7 +12,7 @@ use crate::requests::ProposeItem;
 use crate::state::SharedState;
 use crate::tools::content::ArcProvider;
 use crate::tools::policy_gate::{self, GateResult};
-use crate::tools::response::{ToolMeta, ToolResponse};
+use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
 
 use super::ProposeResult;
 
@@ -22,7 +22,7 @@ pub async fn execute(state: &SharedState, items: &[ProposeItem], mention_product
 
     if items.is_empty() {
         let elapsed = start.elapsed().as_millis() as u64;
-        return ToolResponse::error("invalid_input", "items must not be empty.", false)
+        return ToolResponse::error(ErrorCode::InvalidInput, "items must not be empty.")
             .with_meta(ToolMeta::new(elapsed))
             .to_json();
     }
@@ -203,7 +203,7 @@ pub async fn execute(state: &SharedState, items: &[ProposeItem], mention_product
     )
     .await;
     ToolResponse::success(&results)
-        .with_meta(ToolMeta::new(elapsed).with_mode(
+        .with_meta(ToolMeta::new(elapsed).with_workflow(
             state.config.mode.to_string(),
             state.config.effective_approval_mode(),
         ))

@@ -11,7 +11,7 @@ use tuitbot_core::storage::rate_limits;
 
 use crate::state::SharedState;
 
-use super::response::{ToolMeta, ToolResponse};
+use super::response::{ErrorCode, ToolMeta, ToolResponse};
 
 /// Result of a policy gate check.
 pub enum GateResult {
@@ -44,9 +44,8 @@ pub async fn check_policy(
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let json = ToolResponse::error(
-                "policy_error",
+                ErrorCode::PolicyError,
                 format!("Policy evaluation failed: {e}"),
-                true,
             )
             .with_meta(ToolMeta::new(elapsed))
             .to_json();
@@ -108,9 +107,8 @@ pub async fn check_policy(
                 .with_meta(ToolMeta::new(elapsed))
                 .to_json(),
                 Err(e) => ToolResponse::error(
-                    "policy_error",
+                    ErrorCode::PolicyError,
                     format!("Failed to enqueue for approval: {e}"),
-                    true,
                 )
                 .with_meta(ToolMeta::new(elapsed))
                 .to_json(),
@@ -121,10 +119,10 @@ pub async fn check_policy(
         PolicyDecision::Deny { reason, rule_id } => {
             let elapsed = start.elapsed().as_millis() as u64;
             let code = match &reason {
-                PolicyDenialReason::ToolBlocked => "policy_denied_blocked",
-                PolicyDenialReason::RateLimited => "policy_denied_rate_limited",
-                PolicyDenialReason::HardRule => "policy_denied_hard_rule",
-                PolicyDenialReason::UserRule => "policy_denied_user_rule",
+                PolicyDenialReason::ToolBlocked => ErrorCode::PolicyDeniedBlocked,
+                PolicyDenialReason::RateLimited => ErrorCode::PolicyDeniedRateLimited,
+                PolicyDenialReason::HardRule => ErrorCode::PolicyDeniedHardRule,
+                PolicyDenialReason::UserRule => ErrorCode::PolicyDeniedUserRule,
             };
             super::telemetry::record(
                 &state.pool,
@@ -132,11 +130,11 @@ pub async fn check_policy(
                 "mutation",
                 elapsed,
                 false,
-                Some(code),
+                Some(code.as_str()),
                 Some("deny"),
             )
             .await;
-            let mut resp = ToolResponse::error(code, format!("Policy denied: {reason}"), false)
+            let mut resp = ToolResponse::error(code, format!("Policy denied: {reason}"))
                 .with_policy_decision("denied")
                 .with_meta(ToolMeta::new(elapsed));
 

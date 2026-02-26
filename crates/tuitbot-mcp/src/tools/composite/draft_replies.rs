@@ -10,7 +10,7 @@ use tuitbot_core::storage;
 
 use crate::state::SharedState;
 use crate::tools::content::ArcProvider;
-use crate::tools::response::{ToolMeta, ToolResponse};
+use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
 
 use super::DraftResult;
 
@@ -37,7 +37,7 @@ pub async fn execute(
 
     if candidate_ids.is_empty() {
         let elapsed = start.elapsed().as_millis() as u64;
-        return ToolResponse::error("invalid_input", "candidate_ids must not be empty.", false)
+        return ToolResponse::error(ErrorCode::InvalidInput, "candidate_ids must not be empty.")
             .with_meta(ToolMeta::new(elapsed))
             .to_json();
     }
@@ -146,7 +146,7 @@ pub async fn execute(
     )
     .await;
     ToolResponse::success(&results)
-        .with_meta(ToolMeta::new(elapsed).with_mode(
+        .with_meta(ToolMeta::new(elapsed).with_workflow(
             state.config.mode.to_string(),
             state.config.effective_approval_mode(),
         ))

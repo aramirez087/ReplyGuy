@@ -47,13 +47,13 @@ pub async fn get_recent_replies(pool: &DbPool, since_hours: u32, config: &Config
                 .collect();
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(out).with_meta(meta).to_json()
         }
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::db_error(format!("Error fetching replies: {e}"))
                 .with_meta(meta)
                 .to_json()
@@ -69,7 +69,7 @@ pub async fn get_reply_count_today(pool: &DbPool, config: &Config) -> String {
         Ok(count) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(serde_json::json!({ "replies_today": count }))
                 .with_meta(meta)
                 .to_json()
@@ -77,7 +77,7 @@ pub async fn get_reply_count_today(pool: &DbPool, config: &Config) -> String {
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::db_error(format!("Error counting replies today: {e}"))
                 .with_meta(meta)
                 .to_json()

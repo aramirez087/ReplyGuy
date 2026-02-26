@@ -8,6 +8,7 @@ use std::fmt;
 use std::time::Instant;
 
 use super::envelope::{ToolMeta, ToolResponse};
+use super::error_code::ErrorCode;
 
 /// Provider-agnostic error returned by [`SocialReadProvider`](crate::provider::SocialReadProvider).
 ///
@@ -51,49 +52,49 @@ impl fmt::Display for ProviderError {
 impl std::error::Error for ProviderError {}
 
 impl ProviderError {
-    /// Map this error to an `(error_code, message, retryable)` triple.
-    fn to_triple(&self) -> (&'static str, String, bool) {
+    /// Map this error to its typed [`ErrorCode`].
+    pub fn error_code(&self) -> ErrorCode {
         match self {
-            Self::RateLimited { retry_after } => (
-                "x_rate_limited",
-                format!(
-                    "X API rate limited{}",
-                    match retry_after {
-                        Some(s) => format!(", retry after {s}s"),
-                        None => String::new(),
-                    }
-                ),
-                true,
+            Self::RateLimited { .. } => ErrorCode::XRateLimited,
+            Self::AuthExpired => ErrorCode::XAuthExpired,
+            Self::Forbidden { .. } => ErrorCode::XForbidden,
+            Self::AccountRestricted { .. } => ErrorCode::XAccountRestricted,
+            Self::Network { .. } => ErrorCode::XNetworkError,
+            Self::NotConfigured { .. } => ErrorCode::XNotConfigured,
+            Self::Other { .. } => ErrorCode::XApiError,
+        }
+    }
+
+    /// Build the human-readable error message.
+    fn error_message(&self) -> String {
+        match self {
+            Self::RateLimited { retry_after } => format!(
+                "X API rate limited{}",
+                match retry_after {
+                    Some(s) => format!(", retry after {s}s"),
+                    None => String::new(),
+                }
             ),
-            Self::AuthExpired => (
-                "x_auth_expired",
-                "X API authentication expired. Run `tuitbot auth` to re-authenticate.".to_string(),
-                false,
-            ),
-            Self::Forbidden { message } => {
-                ("x_forbidden", format!("X API forbidden: {message}"), false)
+            Self::AuthExpired => {
+                "X API authentication expired. Run `tuitbot auth` to re-authenticate.".to_string()
             }
-            Self::AccountRestricted { message } => (
-                "x_account_restricted",
-                format!("X API account restricted: {message}"),
-                false,
-            ),
-            Self::Network { message } => (
-                "x_network_error",
-                format!("X API network error: {message}"),
-                true,
-            ),
-            Self::NotConfigured { message } => ("x_not_configured", message.clone(), false),
-            Self::Other { message } => ("x_api_error", message.clone(), false),
+            Self::Forbidden { message } => format!("X API forbidden: {message}"),
+            Self::AccountRestricted { message } => {
+                format!("X API account restricted: {message}")
+            }
+            Self::Network { message } => format!("X API network error: {message}"),
+            Self::NotConfigured { message } => message.clone(),
+            Self::Other { message } => message.clone(),
         }
     }
 }
 
 /// Convert a [`ProviderError`] into a [`ToolResponse`] JSON string with elapsed metadata.
 pub fn provider_error_to_response(e: &ProviderError, start: Instant) -> String {
-    let (code, message, retryable) = e.to_triple();
+    let code = e.error_code();
+    let message = e.error_message();
     let elapsed = start.elapsed().as_millis() as u64;
-    ToolResponse::error(code, message, retryable)
+    ToolResponse::error(code, message)
         .with_meta(ToolMeta::new(elapsed))
         .to_json()
 }
@@ -107,18 +108,16 @@ mod tests {
         let err = ProviderError::RateLimited {
             retry_after: Some(30),
         };
-        let (code, msg, retryable) = err.to_triple();
-        assert_eq!(code, "x_rate_limited");
-        assert!(msg.contains("30s"));
-        assert!(retryable);
+        assert_eq!(err.error_code(), ErrorCode::XRateLimited);
+        assert!(err.error_code().is_retryable());
+        assert!(err.error_message().contains("30s"));
     }
 
     #[test]
     fn auth_expired_maps_correctly() {
         let err = ProviderError::AuthExpired;
-        let (code, _, retryable) = err.to_triple();
-        assert_eq!(code, "x_auth_expired");
-        assert!(!retryable);
+        assert_eq!(err.error_code(), ErrorCode::XAuthExpired);
+        assert!(!err.error_code().is_retryable());
     }
 
     #[test]
@@ -126,9 +125,8 @@ mod tests {
         let err = ProviderError::NotConfigured {
             message: "X API client not available.".to_string(),
         };
-        let (code, _, retryable) = err.to_triple();
-        assert_eq!(code, "x_not_configured");
-        assert!(!retryable);
+        assert_eq!(err.error_code(), ErrorCode::XNotConfigured);
+        assert!(!err.error_code().is_retryable());
     }
 
     #[test]
@@ -141,5 +139,35 @@ mod tests {
         assert_eq!(parsed["success"], false);
         assert_eq!(parsed["error"]["code"], "x_forbidden");
         assert!(parsed["meta"]["elapsed_ms"].is_number());
+    }
+
+    #[test]
+    fn all_variants_have_error_codes() {
+        let errors = [
+            ProviderError::RateLimited {
+                retry_after: Some(10),
+            },
+            ProviderError::AuthExpired,
+            ProviderError::Forbidden {
+                message: "f".into(),
+            },
+            ProviderError::AccountRestricted {
+                message: "a".into(),
+            },
+            ProviderError::Network {
+                message: "n".into(),
+            },
+            ProviderError::NotConfigured {
+                message: "nc".into(),
+            },
+            ProviderError::Other {
+                message: "o".into(),
+            },
+        ];
+        for err in &errors {
+            let code = err.error_code();
+            let msg = err.error_message();
+            assert!(!msg.is_empty(), "empty message for {code:?}");
+        }
     }
 }

@@ -8,7 +8,7 @@ use tuitbot_core::x_api::types::{ImageFormat, MediaType};
 
 use crate::state::SharedState;
 
-use super::super::response::{ToolMeta, ToolResponse};
+use super::super::response::{ErrorCode, ToolMeta, ToolResponse};
 use super::not_configured_response;
 
 /// Upload a media file for attachment to tweets.
@@ -25,12 +25,11 @@ pub async fn upload_media(state: &SharedState, file_path: &str) -> String {
         None => {
             let elapsed = start.elapsed().as_millis() as u64;
             return ToolResponse::error(
-                "unsupported_media_type",
+                ErrorCode::UnsupportedMediaType,
                 format!(
                     "Unsupported file extension for: {file_path}. \
                      Supported: jpg, jpeg, png, webp, gif, mp4"
                 ),
-                false,
             )
             .with_meta(ToolMeta::new(elapsed))
             .to_json();
@@ -43,9 +42,8 @@ pub async fn upload_media(state: &SharedState, file_path: &str) -> String {
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             return ToolResponse::error(
-                "file_read_error",
+                ErrorCode::FileReadError,
                 format!("Failed to read file {file_path}: {e}"),
-                false,
             )
             .with_meta(ToolMeta::new(elapsed))
             .to_json();
@@ -74,9 +72,8 @@ pub async fn upload_media(state: &SharedState, file_path: &str) -> String {
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             ToolResponse::error(
-                "media_upload_error",
+                ErrorCode::MediaUploadError,
                 format!("Media upload failed: {e}"),
-                false,
             )
             .with_meta(ToolMeta::new(elapsed))
             .to_json()

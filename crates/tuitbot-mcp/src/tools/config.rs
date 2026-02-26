@@ -24,8 +24,8 @@ pub fn get_config(config: &Config) -> String {
     redacted.llm.api_key = redacted.llm.api_key.as_ref().map(|s| mask_secret(s));
 
     let elapsed = start.elapsed().as_millis() as u64;
-    let meta =
-        ToolMeta::new(elapsed).with_mode(config.mode.to_string(), config.effective_approval_mode());
+    let meta = ToolMeta::new(elapsed)
+        .with_workflow(config.mode.to_string(), config.effective_approval_mode());
     ToolResponse::success(redacted).with_meta(meta).to_json()
 }
 
@@ -48,7 +48,7 @@ pub fn validate_config(config: &Config) -> String {
     };
 
     let elapsed = start.elapsed().as_millis() as u64;
-    let meta =
-        ToolMeta::new(elapsed).with_mode(config.mode.to_string(), config.effective_approval_mode());
+    let meta = ToolMeta::new(elapsed)
+        .with_workflow(config.mode.to_string(), config.effective_approval_mode());
     ToolResponse::success(result).with_meta(meta).to_json()
 }

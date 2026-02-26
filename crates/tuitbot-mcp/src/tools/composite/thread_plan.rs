@@ -8,7 +8,7 @@ use tuitbot_core::content::ContentGenerator;
 
 use crate::state::SharedState;
 use crate::tools::content::ArcProvider;
-use crate::tools::response::{ToolMeta, ToolResponse};
+use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
 
 /// Parse a structure string into a `ThreadStructure`.
 fn parse_structure(s: &str) -> Option<ThreadStructure> {
@@ -52,9 +52,8 @@ pub async fn execute(
     if state.llm_provider.is_none() {
         let elapsed = start.elapsed().as_millis() as u64;
         return ToolResponse::error(
-            "llm_not_configured",
+            ErrorCode::LlmNotConfigured,
             "No LLM provider configured. Set up the [llm] section in config.toml.",
-            false,
         )
         .with_meta(ToolMeta::new(elapsed))
         .to_json();
@@ -75,9 +74,8 @@ pub async fn execute(
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             return ToolResponse::error(
-                "llm_error",
+                ErrorCode::LlmError,
                 format!("Thread generation failed: {e}"),
-                true,
             )
             .with_meta(ToolMeta::new(elapsed))
             .to_json();
@@ -125,7 +123,7 @@ pub async fn execute(
         "target_audience": target_audience.unwrap_or("general"),
         "topic_relevance": if relevance { "matches_industry_topics" } else { "novel_topic" },
     }))
-    .with_meta(ToolMeta::new(elapsed).with_mode(
+    .with_meta(ToolMeta::new(elapsed).with_workflow(
         state.config.mode.to_string(),
         state.config.effective_approval_mode(),
     ))

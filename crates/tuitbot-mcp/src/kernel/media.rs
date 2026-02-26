@@ -7,6 +7,7 @@ use std::time::Instant;
 use serde::Serialize;
 
 use crate::contract::envelope::{ToolMeta, ToolResponse};
+use crate::contract::error_code::ErrorCode;
 use tuitbot_core::x_api::types::{ImageFormat, MediaType};
 use tuitbot_core::x_api::XApiClient;
 
@@ -19,12 +20,11 @@ pub async fn upload_media(client: &dyn XApiClient, file_path: &str) -> String {
         None => {
             let elapsed = start.elapsed().as_millis() as u64;
             return ToolResponse::error(
-                "unsupported_media_type",
+                ErrorCode::UnsupportedMediaType,
                 format!(
                     "Unsupported file extension for: {file_path}. \
                      Supported: jpg, jpeg, png, webp, gif, mp4"
                 ),
-                false,
             )
             .with_meta(ToolMeta::new(elapsed))
             .to_json();
@@ -36,9 +36,8 @@ pub async fn upload_media(client: &dyn XApiClient, file_path: &str) -> String {
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             return ToolResponse::error(
-                "file_read_error",
+                ErrorCode::FileReadError,
                 format!("Failed to read file {file_path}: {e}"),
-                false,
             )
             .with_meta(ToolMeta::new(elapsed))
             .to_json();
@@ -67,9 +66,8 @@ pub async fn upload_media(client: &dyn XApiClient, file_path: &str) -> String {
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             ToolResponse::error(
-                "media_upload_error",
+                ErrorCode::MediaUploadError,
                 format!("Media upload failed: {e}"),
-                false,
             )
             .with_meta(ToolMeta::new(elapsed))
             .to_json()

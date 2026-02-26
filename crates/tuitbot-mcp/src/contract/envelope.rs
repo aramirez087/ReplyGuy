@@ -7,6 +7,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::error_code::ErrorCode;
+
 /// Unified envelope returned by MCP tools.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ToolResponse {
@@ -25,8 +27,8 @@ pub struct ToolResponse {
 /// Structured error information.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ToolError {
-    /// Machine-readable error code (e.g. `"db_error"`, `"llm_error"`).
-    pub code: String,
+    /// Machine-readable error code.
+    pub code: ErrorCode,
     /// Human-readable description.
     pub message: String,
     /// Whether the caller may retry the request.
@@ -39,6 +41,18 @@ pub struct ToolError {
     pub policy_decision: Option<String>,
 }
 
+/// Workflow-specific context attached to metadata.
+///
+/// Flattened into [`ToolMeta`] so the JSON shape stays identical:
+/// `{ "tool_version": "1.0", "elapsed_ms": 42, "mode": "autopilot", "approval_mode": false }`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorkflowContext {
+    /// Operating mode (e.g. `"autopilot"`, `"composer"`).
+    pub mode: String,
+    /// Effective approval mode flag.
+    pub approval_mode: bool,
+}
+
 /// Execution metadata attached to a tool response.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ToolMeta {
@@ -46,12 +60,10 @@ pub struct ToolMeta {
     pub tool_version: String,
     /// Wall-clock execution time in milliseconds.
     pub elapsed_ms: u64,
-    /// Operating mode (e.g. `"autopilot"`, `"composer"`).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mode: Option<String>,
-    /// Effective approval mode flag.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub approval_mode: Option<bool>,
+    /// Workflow-specific fields (mode, approval_mode).
+    /// Flattened so they appear as top-level keys in JSON.
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowContext>,
 }
 
 impl ToolResponse {
@@ -65,15 +77,15 @@ impl ToolResponse {
         }
     }
 
-    /// Build an error envelope.
-    pub fn error(code: impl Into<String>, message: impl Into<String>, retryable: bool) -> Self {
+    /// Build an error envelope. Retryable flag is derived from the error code.
+    pub fn error(code: ErrorCode, message: impl Into<String>) -> Self {
         Self {
             success: false,
             data: Value::Null,
             error: Some(ToolError {
-                code: code.into(),
+                retryable: code.is_retryable(),
+                code,
                 message: message.into(),
-                retryable,
                 rate_limit_reset: None,
                 policy_decision: None,
             }),
@@ -83,21 +95,28 @@ impl ToolResponse {
 
     /// Convenience: database error (retryable).
     pub fn db_error(message: impl Into<String>) -> Self {
-        Self::error("db_error", message, true)
+        Self::error(ErrorCode::DbError, message)
     }
 
     /// Convenience: validation error (not retryable).
     #[allow(dead_code)]
     pub fn validation_error(message: impl Into<String>) -> Self {
-        Self::error("validation_error", message, false)
+        Self::error(ErrorCode::ValidationError, message)
     }
 
-    /// Convenience: resource not configured (not retryable).
-    pub fn not_configured(what: &str) -> Self {
+    /// Convenience: LLM not configured (not retryable).
+    pub fn llm_not_configured() -> Self {
         Self::error(
-            format!("{what}_not_configured"),
-            format!("{what} is not configured. Check your config.toml."),
-            false,
+            ErrorCode::LlmNotConfigured,
+            "LLM is not configured. Check your config.toml.",
+        )
+    }
+
+    /// Convenience: X API not configured (not retryable).
+    pub fn x_not_configured() -> Self {
+        Self::error(
+            ErrorCode::XNotConfigured,
+            "X API client not available. Run `tuitbot auth` to authenticate.",
         )
     }
 
@@ -142,15 +161,16 @@ impl ToolMeta {
         Self {
             tool_version: "1.0".to_string(),
             elapsed_ms,
-            mode: None,
-            approval_mode: None,
+            workflow: None,
         }
     }
 
-    /// Attach operating mode info (builder pattern).
-    pub fn with_mode(mut self, mode: impl Into<String>, approval_mode: bool) -> Self {
-        self.mode = Some(mode.into());
-        self.approval_mode = Some(approval_mode);
+    /// Attach workflow context (mode + approval_mode) to metadata (builder pattern).
+    pub fn with_workflow(mut self, mode: impl Into<String>, approval_mode: bool) -> Self {
+        self.workflow = Some(WorkflowContext {
+            mode: mode.into(),
+            approval_mode,
+        });
         self
     }
 }
@@ -170,24 +190,46 @@ mod tests {
 
     #[test]
     fn error_envelope_shape() {
-        let resp = ToolResponse::error("db_error", "connection refused", true);
+        let resp = ToolResponse::error(ErrorCode::DbError, "connection refused");
         assert!(!resp.success);
         assert_eq!(resp.data, Value::Null);
         let err = resp.error.as_ref().unwrap();
-        assert_eq!(err.code, "db_error");
+        assert_eq!(err.code, ErrorCode::DbError);
         assert_eq!(err.message, "connection refused");
         assert!(err.retryable);
     }
 
     #[test]
+    fn error_retryable_derived_from_code() {
+        let resp = ToolResponse::error(ErrorCode::InvalidInput, "bad");
+        assert!(!resp.error.as_ref().unwrap().retryable);
+
+        let resp = ToolResponse::error(ErrorCode::XNetworkError, "timeout");
+        assert!(resp.error.as_ref().unwrap().retryable);
+    }
+
+    #[test]
     fn meta_present_when_attached() {
-        let meta = ToolMeta::new(123).with_mode("autopilot", false);
+        let meta = ToolMeta::new(123).with_workflow("autopilot", false);
         let resp = ToolResponse::success(serde_json::json!({})).with_meta(meta);
         let m = resp.meta.as_ref().unwrap();
         assert_eq!(m.elapsed_ms, 123);
-        assert_eq!(m.mode.as_deref(), Some("autopilot"));
-        assert_eq!(m.approval_mode, Some(false));
+        let wf = m.workflow.as_ref().unwrap();
+        assert_eq!(wf.mode, "autopilot");
+        assert!(!wf.approval_mode);
         assert_eq!(m.tool_version, "1.0");
+    }
+
+    #[test]
+    fn meta_workflow_flattened_in_json() {
+        let meta = ToolMeta::new(42).with_workflow("composer", true);
+        let resp = ToolResponse::success(serde_json::json!({})).with_meta(meta);
+        let json = resp.to_json();
+        let parsed: Value = serde_json::from_str(&json).unwrap();
+        // Flattened: mode and approval_mode appear at top level of meta
+        assert_eq!(parsed["meta"]["mode"], "composer");
+        assert_eq!(parsed["meta"]["approval_mode"], true);
+        assert_eq!(parsed["meta"]["elapsed_ms"], 42);
     }
 
     #[test]
@@ -195,6 +237,16 @@ mod tests {
         let json = ToolResponse::success(42).to_json();
         let parsed: Value = serde_json::from_str(&json).unwrap();
         assert!(parsed.get("meta").is_none());
+    }
+
+    #[test]
+    fn meta_without_workflow_omits_mode() {
+        let meta = ToolMeta::new(10);
+        let resp = ToolResponse::success(1).with_meta(meta);
+        let json = resp.to_json();
+        let parsed: Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed["meta"].get("mode").is_none());
+        assert!(parsed["meta"].get("approval_mode").is_none());
     }
 
     #[test]
@@ -236,7 +288,7 @@ mod tests {
 
     #[test]
     fn rate_limit_reset_present_when_set() {
-        let resp = ToolResponse::error("rate_limited", "too fast", true)
+        let resp = ToolResponse::error(ErrorCode::XRateLimited, "too fast")
             .with_rate_limit_reset("2026-02-25T12:00:00Z");
         let json = resp.to_json();
         let parsed: Value = serde_json::from_str(&json).unwrap();
@@ -245,15 +297,15 @@ mod tests {
 
     #[test]
     fn rate_limit_reset_absent_when_none() {
-        let json = ToolResponse::error("db_error", "fail", true).to_json();
+        let json = ToolResponse::error(ErrorCode::DbError, "fail").to_json();
         let parsed: Value = serde_json::from_str(&json).unwrap();
         assert!(parsed["error"].get("rate_limit_reset").is_none());
     }
 
     #[test]
     fn policy_decision_present_when_set() {
-        let resp =
-            ToolResponse::error("policy_denied", "blocked", false).with_policy_decision("denied");
+        let resp = ToolResponse::error(ErrorCode::PolicyDeniedBlocked, "blocked")
+            .with_policy_decision("denied");
         let json = resp.to_json();
         let parsed: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["error"]["policy_decision"], "denied");
@@ -261,7 +313,7 @@ mod tests {
 
     #[test]
     fn policy_decision_absent_when_none() {
-        let json = ToolResponse::error("db_error", "fail", true).to_json();
+        let json = ToolResponse::error(ErrorCode::DbError, "fail").to_json();
         let parsed: Value = serde_json::from_str(&json).unwrap();
         assert!(parsed["error"].get("policy_decision").is_none());
     }
@@ -271,7 +323,7 @@ mod tests {
         let resp = ToolResponse::db_error("connection refused");
         assert!(!resp.success);
         let err = resp.error.as_ref().unwrap();
-        assert_eq!(err.code, "db_error");
+        assert_eq!(err.code, ErrorCode::DbError);
         assert!(err.retryable);
     }
 
@@ -279,16 +331,32 @@ mod tests {
     fn validation_error_constructor() {
         let resp = ToolResponse::validation_error("missing field");
         let err = resp.error.as_ref().unwrap();
-        assert_eq!(err.code, "validation_error");
+        assert_eq!(err.code, ErrorCode::ValidationError);
         assert!(!err.retryable);
     }
 
     #[test]
-    fn not_configured_constructor() {
-        let resp = ToolResponse::not_configured("llm");
+    fn llm_not_configured_constructor() {
+        let resp = ToolResponse::llm_not_configured();
         let err = resp.error.as_ref().unwrap();
-        assert_eq!(err.code, "llm_not_configured");
+        assert_eq!(err.code, ErrorCode::LlmNotConfigured);
         assert!(!err.retryable);
+    }
+
+    #[test]
+    fn x_not_configured_constructor() {
+        let resp = ToolResponse::x_not_configured();
+        let err = resp.error.as_ref().unwrap();
+        assert_eq!(err.code, ErrorCode::XNotConfigured);
+        assert!(!err.retryable);
+    }
+
+    #[test]
+    fn error_code_serializes_as_string_in_json() {
+        let resp = ToolResponse::error(ErrorCode::DbError, "fail");
+        let json = resp.to_json();
+        let parsed: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["error"]["code"], "db_error");
     }
 
     #[test]

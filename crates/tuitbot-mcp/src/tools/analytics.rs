@@ -61,7 +61,7 @@ pub async fn get_stats(pool: &DbPool, days: u32, config: &Config) -> String {
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             return ToolResponse::db_error(format!("Error loading analytics summary: {e}"))
                 .with_meta(meta)
                 .to_json();
@@ -95,8 +95,8 @@ pub async fn get_stats(pool: &DbPool, days: u32, config: &Config) -> String {
     };
 
     let elapsed = start.elapsed().as_millis() as u64;
-    let meta =
-        ToolMeta::new(elapsed).with_mode(config.mode.to_string(), config.effective_approval_mode());
+    let meta = ToolMeta::new(elapsed)
+        .with_workflow(config.mode.to_string(), config.effective_approval_mode());
 
     ToolResponse::success(out).with_meta(meta).to_json()
 }
@@ -119,13 +119,13 @@ pub async fn get_follower_trend(pool: &DbPool, limit: u32, config: &Config) -> S
                 .collect();
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(out).with_meta(meta).to_json()
         }
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::db_error(format!("Error fetching follower trend: {e}"))
                 .with_meta(meta)
                 .to_json()
@@ -142,13 +142,13 @@ pub async fn get_top_topics(pool: &DbPool, limit: u32, config: &Config) -> Strin
             let out = topics_to_out(topics);
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(out).with_meta(meta).to_json()
         }
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::db_error(format!("Error fetching top topics: {e}"))
                 .with_meta(meta)
                 .to_json()

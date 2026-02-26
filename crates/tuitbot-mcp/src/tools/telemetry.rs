@@ -8,7 +8,7 @@ use std::time::Instant;
 use tuitbot_core::storage;
 use tuitbot_core::storage::DbPool;
 
-use super::response::{ToolMeta, ToolResponse};
+use super::response::{ErrorCode, ToolMeta, ToolResponse};
 
 /// Get time-windowed metrics aggregated per tool.
 pub async fn get_mcp_tool_metrics(pool: &DbPool, since_hours: u32) -> String {
@@ -35,7 +35,7 @@ pub async fn get_mcp_tool_metrics(pool: &DbPool, since_hours: u32) -> String {
         }
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
-            ToolResponse::error("db_error", format!("Failed to fetch metrics: {e}"), true)
+            ToolResponse::error(ErrorCode::DbError, format!("Failed to fetch metrics: {e}"))
                 .with_meta(ToolMeta::new(elapsed))
                 .to_json()
         }
@@ -64,9 +64,8 @@ pub async fn get_mcp_error_breakdown(pool: &DbPool, since_hours: u32) -> String 
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             ToolResponse::error(
-                "db_error",
+                ErrorCode::DbError,
                 format!("Failed to fetch error breakdown: {e}"),
-                true,
             )
             .with_meta(ToolMeta::new(elapsed))
             .to_json()

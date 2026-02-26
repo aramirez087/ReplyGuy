@@ -567,7 +567,7 @@ async fn get_tweet_error() {
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed["success"], false);
     assert_eq!(parsed["error"]["code"], "x_api_error");
-    assert_eq!(parsed["error"]["retryable"], false);
+    assert_eq!(parsed["error"]["retryable"], true);
 }
 
 #[tokio::test]

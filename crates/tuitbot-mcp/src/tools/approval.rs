@@ -57,13 +57,13 @@ pub async fn list_pending(pool: &DbPool, config: &Config) -> String {
             let out: Vec<ApprovalItemOut> = items.iter().map(item_to_out).collect();
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(out).with_meta(meta).to_json()
         }
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::db_error(format!("Error fetching pending approvals: {e}"))
                 .with_meta(meta)
                 .to_json()
@@ -79,7 +79,7 @@ pub async fn get_pending_count(pool: &DbPool, config: &Config) -> String {
         Ok(count) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(serde_json::json!({ "pending_count": count }))
                 .with_meta(meta)
                 .to_json()
@@ -87,7 +87,7 @@ pub async fn get_pending_count(pool: &DbPool, config: &Config) -> String {
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::db_error(format!("Error counting pending approvals: {e}"))
                 .with_meta(meta)
                 .to_json()
@@ -107,7 +107,7 @@ pub async fn approve_item(pool: &DbPool, id: i64, config: &Config) -> String {
         Ok(()) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(serde_json::json!({ "status": "approved", "id": id }))
                 .with_meta(meta)
                 .to_json()
@@ -115,7 +115,7 @@ pub async fn approve_item(pool: &DbPool, id: i64, config: &Config) -> String {
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::db_error(format!("Error approving item {id}: {e}"))
                 .with_meta(meta)
                 .to_json()
@@ -135,7 +135,7 @@ pub async fn reject_item(pool: &DbPool, id: i64, config: &Config) -> String {
         Ok(()) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(serde_json::json!({ "status": "rejected", "id": id }))
                 .with_meta(meta)
                 .to_json()
@@ -143,7 +143,7 @@ pub async fn reject_item(pool: &DbPool, id: i64, config: &Config) -> String {
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::db_error(format!("Error rejecting item {id}: {e}"))
                 .with_meta(meta)
                 .to_json()
@@ -164,7 +164,7 @@ pub async fn approve_all(pool: &DbPool, config: &Config) -> String {
             let approved = ids.len() as i64;
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(serde_json::json!({
                 "approved": approved,
                 "ids": ids,
@@ -176,7 +176,7 @@ pub async fn approve_all(pool: &DbPool, config: &Config) -> String {
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::db_error(format!("Error batch approving: {e}"))
                 .with_meta(meta)
                 .to_json()

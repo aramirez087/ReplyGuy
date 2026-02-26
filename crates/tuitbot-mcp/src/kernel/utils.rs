@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use crate::contract::envelope::{ToolMeta, ToolResponse};
 use crate::contract::error::provider_error_to_response;
+use crate::contract::error_code::ErrorCode;
 use crate::provider::SocialReadProvider;
 
 /// URL-aware tweet length limit.
@@ -21,12 +22,11 @@ pub fn check_tweet_length(text: &str, start: Instant) -> Option<String> {
         let elapsed = start.elapsed().as_millis() as u64;
         Some(
             ToolResponse::error(
-                "tweet_too_long",
+                ErrorCode::TweetTooLong,
                 format!(
                     "Tweet text is {weighted_len} characters (URL-weighted), \
                      max is {MAX_TWEET_LENGTH}."
                 ),
-                false,
             )
             .with_meta(ToolMeta::new(elapsed))
             .to_json(),

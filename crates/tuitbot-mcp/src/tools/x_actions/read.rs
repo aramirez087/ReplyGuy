@@ -9,7 +9,7 @@ use crate::kernel;
 use crate::provider::x_api::XApiProvider;
 use crate::state::SharedState;
 
-use super::super::response::{ToolMeta, ToolResponse};
+use super::super::response::{ErrorCode, ToolMeta, ToolResponse};
 use super::{no_user_id_response, not_configured_response};
 
 /// Get a single tweet by ID — delegates to kernel.
@@ -206,9 +206,8 @@ pub async fn get_x_usage(state: &SharedState, days: u32) -> String {
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             return ToolResponse::error(
-                "db_error",
+                ErrorCode::DbError,
                 format!("Failed to get usage summary: {e}"),
-                false,
             )
             .with_meta(ToolMeta::new(elapsed))
             .to_json();
@@ -220,9 +219,8 @@ pub async fn get_x_usage(state: &SharedState, days: u32) -> String {
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             return ToolResponse::error(
-                "db_error",
+                ErrorCode::DbError,
                 format!("Failed to get daily usage: {e}"),
-                false,
             )
             .with_meta(ToolMeta::new(elapsed))
             .to_json();
@@ -235,9 +233,8 @@ pub async fn get_x_usage(state: &SharedState, days: u32) -> String {
             Err(e) => {
                 let elapsed = start.elapsed().as_millis() as u64;
                 return ToolResponse::error(
-                    "db_error",
+                    ErrorCode::DbError,
                     format!("Failed to get endpoint breakdown: {e}"),
-                    false,
                 )
                 .with_meta(ToolMeta::new(elapsed))
                 .to_json();

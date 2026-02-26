@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::contract::envelope::{ToolMeta, ToolResponse};
 use crate::contract::error::provider_error_to_response;
+use crate::contract::error_code::ErrorCode;
 use crate::kernel::utils::check_tweet_length;
 use crate::provider::x_api::map_x_error;
 use tuitbot_core::x_api::XApiClient;
@@ -126,9 +127,8 @@ pub async fn post_thread(
     if tweets.is_empty() {
         let elapsed = start.elapsed().as_millis() as u64;
         return ToolResponse::error(
-            "invalid_input",
+            ErrorCode::InvalidInput,
             "Thread must contain at least one tweet.",
-            false,
         )
         .with_meta(ToolMeta::new(elapsed))
         .to_json();
@@ -175,13 +175,12 @@ pub async fn post_thread(
             Err(e) => {
                 let elapsed = start.elapsed().as_millis() as u64;
                 let mut resp = ToolResponse::error(
-                    "thread_partial_failure",
+                    ErrorCode::ThreadPartialFailure,
                     format!(
                         "Thread failed at tweet {i}: {e}. Successfully posted {}/{} tweets.",
                         posted_ids.len(),
                         tweets.len()
                     ),
-                    true,
                 )
                 .with_meta(ToolMeta::new(elapsed));
                 resp.data = serde_json::json!({

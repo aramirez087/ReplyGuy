@@ -8,7 +8,7 @@ use tuitbot_core::storage;
 use tuitbot_core::storage::tweets::DiscoveredTweet;
 
 use crate::state::SharedState;
-use crate::tools::response::{ToolMeta, ToolResponse};
+use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
 
 use super::{ScoreBreakdown, ScoredCandidate};
 
@@ -27,13 +27,9 @@ pub async fn execute(
         Some(c) => c,
         None => {
             let elapsed = start.elapsed().as_millis() as u64;
-            return ToolResponse::error(
-                "x_not_configured",
-                "X API client not available. Run `tuitbot auth` to authenticate.",
-                false,
-            )
-            .with_meta(ToolMeta::new(elapsed))
-            .to_json();
+            return ToolResponse::x_not_configured()
+                .with_meta(ToolMeta::new(elapsed))
+                .to_json();
         }
     };
 
@@ -45,9 +41,8 @@ pub async fn execute(
             if kw.is_empty() {
                 let elapsed = start.elapsed().as_millis() as u64;
                 return ToolResponse::error(
-                    "no_keywords",
+                    ErrorCode::InvalidInput,
                     "No search query provided and no product_keywords configured.",
-                    false,
                 )
                 .with_meta(ToolMeta::new(elapsed))
                 .to_json();
@@ -66,7 +61,7 @@ pub async fn execute(
         Ok(resp) => resp,
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
-            return ToolResponse::error("x_api_error", format!("Search failed: {e}"), true)
+            return ToolResponse::error(ErrorCode::XApiError, format!("Search failed: {e}"))
                 .with_meta(ToolMeta::new(elapsed))
                 .to_json();
         }
@@ -79,7 +74,7 @@ pub async fn execute(
             "total_searched": 0,
             "query": search_query,
         }))
-        .with_meta(ToolMeta::new(elapsed).with_mode(
+        .with_meta(ToolMeta::new(elapsed).with_workflow(
             state.config.mode.to_string(),
             state.config.effective_approval_mode(),
         ))
@@ -207,7 +202,7 @@ pub async fn execute(
         "query": search_query,
         "threshold": threshold,
     }))
-    .with_meta(ToolMeta::new(elapsed).with_mode(
+    .with_meta(ToolMeta::new(elapsed).with_workflow(
         state.config.mode.to_string(),
         state.config.effective_approval_mode(),
     ))

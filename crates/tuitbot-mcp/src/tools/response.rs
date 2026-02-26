@@ -4,4 +4,6 @@
 //! This module exists so existing `tools::*` imports continue to resolve.
 
 #[allow(unused_imports)]
-pub use crate::contract::envelope::{ToolError, ToolMeta, ToolResponse};
+pub use crate::contract::envelope::{ToolError, ToolMeta, ToolResponse, WorkflowContext};
+#[allow(unused_imports)]
+pub use crate::contract::error_code::ErrorCode;

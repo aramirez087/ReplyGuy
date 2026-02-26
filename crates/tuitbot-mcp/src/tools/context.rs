@@ -6,7 +6,7 @@
 use std::time::Instant;
 
 use crate::state::SharedState;
-use crate::tools::response::{ToolMeta, ToolResponse};
+use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
 
 /// Get a rich context profile for an author including interaction history,
 /// conversation records, response metrics, topic affinity, and risk signals.
@@ -18,7 +18,7 @@ pub async fn get_author_context(state: &SharedState, identifier: &str) -> String
         Ok(ctx) => ToolResponse::success(ctx)
             .with_meta(ToolMeta::new(start.elapsed().as_millis() as u64))
             .to_json(),
-        Err(e) => ToolResponse::error("context_error", e.to_string(), false)
+        Err(e) => ToolResponse::error(ErrorCode::ContextError, e.to_string())
             .with_meta(ToolMeta::new(start.elapsed().as_millis() as u64))
             .to_json(),
     }
@@ -45,7 +45,7 @@ pub async fn recommend_engagement(
         Ok(rec) => ToolResponse::success(rec)
             .with_meta(ToolMeta::new(start.elapsed().as_millis() as u64))
             .to_json(),
-        Err(e) => ToolResponse::error("recommendation_error", e.to_string(), false)
+        Err(e) => ToolResponse::error(ErrorCode::RecommendationError, e.to_string())
             .with_meta(ToolMeta::new(start.elapsed().as_millis() as u64))
             .to_json(),
     }
@@ -59,7 +59,7 @@ pub async fn topic_performance_snapshot(pool: &tuitbot_core::storage::DbPool, da
         Ok(snapshot) => ToolResponse::success(snapshot)
             .with_meta(ToolMeta::new(start.elapsed().as_millis() as u64))
             .to_json(),
-        Err(e) => ToolResponse::error("topic_error", e.to_string(), false)
+        Err(e) => ToolResponse::error(ErrorCode::TopicError, e.to_string())
             .with_meta(ToolMeta::new(start.elapsed().as_millis() as u64))
             .to_json(),
     }

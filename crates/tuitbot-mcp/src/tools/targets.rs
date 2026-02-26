@@ -41,13 +41,13 @@ pub async fn list_target_accounts(pool: &DbPool, config: &Config) -> String {
                 .collect();
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(out).with_meta(meta).to_json()
         }
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::db_error(format!("Error fetching target accounts: {e}"))
                 .with_meta(meta)
                 .to_json()

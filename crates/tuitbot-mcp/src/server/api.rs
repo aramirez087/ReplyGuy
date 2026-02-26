@@ -533,7 +533,7 @@ impl ApiMcpServer {
         let mode = self.state.config.mode.to_string();
         let approval = self.state.config.effective_approval_mode();
         let elapsed = start.elapsed().as_millis() as u64;
-        let meta = ToolMeta::new(elapsed).with_mode(&mode, approval);
+        let meta = ToolMeta::new(elapsed).with_workflow(&mode, approval);
         let result = ToolResponse::success(serde_json::json!({
             "profile": "api",
             "mode": mode,

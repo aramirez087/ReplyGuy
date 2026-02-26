@@ -46,13 +46,13 @@ pub async fn get_action_log(
                 .collect();
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(out).with_meta(meta).to_json()
         }
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::db_error(format!("Error fetching action log: {e}"))
                 .with_meta(meta)
                 .to_json()
@@ -70,13 +70,13 @@ pub async fn get_action_counts(pool: &DbPool, since_hours: u32, config: &Config)
         Ok(counts) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::success(counts).with_meta(meta).to_json()
         }
         Err(e) => {
             let elapsed = start.elapsed().as_millis() as u64;
             let meta = ToolMeta::new(elapsed)
-                .with_mode(config.mode.to_string(), config.effective_approval_mode());
+                .with_workflow(config.mode.to_string(), config.effective_approval_mode());
             ToolResponse::db_error(format!("Error fetching action counts: {e}"))
                 .with_meta(meta)
                 .to_json()

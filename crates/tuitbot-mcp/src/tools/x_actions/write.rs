@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::state::SharedState;
 
-use super::super::response::{ToolMeta, ToolResponse};
+use super::super::response::{ErrorCode, ToolMeta, ToolResponse};
 use super::validate::check_tweet_length;
 use super::{error_response, not_configured_response};
 
@@ -190,9 +190,8 @@ pub async fn post_thread(
     if tweets.is_empty() {
         let elapsed = start.elapsed().as_millis() as u64;
         return ToolResponse::error(
-            "invalid_input",
+            ErrorCode::InvalidInput,
             "Thread must contain at least one tweet.",
-            false,
         )
         .with_meta(ToolMeta::new(elapsed))
         .to_json();
@@ -255,13 +254,12 @@ pub async fn post_thread(
                 // Partial failure: include posted IDs so agent can resume.
                 let elapsed = start.elapsed().as_millis() as u64;
                 let mut resp = ToolResponse::error(
-                    "thread_partial_failure",
+                    ErrorCode::ThreadPartialFailure,
                     format!(
                         "Thread failed at tweet {i}: {e}. Successfully posted {}/{} tweets.",
                         posted_ids.len(),
                         tweets.len()
                     ),
-                    true,
                 )
                 .with_meta(ToolMeta::new(elapsed));
                 resp.data = serde_json::json!({

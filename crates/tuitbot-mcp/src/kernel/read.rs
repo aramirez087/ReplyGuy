@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use crate::contract::envelope::{ToolMeta, ToolResponse};
 use crate::contract::error::provider_error_to_response;
+use crate::contract::error_code::ErrorCode;
 use crate::provider::SocialReadProvider;
 
 /// Get a single tweet by ID via the provider.
@@ -234,9 +235,8 @@ pub async fn get_users_by_ids(provider: &dyn SocialReadProvider, user_ids: &[&st
     if user_ids.is_empty() || user_ids.len() > 100 {
         let elapsed = start.elapsed().as_millis() as u64;
         return ToolResponse::error(
-            "invalid_input",
+            ErrorCode::InvalidInput,
             format!("user_ids must contain 1-100 IDs, got {}", user_ids.len()),
-            false,
         )
         .with_meta(ToolMeta::new(elapsed))
         .to_json();
