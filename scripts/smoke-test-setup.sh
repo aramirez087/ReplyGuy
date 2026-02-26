@@ -8,19 +8,19 @@
 #   1 — one or more tests failed
 #
 # All tests are offline — no auth tokens or API keys needed.
+# Uses a temp HOME to avoid touching real ~/.tuitbot.
 
 set -euo pipefail
 
 BINARY="${1:-target/debug/tuitbot}"
-TMPDIR=$(mktemp -d)
-CONFIG_DIR="$TMPDIR/.tuitbot"
-CONFIG_PATH="$CONFIG_DIR/config.toml"
+FAKE_HOME=$(mktemp -d)
+CONFIG_PATH="$FAKE_HOME/.tuitbot/config.toml"
 
 PASS=0
 FAIL=0
 
 cleanup() {
-    rm -rf "$TMPDIR"
+    rm -rf "$FAKE_HOME"
 }
 trap cleanup EXIT
 
@@ -42,7 +42,7 @@ fi
 
 echo "Smoke test: setup architecture"
 echo "Binary: $BINARY"
-echo "Temp dir: $TMPDIR"
+echo "Fake HOME: $FAKE_HOME"
 echo
 
 # 1. tuitbot --help exits 0 and output contains "init"
@@ -59,15 +59,15 @@ else
     log_fail "init --help" "exit non-zero or missing '--force' in output"
 fi
 
-# 3. tuitbot init --non-interactive writes config to tmpdir
-mkdir -p "$CONFIG_DIR"
-if "$BINARY" --config "$CONFIG_PATH" init --non-interactive 2>/dev/null; then
+# 3. tuitbot init --non-interactive writes config
+#    init writes to ~/.tuitbot/config.toml based on HOME, so we override HOME.
+if HOME="$FAKE_HOME" "$BINARY" init --non-interactive 2>/dev/null; then
     log_pass "init --non-interactive exits 0"
 else
     log_fail "init --non-interactive" "exit non-zero"
 fi
 
-# 4. Verify config.toml exists and parses as valid TOML
+# 4. Verify config.toml exists
 if [ -f "$CONFIG_PATH" ]; then
     log_pass "config.toml exists at $CONFIG_PATH"
 else
