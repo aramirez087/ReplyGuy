@@ -261,4 +261,10 @@ pub enum McpSubcommand {
         #[arg(long, default_value = "full")]
         profile: String,
     },
+    /// Print the tool manifest for a profile (JSON to stdout)
+    Manifest {
+        /// Runtime profile: "full" (default), "readonly", or "api-readonly"
+        #[arg(long, default_value = "full")]
+        profile: String,
+    },
 }

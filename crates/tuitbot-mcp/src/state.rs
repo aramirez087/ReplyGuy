@@ -6,7 +6,7 @@
 //!
 //! Two state structs exist for three runtime profiles:
 //! - [`AppState`] / [`SharedState`]: full profile (DB + LLM + X client).
-//! - [`ApiState`] / [`SharedApiState`]: readonly / api-readonly profiles (X client only, no DB).
+//! - [`ReadonlyState`] / [`SharedReadonlyState`]: readonly / api-readonly profiles (X client only, no DB).
 
 use std::fmt;
 use std::str::FromStr;
@@ -84,20 +84,19 @@ pub type SharedState = Arc<AppState>;
 /// Lightweight state for readonly / api-readonly profiles (no DB, no LLM).
 ///
 /// The X client is non-optional: a readonly profile with no X client has
-/// zero usable tools, so `run_api_server` fails fast if tokens are missing.
-pub struct ApiState {
+/// zero usable tools, so the server fails fast if tokens are missing.
+/// No idempotency store — read-only profiles perform no mutations.
+pub struct ReadonlyState {
     /// Loaded configuration.
     pub config: Config,
     /// X API client (required for readonly profiles).
     pub x_client: Box<dyn XApiClient>,
     /// Authenticated user ID from X API (from get_me on startup).
     pub authenticated_user_id: String,
-    /// Idempotency guard for mutation dedup.
-    pub idempotency: Arc<IdempotencyStore>,
 }
 
 /// Thread-safe reference to shared readonly-profile state.
-pub type SharedApiState = Arc<ApiState>;
+pub type SharedReadonlyState = Arc<ReadonlyState>;
 
 #[cfg(test)]
 mod tests {

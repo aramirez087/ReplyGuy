@@ -6,8 +6,8 @@
 //!
 //! Three runtime profiles are available:
 //! - **`full`** (default): full TuitBot growth features. All 60+ tools.
-//! - **`readonly`**: read-only X tools. No DB, no LLM, no mutations.
-//! - **`api-readonly`**: broader read-only X tools. No DB, no LLM, no mutations.
+//! - **`readonly`**: minimal read-only X tools (10). No DB, no LLM, no mutations.
+//! - **`api-readonly`**: broader read-only X tools (20). No DB, no LLM, no mutations.
 
 pub mod contract;
 mod kernel;
@@ -28,19 +28,21 @@ use tuitbot_core::startup;
 use tuitbot_core::storage;
 use tuitbot_core::x_api::{XApiClient, XApiHttpClient};
 
-use server::{ApiMcpServer, TuitbotMcpServer};
-use state::{ApiState, AppState};
+use server::{ApiReadonlyMcpServer, ReadonlyMcpServer, TuitbotMcpServer};
+use state::{AppState, ReadonlyState, SharedReadonlyState};
 use tools::idempotency::IdempotencyStore;
 
 pub use state::Profile;
+pub use tools::manifest::{generate_profile_manifest, ProfileManifest};
 
 /// Run the MCP server with the specified profile.
 ///
-/// Dispatches to `run_stdio_server` (full) or `run_api_server` (readonly / api-readonly).
+/// Dispatches to the appropriate server implementation based on profile.
 pub async fn run_server(config: Config, profile: Profile) -> anyhow::Result<()> {
     match profile {
         Profile::Full => run_stdio_server(config).await,
-        Profile::Readonly | Profile::ApiReadonly => run_api_server(config, profile).await,
+        Profile::Readonly => run_readonly_server(config).await,
+        Profile::ApiReadonly => run_api_readonly_server(config).await,
     }
 }
 
@@ -149,12 +151,13 @@ pub async fn run_stdio_server(config: Config) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Run a readonly-profile MCP server on stdio transport.
-///
-/// Used for both `readonly` and `api-readonly` profiles. Fails fast if
-/// X API tokens are missing or expired — a readonly profile with no X client
-/// has zero usable tools.
-pub async fn run_api_server(config: Config, profile: Profile) -> anyhow::Result<()> {
+// ── Shared init for read-only profiles ──────────────────────────────────
+
+/// Initialize shared readonly state: load tokens, create X client, verify get_me.
+async fn init_readonly_state(
+    config: Config,
+    profile: Profile,
+) -> anyhow::Result<SharedReadonlyState> {
     // Load X API tokens (required for readonly profiles)
     let tokens = startup::load_tokens_from_file().map_err(|e| {
         anyhow::anyhow!(
@@ -202,16 +205,19 @@ pub async fn run_api_server(config: Config, profile: Profile) -> anyhow::Result<
         }
     }
 
-    let state = Arc::new(ApiState {
+    Ok(Arc::new(ReadonlyState {
         config,
         x_client: Box::new(client),
         authenticated_user_id: user.id,
-        idempotency: Arc::new(IdempotencyStore::new()),
-    });
+    }))
+}
 
-    let server = ApiMcpServer::new(state);
+/// Run the readonly-profile MCP server on stdio transport (10 tools).
+async fn run_readonly_server(config: Config) -> anyhow::Result<()> {
+    let state = init_readonly_state(config, Profile::Readonly).await?;
+    let server = ReadonlyMcpServer::new(state);
 
-    tracing::info!("Starting Tuitbot MCP server on stdio ({profile} profile)");
+    tracing::info!("Starting Tuitbot MCP server on stdio (readonly profile)");
 
     let service = server
         .serve(stdio())
@@ -219,6 +225,21 @@ pub async fn run_api_server(config: Config, profile: Profile) -> anyhow::Result<
         .map_err(|e| anyhow::anyhow!("Failed to start MCP server: {e}"))?;
 
     service.waiting().await?;
+    Ok(())
+}
 
+/// Run the api-readonly-profile MCP server on stdio transport (20 tools).
+async fn run_api_readonly_server(config: Config) -> anyhow::Result<()> {
+    let state = init_readonly_state(config, Profile::ApiReadonly).await?;
+    let server = ApiReadonlyMcpServer::new(state);
+
+    tracing::info!("Starting Tuitbot MCP server on stdio (api-readonly profile)");
+
+    let service = server
+        .serve(stdio())
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to start MCP server: {e}"))?;
+
+    service.waiting().await?;
     Ok(())
 }

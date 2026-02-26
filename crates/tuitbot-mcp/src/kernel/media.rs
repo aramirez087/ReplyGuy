@@ -1,6 +1,7 @@
 //! DB-free media upload function.
 //!
-//! Extracted from `tools/x_actions/media.rs` for use in the API profile.
+//! Currently used only by conformance tests; kept as the canonical kernel
+//! abstraction for any future profile that needs direct media operations.
 
 use std::time::Instant;
 
