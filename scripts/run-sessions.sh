@@ -356,7 +356,7 @@ PROMPT_EOF
   START_TIME="$(date +%s)"
 
   set +e
-  claude -p \
+  env -u CLAUDECODE claude -p \
     --model "$MODEL" \
     --dangerously-skip-permissions \
     < "$PROMPT_FILE" \
