@@ -992,6 +992,98 @@ impl TuitbotMcpServer {
         .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    // --- Universal X API Request Tools ---
+
+    /// Send a GET request to any authorized X API endpoint. Supports auto-pagination with next_token. Host is restricted to api.x.com, upload.x.com, upload.twitter.com.
+    #[tool]
+    async fn x_get(
+        &self,
+        Parameters(req): Parameters<XGetRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = kv_to_tuples(req.query.as_deref());
+        let headers = kv_to_tuples(req.headers.as_deref());
+        let result = workflow::x_actions::x_request::x_get(
+            &self.state,
+            &req.path,
+            req.host.as_deref(),
+            query.as_deref(),
+            headers.as_deref(),
+            req.auto_paginate,
+            req.max_pages,
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Send a POST request to any authorized X API endpoint. Host is restricted to api.x.com, upload.x.com, upload.twitter.com. MUTATION — policy-gated.
+    #[tool]
+    async fn x_post(
+        &self,
+        Parameters(req): Parameters<XPostRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = kv_to_tuples(req.query.as_deref());
+        let headers = kv_to_tuples(req.headers.as_deref());
+        let result = workflow::x_actions::x_request::x_post(
+            &self.state,
+            &req.path,
+            req.host.as_deref(),
+            query.as_deref(),
+            req.body.as_deref(),
+            headers.as_deref(),
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Send a PUT request to any authorized X API endpoint. Host is restricted to api.x.com, upload.x.com, upload.twitter.com. MUTATION — policy-gated.
+    #[tool]
+    async fn x_put(
+        &self,
+        Parameters(req): Parameters<XPutRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = kv_to_tuples(req.query.as_deref());
+        let headers = kv_to_tuples(req.headers.as_deref());
+        let result = workflow::x_actions::x_request::x_put(
+            &self.state,
+            &req.path,
+            req.host.as_deref(),
+            query.as_deref(),
+            req.body.as_deref(),
+            headers.as_deref(),
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Send a DELETE request to any authorized X API endpoint. Host is restricted to api.x.com, upload.x.com, upload.twitter.com. MUTATION — policy-gated.
+    #[tool]
+    async fn x_delete(
+        &self,
+        Parameters(req): Parameters<XDeleteRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = kv_to_tuples(req.query.as_deref());
+        let headers = kv_to_tuples(req.headers.as_deref());
+        let result = workflow::x_actions::x_request::x_delete(
+            &self.state,
+            &req.path,
+            req.host.as_deref(),
+            query.as_deref(),
+            headers.as_deref(),
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+}
+
+/// Convert `Option<&[KeyValue]>` to `Option<Vec<(String, String)>>`.
+fn kv_to_tuples(kv: Option<&[crate::requests::KeyValue]>) -> Option<Vec<(String, String)>> {
+    kv.map(|pairs| {
+        pairs
+            .iter()
+            .map(|kv| (kv.key.clone(), kv.value.clone()))
+            .collect()
+    })
 }
 
 #[tool_handler(router = self.tool_router)]

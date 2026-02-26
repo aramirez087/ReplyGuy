@@ -288,4 +288,25 @@ pub trait XApiClient: Send + Sync {
             message: "not implemented".to_string(),
         })
     }
+
+    /// Execute a raw HTTP request against the X API.
+    ///
+    /// The caller is responsible for constructing a valid, pre-validated URL.
+    /// The implementation adds Bearer token authentication automatically.
+    /// Returns the raw HTTP response including status, selected headers, and body text.
+    ///
+    /// `method` must be one of: `GET`, `POST`, `PUT`, `DELETE`.
+    async fn raw_request(
+        &self,
+        _method: &str,
+        _url: &str,
+        _query: Option<&[(String, String)]>,
+        _body: Option<&str>,
+        _headers: Option<&[(String, String)]>,
+    ) -> Result<RawApiResponse, XApiError> {
+        Err(XApiError::ApiError {
+            status: 0,
+            message: "raw_request not implemented".to_string(),
+        })
+    }
 }

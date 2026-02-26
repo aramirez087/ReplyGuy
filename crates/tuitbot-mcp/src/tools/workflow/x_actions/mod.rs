@@ -7,6 +7,7 @@ mod media;
 mod read;
 mod validate;
 mod write;
+pub mod x_request;
 
 #[cfg(test)]
 mod tests;

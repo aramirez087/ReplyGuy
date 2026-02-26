@@ -34,6 +34,9 @@ mod tests {
             "reject_item",
             "propose_and_queue_replies",
             "compose_tweet",
+            "x_post",
+            "x_put",
+            "x_delete",
         ]
     }
 
@@ -234,8 +237,8 @@ mod tests {
             .filter(|t| t.profiles.contains(&Profile::Workflow))
             .count();
         assert_eq!(
-            wf_count, 64,
-            "Workflow profile has {wf_count} tools (expected 64)"
+            wf_count, 68,
+            "Workflow profile has {wf_count} tools (expected 68)"
         );
     }
 

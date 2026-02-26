@@ -1258,6 +1258,90 @@
         "llm_error",
         "invalid_input"
       ]
+    },
+    {
+      "name": "x_get",
+      "category": "read",
+      "lane": "workflow",
+      "mutation": false,
+      "requires_x_client": true,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow"
+      ],
+      "possible_error_codes": [
+        "x_not_configured",
+        "x_rate_limited",
+        "x_auth_expired",
+        "x_forbidden",
+        "x_network_error",
+        "x_api_error",
+        "x_request_blocked"
+      ]
+    },
+    {
+      "name": "x_post",
+      "category": "write",
+      "lane": "workflow",
+      "mutation": true,
+      "requires_x_client": true,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow"
+      ],
+      "possible_error_codes": [
+        "x_not_configured",
+        "x_rate_limited",
+        "x_auth_expired",
+        "x_forbidden",
+        "x_network_error",
+        "x_api_error",
+        "x_request_blocked"
+      ]
+    },
+    {
+      "name": "x_put",
+      "category": "write",
+      "lane": "workflow",
+      "mutation": true,
+      "requires_x_client": true,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow"
+      ],
+      "possible_error_codes": [
+        "x_not_configured",
+        "x_rate_limited",
+        "x_auth_expired",
+        "x_forbidden",
+        "x_network_error",
+        "x_api_error",
+        "x_request_blocked"
+      ]
+    },
+    {
+      "name": "x_delete",
+      "category": "write",
+      "lane": "workflow",
+      "mutation": true,
+      "requires_x_client": true,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow"
+      ],
+      "possible_error_codes": [
+        "x_not_configured",
+        "x_rate_limited",
+        "x_auth_expired",
+        "x_forbidden",
+        "x_network_error",
+        "x_api_error",
+        "x_request_blocked"
+      ]
     }
   ]
 }

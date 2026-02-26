@@ -225,6 +225,17 @@ const X_ENGAGE_ERR: &[ErrorCode] = &[
     ErrorCode::PolicyError,
 ];
 
+/// Universal X API request errors.
+const X_REQUEST_ERR: &[ErrorCode] = &[
+    ErrorCode::XNotConfigured,
+    ErrorCode::XRateLimited,
+    ErrorCode::XAuthExpired,
+    ErrorCode::XForbidden,
+    ErrorCode::XNetworkError,
+    ErrorCode::XApiError,
+    ErrorCode::XRequestBlocked,
+];
+
 /// Database-only errors.
 const DB_ERR: &[ErrorCode] = &[ErrorCode::DbError];
 
@@ -1044,6 +1055,51 @@ fn all_tools() -> Vec<ToolEntry> {
                 ErrorCode::LlmError,
                 ErrorCode::InvalidInput,
             ],
+        ),
+        // ── Universal X API Request ──────────────────────────────────
+        tool(
+            "x_get",
+            ToolCategory::Read,
+            Lane::Workflow,
+            false,
+            true,
+            false,
+            false,
+            WF,
+            X_REQUEST_ERR,
+        ),
+        tool(
+            "x_post",
+            ToolCategory::Write,
+            Lane::Workflow,
+            true,
+            true,
+            false,
+            false,
+            WF,
+            X_REQUEST_ERR,
+        ),
+        tool(
+            "x_put",
+            ToolCategory::Write,
+            Lane::Workflow,
+            true,
+            true,
+            false,
+            false,
+            WF,
+            X_REQUEST_ERR,
+        ),
+        tool(
+            "x_delete",
+            ToolCategory::Write,
+            Lane::Workflow,
+            true,
+            true,
+            false,
+            false,
+            WF,
+            X_REQUEST_ERR,
         ),
     ]
 }
