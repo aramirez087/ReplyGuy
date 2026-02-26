@@ -185,6 +185,17 @@ pub(super) fn print_quickstart_banner() {
     eprintln!();
 }
 
+/// Print the 3-step getting-started guide after quickstart config is written.
+pub(super) fn print_quickstart_next_steps() {
+    let bold = Style::new().bold();
+
+    eprintln!();
+    eprintln!("{}", bold.apply_to("Get started:"));
+    eprintln!("  1. tuitbot auth           \u{2014} connect your X account");
+    eprintln!("  2. tuitbot test           \u{2014} verify everything works");
+    eprintln!("  3. tuitbot tick --dry-run \u{2014} see the bot in action (no posts)");
+}
+
 /// Print a compact summary of quickstart-collected values.
 pub(super) fn print_quickstart_summary(result: &WizardResult) {
     let bold = Style::new().bold();

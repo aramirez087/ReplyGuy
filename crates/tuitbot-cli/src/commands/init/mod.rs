@@ -27,8 +27,8 @@ use tuitbot_core::config::Config;
 use tuitbot_core::startup::data_dir;
 
 use display::{
-    print_quickstart_banner, print_quickstart_summary, print_remaining_steps, print_summary,
-    print_welcome_banner,
+    print_quickstart_banner, print_quickstart_next_steps, print_quickstart_summary,
+    print_remaining_steps, print_summary, print_welcome_banner,
 };
 use render::render_config_toml;
 use steps::{
@@ -121,7 +121,7 @@ fn run_quickstart(dir: &PathBuf, config_path: &PathBuf) -> Result<()> {
         .with_context(|| format!("Failed to write {}", config_path.display()))?;
 
     eprintln!("\nWrote {}", config_path.display());
-    eprintln!("\nNext: tuitbot auth");
+    print_quickstart_next_steps();
 
     Ok(())
 }

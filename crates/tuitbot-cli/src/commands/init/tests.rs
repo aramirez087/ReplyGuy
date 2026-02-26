@@ -543,3 +543,101 @@ fn advanced_wizard_result_still_renders_valid_toml() {
 
     assert!(config.validate().is_ok());
 }
+
+// ============================================================================
+// Quickstart → enrichment invariant tests
+// ============================================================================
+
+use tuitbot_core::config::EnrichmentStage;
+
+#[test]
+fn quickstart_config_not_enriched() {
+    let result = quickstart_wizard_result();
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("quickstart TOML should parse");
+
+    let pc = config.profile_completeness();
+    assert!(
+        !pc.is_fully_enriched(),
+        "quickstart config should NOT be fully enriched"
+    );
+}
+
+#[test]
+fn quickstart_config_all_enrichment_stages_incomplete() {
+    let result = quickstart_wizard_result();
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("quickstart TOML should parse");
+
+    let pc = config.profile_completeness();
+    assert_eq!(
+        pc.completed_count(),
+        0,
+        "quickstart config should have 0 completed enrichment stages"
+    );
+}
+
+#[test]
+fn quickstart_config_next_incomplete_is_voice() {
+    let result = quickstart_wizard_result();
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("quickstart TOML should parse");
+
+    let pc = config.profile_completeness();
+    assert_eq!(
+        pc.next_incomplete(),
+        Some(EnrichmentStage::Voice),
+        "first incomplete stage should be Voice"
+    );
+}
+
+#[test]
+fn quickstart_config_one_line_summary_all_dashes() {
+    let result = quickstart_wizard_result();
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("quickstart TOML should parse");
+
+    let pc = config.profile_completeness();
+    assert_eq!(pc.one_line_summary(), "Voice --  Persona --  Targeting --");
+}
+
+#[test]
+fn advanced_config_voice_shows_partial_enrichment() {
+    let result = WizardResult {
+        brand_voice: Some("Friendly technical expert".to_string()),
+        ..quickstart_wizard_result()
+    };
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("advanced TOML should parse");
+
+    let pc = config.profile_completeness();
+    assert_eq!(pc.completed_count(), 1);
+    assert_eq!(pc.one_line_summary(), "Voice OK  Persona --  Targeting --");
+}
+
+#[test]
+fn advanced_config_fully_enriched() {
+    let result = WizardResult {
+        brand_voice: Some("Friendly".to_string()),
+        reply_style: Some("Helpful".to_string()),
+        content_style: Some("Practical".to_string()),
+        persona_opinions: vec!["Rust is great".to_string()],
+        persona_experiences: vec!["Built startups".to_string()],
+        content_pillars: vec!["Dev tools".to_string()],
+        target_accounts: vec!["levelsio".to_string()],
+        ..quickstart_wizard_result()
+    };
+    let toml_str = render_config_toml(&result);
+    let config: tuitbot_core::config::Config =
+        toml::from_str(&toml_str).expect("fully enriched TOML should parse");
+
+    let pc = config.profile_completeness();
+    assert!(pc.is_fully_enriched());
+    assert_eq!(pc.completed_count(), 3);
+    assert!(pc.next_incomplete().is_none());
+}

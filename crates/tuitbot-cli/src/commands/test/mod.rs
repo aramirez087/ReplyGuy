@@ -4,8 +4,13 @@
 //! running the agent. Each check runs independently -- a failure
 //! in one does not skip others.
 
+#[cfg(test)]
+mod tests;
+
 use serde::Serialize;
 use tuitbot_core::config::Config;
+use tuitbot_core::error::LlmError;
+use tuitbot_core::llm::factory::create_provider;
 use tuitbot_core::startup::{expand_tilde, load_tokens_from_file, StartupError, StoredTokens};
 
 use super::OutputFormat;
@@ -115,7 +120,8 @@ fn build_test_output(checks: Vec<CheckResult>, auth_details: Option<AuthDetails>
 /// Returns `true` if all checks pass, `false` if any fail.
 /// Does **not** call `process::exit` — callers decide what to do on failure.
 pub async fn run_checks(config: &Config, config_path: &str) -> bool {
-    let results = collect_checks(config, config_path);
+    let mut results = collect_checks(config, config_path);
+    results.push(check_llm_connectivity(config).await);
 
     // Print results.
     eprintln!();
@@ -127,9 +133,14 @@ pub async fn run_checks(config: &Config, config_path: &str) -> bool {
     let all_passed = results.iter().all(|r| r.passed);
     if all_passed {
         eprintln!("All checks passed.");
+        print_enrichment_hint(config);
     } else {
         let failed = results.iter().filter(|r| !r.passed).count();
         eprintln!("{failed} check(s) failed.");
+    }
+
+    if let Some(hint) = next_step_guidance(&results) {
+        eprintln!("{hint}");
     }
 
     all_passed
@@ -146,7 +157,8 @@ pub async fn execute(
 ) -> anyhow::Result<()> {
     if output.is_json() {
         let auth = evaluate_auth(load_tokens_from_file());
-        let checks = collect_checks_with_auth(config, config_path, auth.checks);
+        let mut checks = collect_checks_with_auth(config, config_path, auth.checks);
+        checks.push(check_llm_connectivity(config).await);
         let output = build_test_output(checks, Some(auth.details));
         println!("{}", serde_json::to_string(&output)?);
         if !output.passed {
@@ -411,125 +423,66 @@ fn check_database(config: &Config) -> CheckResult {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn valid_tokens() -> StoredTokens {
-        StoredTokens {
-            access_token: "access".to_string(),
-            refresh_token: Some("refresh".to_string()),
-            expires_at: Some(chrono::Utc::now() + chrono::TimeDelta::hours(1)),
-            scopes: vec![
-                "tweet.read".to_string(),
-                "tweet.write".to_string(),
-                "users.read".to_string(),
-                "follows.read".to_string(),
-                "follows.write".to_string(),
-                "like.read".to_string(),
-                "like.write".to_string(),
-                "bookmark.read".to_string(),
-                "bookmark.write".to_string(),
-                "offline.access".to_string(),
-            ],
+/// Check LLM connectivity by creating the provider and calling health_check.
+async fn check_llm_connectivity(config: &Config) -> CheckResult {
+    let provider = match create_provider(&config.llm) {
+        Ok(p) => p,
+        Err(LlmError::NotConfigured) => {
+            return CheckResult::fail("LLM connectivity", "provider not configured");
         }
+        Err(e) => {
+            return CheckResult::fail("LLM connectivity", format!("{}: {e}", config.llm.provider));
+        }
+    };
+
+    match provider.health_check().await {
+        Ok(()) => CheckResult::ok(
+            "LLM connectivity",
+            format!("{}: reachable", provider.name()),
+        ),
+        Err(e) => CheckResult::fail("LLM connectivity", format!("{}: {e}", provider.name())),
+    }
+}
+
+/// Synchronous provider-creation check for unit tests (no network call).
+#[cfg(test)]
+fn check_llm_connectivity_sync(config: &tuitbot_core::config::LlmConfig) -> CheckResult {
+    match create_provider(config) {
+        Ok(p) => CheckResult::ok(
+            "LLM connectivity",
+            format!("{}: created (not tested)", p.name()),
+        ),
+        Err(LlmError::NotConfigured) => {
+            CheckResult::fail("LLM connectivity", "provider not configured")
+        }
+        Err(e) => CheckResult::fail("LLM connectivity", format!("{e}")),
+    }
+}
+
+/// Return a next-step hint if all checks passed, or `None` if any failed.
+fn next_step_guidance(checks: &[CheckResult]) -> Option<&'static str> {
+    if checks.iter().all(|r| r.passed) {
+        Some("Ready! Try: tuitbot tick --dry-run")
+    } else {
+        None
+    }
+}
+
+/// Print an enrichment hint when all checks pass but profile isn't fully enriched.
+fn print_enrichment_hint(config: &Config) {
+    let completeness = config.profile_completeness();
+    if completeness.is_fully_enriched() {
+        return;
     }
 
-    #[test]
-    fn check_auth_expired_token_fails_token_status() {
-        let mut tokens = valid_tokens();
-        tokens.expires_at = Some(chrono::Utc::now() - chrono::TimeDelta::minutes(5));
+    eprintln!();
+    eprintln!("Profile: {}", completeness.one_line_summary());
 
-        let auth = evaluate_auth(Ok(tokens));
-
-        let token_check = auth
-            .checks
-            .iter()
-            .find(|check| check.label == "X API token")
-            .expect("token check should exist");
-        assert!(!token_check.passed);
-    }
-
-    #[test]
-    fn check_auth_missing_refresh_token_fails() {
-        let mut tokens = valid_tokens();
-        tokens.refresh_token = None;
-
-        let auth = evaluate_auth(Ok(tokens));
-
-        let refresh_check = auth
-            .checks
-            .iter()
-            .find(|check| check.label == "X API refresh")
-            .expect("refresh check should exist");
-        assert!(!refresh_check.passed);
-        assert!(refresh_check.message.contains("offline.access"));
-    }
-
-    #[test]
-    fn check_auth_full_scopes_all_ok() {
-        let auth = evaluate_auth(Ok(valid_tokens()));
-
-        assert_eq!(auth.checks.len(), 3);
-        assert!(auth.checks.iter().all(|check| check.passed));
-        assert!(auth.details.missing_scopes.is_empty());
-        assert!(auth.details.degraded_features.is_empty());
-    }
-
-    #[test]
-    fn check_auth_partial_scopes_reports_degraded_features() {
-        let mut tokens = valid_tokens();
-        tokens.scopes.retain(|scope| scope != "like.write");
-
-        let auth = evaluate_auth(Ok(tokens));
-
-        let scope_check = auth
-            .checks
-            .iter()
-            .find(|check| check.label == "X API scopes")
-            .expect("scope check should exist");
-        assert!(!scope_check.passed);
-        assert!(scope_check.message.contains("like.write"));
-        assert!(scope_check.message.contains("Like/unlike"));
-        assert!(auth
-            .details
-            .degraded_features
-            .contains(&"Like/unlike".to_string()));
-    }
-
-    #[test]
-    fn check_auth_no_tokens_returns_single_fail() {
-        let auth = evaluate_auth(Err(StartupError::AuthRequired));
-
-        assert_eq!(auth.checks.len(), 1);
-        assert!(!auth.checks[0].passed);
-        assert_eq!(auth.checks[0].label, "X API auth");
-    }
-
-    #[test]
-    fn check_auth_legacy_tokens_report_scope_not_tracked() {
-        let mut tokens = valid_tokens();
-        tokens.scopes.clear();
-
-        let auth = evaluate_auth(Ok(tokens));
-
-        let scope_check = auth
-            .checks
-            .iter()
-            .find(|check| check.label == "X API scopes")
-            .expect("scope check should exist");
-        assert!(scope_check.passed);
-        assert!(scope_check.message.contains("not tracked"));
-        assert!(!auth.details.scopes_tracked);
-    }
-
-    #[test]
-    fn json_output_contains_auth_details() {
-        let auth = evaluate_auth(Ok(valid_tokens()));
-        let output = build_test_output(auth.checks, Some(auth.details));
-        let value = serde_json::to_value(output).expect("serialize output");
-
-        assert!(value.get("auth_details").is_some());
-        assert!(value["auth_details"].is_object());
+    if let Some(stage) = completeness.next_incomplete() {
+        eprintln!(
+            "Tip: Run `tuitbot settings enrich` to configure {} ({})",
+            stage.label().to_lowercase(),
+            stage.description()
+        );
     }
 }

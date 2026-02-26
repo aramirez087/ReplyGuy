@@ -5,6 +5,7 @@
 /// - `tuitbot settings --show`       — pretty-print current config
 /// - `tuitbot settings --set K=V`    — direct one-shot set
 /// - `tuitbot settings <category>`   — jump to a specific category
+mod enrich;
 mod helpers;
 mod interactive;
 mod render;
@@ -81,9 +82,12 @@ pub async fn execute(args: SettingsArgs, config_path: &str, output: OutputFormat
             "approval" => interactive::edit_category_approval(&mut config, tracker)?,
             "schedule" | "hours" => interactive::edit_category_schedule(&mut config, tracker)?,
             "storage" | "logging" => interactive::edit_category_storage(&mut config, tracker)?,
+            "enrich" | "enrichment" | "profile" => {
+                enrich::run_enrichment(&mut config, tracker)?
+            }
             other => bail!(
                 "Unknown category: {other}\n\
-                 Valid categories: product, voice, persona, ai, x, targets, limits, scoring, timing, approval, schedule, storage"
+                 Valid categories: product, voice, persona, ai, x, targets, limits, scoring, timing, approval, schedule, storage, enrich"
             ),
         }
         if !tracker.changes.is_empty() {

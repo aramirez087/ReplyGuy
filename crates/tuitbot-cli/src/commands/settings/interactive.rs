@@ -157,6 +157,7 @@ pub(super) fn interactive_menu(config: &mut Config, config_path: &Path) -> Resul
         eprintln!();
 
         let categories = &[
+            "Enrich Profile      — guided setup for voice, persona, targeting",
             "Your Product        — name, description, keywords, audience",
             "Brand Voice         — personality, reply style, content style",
             "Persona             — opinions, experiences, content pillars",
@@ -179,19 +180,20 @@ pub(super) fn interactive_menu(config: &mut Config, config_path: &Path) -> Resul
             .interact()?;
 
         match selection {
-            0 => edit_category_product(config, &mut tracker)?,
-            1 => edit_category_voice(config, &mut tracker)?,
-            2 => edit_category_persona(config, &mut tracker)?,
-            3 => edit_category_llm(config, &mut tracker)?,
-            4 => edit_category_xapi(config, &mut tracker)?,
-            5 => edit_category_targets(config, &mut tracker)?,
-            6 => edit_category_limits(config, &mut tracker)?,
-            7 => edit_category_scoring(config, &mut tracker)?,
-            8 => edit_category_timing(config, &mut tracker)?,
-            9 => edit_category_approval(config, &mut tracker)?,
-            10 => edit_category_schedule(config, &mut tracker)?,
-            11 => edit_category_storage(config, &mut tracker)?,
-            12 => break, // Save & Exit
+            0 => super::enrich::run_enrichment(config, &mut tracker)?,
+            1 => edit_category_product(config, &mut tracker)?,
+            2 => edit_category_voice(config, &mut tracker)?,
+            3 => edit_category_persona(config, &mut tracker)?,
+            4 => edit_category_llm(config, &mut tracker)?,
+            5 => edit_category_xapi(config, &mut tracker)?,
+            6 => edit_category_targets(config, &mut tracker)?,
+            7 => edit_category_limits(config, &mut tracker)?,
+            8 => edit_category_scoring(config, &mut tracker)?,
+            9 => edit_category_timing(config, &mut tracker)?,
+            10 => edit_category_approval(config, &mut tracker)?,
+            11 => edit_category_schedule(config, &mut tracker)?,
+            12 => edit_category_storage(config, &mut tracker)?,
+            13 => break, // Save & Exit
             _ => unreachable!(),
         }
     }
