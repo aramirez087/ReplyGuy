@@ -256,5 +256,9 @@ pub struct McpArgs {
 #[derive(Debug, clap::Subcommand)]
 pub enum McpSubcommand {
     /// Start the MCP server (stdio transport)
-    Serve,
+    Serve {
+        /// Runtime profile: "workflow" (default, full features) or "api" (X client tools only, no DB)
+        #[arg(long, default_value = "workflow")]
+        profile: String,
+    },
 }

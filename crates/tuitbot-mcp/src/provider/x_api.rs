@@ -3,7 +3,7 @@
 use crate::contract::ProviderError;
 use crate::provider::SocialReadProvider;
 use tuitbot_core::error::XApiError;
-use tuitbot_core::x_api::types::{SearchResponse, Tweet, User};
+use tuitbot_core::x_api::types::{MentionResponse, SearchResponse, Tweet, User};
 use tuitbot_core::x_api::XApiClient;
 
 /// Wraps a `dyn XApiClient` reference to implement [`SocialReadProvider`].
@@ -45,10 +45,52 @@ impl SocialReadProvider for XApiProvider<'_> {
             .await
             .map_err(|e| map_x_error(&e))
     }
+
+    async fn get_user_mentions(
+        &self,
+        user_id: &str,
+        since_id: Option<&str>,
+        pagination_token: Option<&str>,
+    ) -> Result<MentionResponse, ProviderError> {
+        self.client
+            .get_mentions(user_id, since_id, pagination_token)
+            .await
+            .map_err(|e| map_x_error(&e))
+    }
+
+    async fn get_user_tweets(
+        &self,
+        user_id: &str,
+        max_results: u32,
+        pagination_token: Option<&str>,
+    ) -> Result<SearchResponse, ProviderError> {
+        self.client
+            .get_user_tweets(user_id, max_results, pagination_token)
+            .await
+            .map_err(|e| map_x_error(&e))
+    }
+
+    async fn get_home_timeline(
+        &self,
+        user_id: &str,
+        max_results: u32,
+        pagination_token: Option<&str>,
+    ) -> Result<SearchResponse, ProviderError> {
+        self.client
+            .get_home_timeline(user_id, max_results, pagination_token)
+            .await
+            .map_err(|e| map_x_error(&e))
+    }
+
+    async fn get_me(&self) -> Result<User, ProviderError> {
+        self.client.get_me().await.map_err(|e| map_x_error(&e))
+    }
 }
 
 /// Map an [`XApiError`] to a [`ProviderError`].
-fn map_x_error(e: &XApiError) -> ProviderError {
+///
+/// Visible within the crate so kernel write/engage functions can reuse it.
+pub(crate) fn map_x_error(e: &XApiError) -> ProviderError {
     match e {
         XApiError::RateLimited { retry_after } => ProviderError::RateLimited {
             retry_after: *retry_after,

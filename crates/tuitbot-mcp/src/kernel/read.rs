@@ -59,3 +59,69 @@ pub async fn search_tweets(
         Err(e) => provider_error_to_response(&e, start),
     }
 }
+
+/// Get mentions for a user via the provider.
+pub async fn get_user_mentions(
+    provider: &dyn SocialReadProvider,
+    user_id: &str,
+    since_id: Option<&str>,
+    pagination_token: Option<&str>,
+) -> String {
+    let start = Instant::now();
+    match provider
+        .get_user_mentions(user_id, since_id, pagination_token)
+        .await
+    {
+        Ok(resp) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            ToolResponse::success(&resp)
+                .with_meta(ToolMeta::new(elapsed))
+                .to_json()
+        }
+        Err(e) => provider_error_to_response(&e, start),
+    }
+}
+
+/// Get recent tweets from a specific user via the provider.
+pub async fn get_user_tweets(
+    provider: &dyn SocialReadProvider,
+    user_id: &str,
+    max_results: u32,
+    pagination_token: Option<&str>,
+) -> String {
+    let start = Instant::now();
+    match provider
+        .get_user_tweets(user_id, max_results, pagination_token)
+        .await
+    {
+        Ok(resp) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            ToolResponse::success(&resp)
+                .with_meta(ToolMeta::new(elapsed))
+                .to_json()
+        }
+        Err(e) => provider_error_to_response(&e, start),
+    }
+}
+
+/// Get the authenticated user's home timeline via the provider.
+pub async fn get_home_timeline(
+    provider: &dyn SocialReadProvider,
+    user_id: &str,
+    max_results: u32,
+    pagination_token: Option<&str>,
+) -> String {
+    let start = Instant::now();
+    match provider
+        .get_home_timeline(user_id, max_results, pagination_token)
+        .await
+    {
+        Ok(resp) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            ToolResponse::success(&resp)
+                .with_meta(ToolMeta::new(elapsed))
+                .to_json()
+        }
+        Err(e) => provider_error_to_response(&e, start),
+    }
+}

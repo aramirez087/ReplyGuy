@@ -1,8 +1,7 @@
 //! Read-only X API tools.
 //!
-//! `get_tweet_by_id`, `get_user_by_username`, and `search_tweets` delegate
-//! to the kernel layer via a [`SocialReadProvider`]. The remaining read tools
-//! still use the X API client directly (to be migrated in future sessions).
+//! All read tools delegate to the kernel layer via a [`SocialReadProvider`],
+//! except `get_x_usage` which requires DB access (workflow-only).
 
 use std::time::Instant;
 
@@ -49,91 +48,55 @@ pub async fn search_tweets(
     kernel::read::search_tweets(&provider, query, max_results, since_id, pagination_token).await
 }
 
-/// Get mentions for the authenticated user.
+/// Get mentions for the authenticated user — delegates to kernel.
 pub async fn get_user_mentions(
     state: &SharedState,
     since_id: Option<&str>,
     pagination_token: Option<&str>,
 ) -> String {
-    let start = Instant::now();
     let client = match state.x_client.as_ref() {
-        Some(c) => c,
-        None => return not_configured_response(start),
+        Some(c) => c.as_ref(),
+        None => return not_configured_response(Instant::now()),
     };
     let user_id = match state.authenticated_user_id.as_deref() {
         Some(id) => id,
-        None => return no_user_id_response(start),
+        None => return no_user_id_response(Instant::now()),
     };
-
-    match client
-        .get_mentions(user_id, since_id, pagination_token)
-        .await
-    {
-        Ok(resp) => {
-            let elapsed = start.elapsed().as_millis() as u64;
-            ToolResponse::success(&resp)
-                .with_meta(ToolMeta::new(elapsed))
-                .to_json()
-        }
-        Err(e) => super::error_response(&e, start),
-    }
+    let provider = XApiProvider::new(client);
+    kernel::read::get_user_mentions(&provider, user_id, since_id, pagination_token).await
 }
 
-/// Get recent tweets from a specific user.
+/// Get recent tweets from a specific user — delegates to kernel.
 pub async fn get_user_tweets(
     state: &SharedState,
     user_id: &str,
     max_results: u32,
     pagination_token: Option<&str>,
 ) -> String {
-    let start = Instant::now();
     let client = match state.x_client.as_ref() {
-        Some(c) => c,
-        None => return not_configured_response(start),
+        Some(c) => c.as_ref(),
+        None => return not_configured_response(Instant::now()),
     };
-
-    match client
-        .get_user_tweets(user_id, max_results, pagination_token)
-        .await
-    {
-        Ok(resp) => {
-            let elapsed = start.elapsed().as_millis() as u64;
-            ToolResponse::success(&resp)
-                .with_meta(ToolMeta::new(elapsed))
-                .to_json()
-        }
-        Err(e) => super::error_response(&e, start),
-    }
+    let provider = XApiProvider::new(client);
+    kernel::read::get_user_tweets(&provider, user_id, max_results, pagination_token).await
 }
 
-/// Get the authenticated user's home timeline.
+/// Get the authenticated user's home timeline — delegates to kernel.
 pub async fn get_home_timeline(
     state: &SharedState,
     max_results: u32,
     pagination_token: Option<&str>,
 ) -> String {
-    let start = Instant::now();
     let client = match state.x_client.as_ref() {
-        Some(c) => c,
-        None => return not_configured_response(start),
+        Some(c) => c.as_ref(),
+        None => return not_configured_response(Instant::now()),
     };
     let user_id = match state.authenticated_user_id.as_deref() {
         Some(id) => id,
-        None => return no_user_id_response(start),
+        None => return no_user_id_response(Instant::now()),
     };
-
-    match client
-        .get_home_timeline(user_id, max_results, pagination_token)
-        .await
-    {
-        Ok(resp) => {
-            let elapsed = start.elapsed().as_millis() as u64;
-            ToolResponse::success(&resp)
-                .with_meta(ToolMeta::new(elapsed))
-                .to_json()
-        }
-        Err(e) => super::error_response(&e, start),
-    }
+    let provider = XApiProvider::new(client);
+    kernel::read::get_home_timeline(&provider, user_id, max_results, pagination_token).await
 }
 
 /// Get X API usage statistics.
