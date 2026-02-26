@@ -373,7 +373,7 @@ Available in both profiles. No X client required (except `health_check` which ne
 
 ---
 
-## Workflow-Only Tools (31)
+## Workflow-Only Tools (30)
 
 These tools are available only in the Workflow profile (`tuitbot mcp serve`, the default). They provide analytics, content generation, approval workflows, discovery, and composite multi-step operations.
 
@@ -662,3 +662,33 @@ Start with `dry_run_mutations = true` to verify agent behavior.
 - Prefer JSON outputs for deterministic agent behavior.
 - Use `--profile api-readonly` for agents that only need X API reads without workflow overhead, or `--profile readonly` for the minimal safe surface.
 - Scraper backend carries elevated risk of account restrictions — use for read-heavy, experimental integrations only.
+
+---
+
+## MCP Profiles — Release Checklist
+
+### Completed Tasks
+
+1. Three MCP profiles (`full`/64 tools, `readonly`/10, `api-readonly`/20) with curated tool routing — read-only profiles are safe by construction (mutation tools not registered).
+2. `mcp manifest` CLI command for machine-readable profile introspection (`--format json|table`).
+3. Generated JSON manifest artifacts in `docs/generated/` (`full.json`, `readonly.json`, `api-readonly.json`).
+4. 32 boundary tests covering isolation, mutation denylists, lane constraints, dependency validation, and error codes.
+5. Conformance tests (27 kernel tools) with golden fixture snapshots for schema drift detection.
+6. Eval harness (4 scenarios, 4 quality gates) for continuous profile validation.
+7. Manifest-sync CI job with `scripts/check-mcp-manifests.sh` drift guard.
+8. Full documentation update — MCP reference, CLI reference, README, and CHANGELOG.
+9. Operator runbook for profile verification (see `docs/operations.md`).
+10. Final validation pass — all quality gates green.
+
+### Known Limitations
+
+1. Write/Engage tool tables use legacy "Profile: Both" column — misleading for mutation tools that are Workflow-only. Cosmetic; no runtime impact.
+2. `mkdocs build --strict` not enforced in CI — docs validated manually.
+3. No live X API integration test — all tests use mock providers. Safety enforced structurally.
+
+### Rollback Strategy
+
+1. `git revert <sha>` on the merge commit to main.
+2. Verify with `cargo test -p tuitbot-mcp boundary` — boundary tests must still pass.
+3. Partial rollback: users switch `--profile` flag to a working profile.
+4. Regenerate manifests after rollback: `bash scripts/generate-mcp-manifests.sh`.

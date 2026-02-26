@@ -112,3 +112,67 @@ cargo test -p tuitbot-mcp eval_harness
 ```
 
 The eval harness asserts quality gates directly — test failure means a gate was breached.
+
+---
+
+## MCP Profile Verification Runbook
+
+Use this runbook to verify MCP profile integrity after deployments, profile changes, or CI failures.
+
+### 1. Quick Profile Smoke Test
+
+Confirm each profile exposes the expected number of tools:
+
+```bash
+# Full profile (expect 64)
+cargo run -p tuitbot-cli -- mcp manifest --profile full --format json | jq '.tool_count'
+
+# Read-only profile (expect 10)
+cargo run -p tuitbot-cli -- mcp manifest --profile readonly --format json | jq '.tool_count'
+
+# API read-only profile (expect 20)
+cargo run -p tuitbot-cli -- mcp manifest --profile api-readonly --format json | jq '.tool_count'
+```
+
+### 2. Confirm Read-Only Guarantee
+
+Verify that read-only profiles contain zero mutation tools:
+
+```bash
+# Both should output 0
+cargo run -p tuitbot-cli -- mcp manifest --profile readonly --format json \
+  | jq '[.tools[] | select(.mutation == true)] | length'
+
+cargo run -p tuitbot-cli -- mcp manifest --profile api-readonly --format json \
+  | jq '[.tools[] | select(.mutation == true)] | length'
+```
+
+### 3. Verify Manifest Sync
+
+Ensure committed manifests match the current binary output:
+
+```bash
+bash scripts/check-mcp-manifests.sh
+# Expected: exit 0, "All manifests in sync."
+```
+
+If drift is detected, regenerate: `bash scripts/generate-mcp-manifests.sh`
+
+### 4. CI Gate Reference
+
+| Gate | What it validates | Local run command |
+|------|-------------------|-------------------|
+| Boundary tests (32) | Profile isolation, mutation denylists, lane constraints | `cargo test -p tuitbot-mcp boundary` |
+| Conformance tests | 27 kernel tools present with correct schemas | `cargo test -p tuitbot-mcp conformance_all_kernel_tools` |
+| Golden snapshots | Response schema drift detection | `cargo test -p tuitbot-mcp golden_snapshot_matches` |
+| Eval harness | 4 scenarios × 4 quality gates | `cargo test -p tuitbot-mcp eval_harness` |
+| Manifest sync | Committed JSON matches binary output | `bash scripts/check-mcp-manifests.sh` |
+
+### 5. Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Wrong tool count | Tool added/removed without profile update | Update `router.rs` profile registration, re-run boundary tests |
+| Mutation tool in read-only | Tool incorrectly tagged or registered | Check `is_mutation()` in tool definition, verify profile exclusion |
+| Manifest drift | Binary updated but manifests not regenerated | Run `bash scripts/generate-mcp-manifests.sh` and commit |
+| Boundary test failure | Profile invariant violated | Read test assertion message — it names the exact tool/profile mismatch |
