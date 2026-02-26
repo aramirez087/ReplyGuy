@@ -194,9 +194,52 @@ tuitbot stats --output json
 tuitbot settings --show --output json
 tuitbot approve --list --output json
 
-# AI agent integration
-tuitbot mcp serve
+# AI agent integration (MCP)
+tuitbot mcp serve                  # Workflow profile (64 tools, default)
+tuitbot mcp serve --profile api    # API profile (34 tools)
 ```
+
+---
+
+## AI Agent Integration (MCP)
+
+Tuitbot includes an MCP server that exposes **65 tools** for AI agents (Claude Code, custom agents, etc.). Three integration lanes serve different use cases:
+
+| Lane | Command | Tools | Use Case |
+|------|---------|-------|----------|
+| **Official API** | `tuitbot mcp serve --profile api` | 34 | Direct X API access with policy safety net |
+| **Scraper** | Same + `provider_backend = "scraper"` | 34 | Read-heavy agents without API tokens |
+| **Workflow** | `tuitbot mcp serve` | 64 | Full growth co-pilot: analytics, content gen, approval workflows |
+
+**Claude Code config (Workflow — recommended):**
+
+```json
+{
+  "mcpServers": {
+    "tuitbot": {
+      "command": "tuitbot",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+**Claude Code config (API only):**
+
+```json
+{
+  "mcpServers": {
+    "tuitbot": {
+      "command": "tuitbot",
+      "args": ["mcp", "serve", "--profile", "api"]
+    }
+  }
+}
+```
+
+All tools return structured `{ success, data, error, meta }` envelopes with 28 typed error codes, retryable flags, and per-invocation telemetry. Mutations are policy-gated with approval routing, dry-run mode, and hourly rate limiting.
+
+Full reference: [MCP Reference](https://aramirez087.github.io/TuitBot/mcp-reference/).
 
 ---
 
