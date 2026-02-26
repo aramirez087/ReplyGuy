@@ -26,3 +26,21 @@ cargo clippy --workspace -- -D warnings
 ## Documentation updates
 
 Any behavior, config, or CLI change should update docs in the same PR.
+
+## Generated artifacts
+
+The files in `docs/generated/` are auto-generated from Rust source and must not
+be edited by hand:
+
+- `mcp-manifest-full.json` — full profile tool manifest
+- `mcp-manifest-readonly.json` — readonly profile tool manifest
+- `mcp-manifest-api-readonly.json` — api-readonly profile tool manifest
+
+After changing MCP tools or profiles, regenerate and commit in the same PR:
+
+```bash
+bash scripts/generate-mcp-manifests.sh
+```
+
+CI runs `scripts/check-mcp-manifests.sh` and rejects PRs where committed
+artifacts have drifted from source.

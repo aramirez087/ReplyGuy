@@ -17,6 +17,20 @@ tuitbot mcp serve --profile api
 tuitbot -c /path/to/config.toml mcp serve
 ```
 
+## Machine-Readable Manifests
+
+Profile-specific tool manifests are generated from source and committed as JSON:
+
+| Profile | File | Tools |
+|---------|------|-------|
+| `full` | [`docs/generated/mcp-manifest-full.json`](generated/mcp-manifest-full.json) | 64 |
+| `readonly` | [`docs/generated/mcp-manifest-readonly.json`](generated/mcp-manifest-readonly.json) | 10 |
+| `api-readonly` | [`docs/generated/mcp-manifest-api-readonly.json`](generated/mcp-manifest-api-readonly.json) | 20 |
+
+These files include tool names, categories, mutation flags, dependency
+requirements, profiles, and possible error codes. Regenerate after any tool or
+profile change with `bash scripts/generate-mcp-manifests.sh`.
+
 ## Three MCP Lanes
 
 TuitBot's MCP server offers three integration lanes, each serving a different use case:

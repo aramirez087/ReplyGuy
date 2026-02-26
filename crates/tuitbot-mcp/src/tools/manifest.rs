@@ -123,7 +123,7 @@ pub fn generate_profile_manifest(profile: crate::state::Profile) -> ProfileManif
         .into_iter()
         .filter(|t| t.profiles.contains(&manifest_profile))
         .collect();
-    tools.sort_by_key(|t| t.name);
+    tools.sort_by(|a, b| a.name.cmp(&b.name));
 
     ProfileManifest {
         tuitbot_version: env!("CARGO_PKG_VERSION").to_string(),
