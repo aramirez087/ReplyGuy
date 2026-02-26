@@ -23,6 +23,7 @@ use tuitbot_core::config::{Config, OperatingMode};
 
 use super::{OutputFormat, TickArgs};
 use crate::deps::RuntimeDeps;
+use crate::output::write_stdout;
 
 // ============================================================================
 // JSON output types
@@ -688,10 +689,8 @@ async fn run_thread(
 
 fn print_output(output: &TickOutput, format: OutputFormat) {
     if format.is_json() {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(output).expect("serialization cannot fail")
-        );
+        let json = serde_json::to_string_pretty(output).expect("serialization cannot fail");
+        let _ = write_stdout(&json);
     } else {
         print_text_output(output);
     }

@@ -16,6 +16,7 @@ use tuitbot_core::config::Config;
 use tuitbot_core::storage;
 
 use super::{ApproveArgs, OutputFormat};
+use crate::output::write_stdout;
 
 #[derive(Serialize)]
 struct ApprovalItemJson {
@@ -74,7 +75,7 @@ pub async fn execute(
         let pending = storage::approval_queue::get_pending(&pool).await?;
         if output.is_json() {
             let items: Vec<ApprovalItemJson> = pending.iter().map(ApprovalItemJson::from).collect();
-            println!("{}", serde_json::to_string(&items)?);
+            write_stdout(&serde_json::to_string(&items)?)?;
         } else if pending.is_empty() {
             eprintln!("No pending items.");
         } else {
@@ -110,7 +111,7 @@ pub async fn execute(
                 id,
                 status: "approved".to_string(),
             };
-            println!("{}", serde_json::to_string(&result)?);
+            write_stdout(&serde_json::to_string(&result)?)?;
         } else {
             eprintln!("Approved item #{id}.");
         }
@@ -125,7 +126,7 @@ pub async fn execute(
                 id,
                 status: "rejected".to_string(),
             };
-            println!("{}", serde_json::to_string(&result)?);
+            write_stdout(&serde_json::to_string(&result)?)?;
         } else {
             eprintln!("Rejected item #{id}.");
         }
@@ -144,7 +145,7 @@ pub async fn execute(
             });
         }
         if output.is_json() {
-            println!("{}", serde_json::to_string(&results)?);
+            write_stdout(&serde_json::to_string(&results)?)?;
         } else {
             eprintln!("Approved {} item(s).", results.len());
         }

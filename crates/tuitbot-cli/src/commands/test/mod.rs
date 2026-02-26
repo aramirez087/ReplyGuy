@@ -14,6 +14,7 @@ use tuitbot_core::llm::factory::create_provider;
 use tuitbot_core::startup::{expand_tilde, load_tokens_from_file, StartupError, StoredTokens};
 
 use super::OutputFormat;
+use crate::output::write_stdout;
 
 /// A single diagnostic check result.
 #[derive(Clone, Serialize)]
@@ -160,7 +161,7 @@ pub async fn execute(
         let mut checks = collect_checks_with_auth(config, config_path, auth.checks);
         checks.push(check_llm_connectivity(config).await);
         let output = build_test_output(checks, Some(auth.details));
-        println!("{}", serde_json::to_string(&output)?);
+        write_stdout(&serde_json::to_string(&output)?)?;
         if !output.passed {
             std::process::exit(1);
         }
