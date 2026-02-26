@@ -19,7 +19,51 @@ use crate::contract::error::provider_error_to_response;
 use crate::provider::x_api::map_x_error;
 use tuitbot_core::error::XApiError;
 
-use crate::tools::response::{ToolMeta, ToolResponse};
+use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
+
+/// Convert a `ToolkitError` to a JSON error response string.
+///
+/// Used by read operations that don't have an audit guard.
+fn toolkit_error_response(e: &tuitbot_core::toolkit::ToolkitError, start: Instant) -> String {
+    use tuitbot_core::toolkit::ToolkitError;
+    match e {
+        ToolkitError::XApi(xe) => provider_error_to_response(&map_x_error(xe), start),
+        other => {
+            let code = match other {
+                ToolkitError::UnsupportedMediaType { .. } => ErrorCode::UnsupportedMediaType,
+                ToolkitError::MediaTooLarge { .. } => ErrorCode::MediaUploadError,
+                ToolkitError::ThreadPartialFailure { .. } => ErrorCode::ThreadPartialFailure,
+                _ => ErrorCode::InvalidInput,
+            };
+            let elapsed = start.elapsed().as_millis() as u64;
+            ToolResponse::error(code, other.to_string())
+                .with_meta(ToolMeta::new(elapsed))
+                .to_json()
+        }
+    }
+}
+
+/// Convert a `ToolkitError` to a JSON error response in an audited context.
+///
+/// Used by write/engage operations with an active audit guard.
+async fn audited_toolkit_error_response(
+    guard: &crate::tools::idempotency::MutationGuard,
+    state: &crate::state::SharedState,
+    e: &tuitbot_core::toolkit::ToolkitError,
+    start: Instant,
+) -> String {
+    use tuitbot_core::toolkit::ToolkitError;
+    match e {
+        ToolkitError::XApi(xe) => audit::audited_x_error_response(guard, state, xe, start).await,
+        other => {
+            let msg = other.to_string();
+            let meta = audit::complete_audited_failure(guard, state, &msg, start).await;
+            ToolResponse::error(ErrorCode::InvalidInput, &msg)
+                .with_meta(meta)
+                .to_json()
+        }
+    }
+}
 
 // Re-export all public tool functions.
 pub use engage::{

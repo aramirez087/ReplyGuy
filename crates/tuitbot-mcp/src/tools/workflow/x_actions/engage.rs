@@ -1,4 +1,7 @@
 //! Engagement X API tools: like, follow, unfollow, retweet, unretweet.
+//!
+//! All raw X API calls go through `tuitbot_core::toolkit::engage`.
+//! Policy gate, audit trail, and mutation recording remain here (workflow concerns).
 
 use std::time::Instant;
 
@@ -34,7 +37,7 @@ pub async fn like_tweet(state: &SharedState, tweet_id: &str) -> String {
         audit::AuditGateResult::EarlyReturn(r) => return r,
     };
 
-    match client.like_tweet(user_id, tweet_id).await {
+    match tuitbot_core::toolkit::engage::like_tweet(client.as_ref(), user_id, tweet_id).await {
         Ok(liked) => {
             let _ = tuitbot_core::mcp_policy::McpPolicyEvaluator::record_mutation(
                 &state.pool,
@@ -55,7 +58,7 @@ pub async fn like_tweet(state: &SharedState, tweet_id: &str) -> String {
             let meta = audit::complete_audited_success(&guard, state, &result_data, start).await;
             ToolResponse::success(result).with_meta(meta).to_json()
         }
-        Err(e) => audit::audited_x_error_response(&guard, state, &e, start).await,
+        Err(ref e) => super::audited_toolkit_error_response(&guard, state, e, start).await,
     }
 }
 
@@ -83,7 +86,8 @@ pub async fn follow_user(state: &SharedState, target_user_id: &str) -> String {
         audit::AuditGateResult::EarlyReturn(r) => return r,
     };
 
-    match client.follow_user(user_id, target_user_id).await {
+    match tuitbot_core::toolkit::engage::follow_user(client.as_ref(), user_id, target_user_id).await
+    {
         Ok(following) => {
             let _ = tuitbot_core::mcp_policy::McpPolicyEvaluator::record_mutation(
                 &state.pool,
@@ -104,7 +108,7 @@ pub async fn follow_user(state: &SharedState, target_user_id: &str) -> String {
             let meta = audit::complete_audited_success(&guard, state, &result_data, start).await;
             ToolResponse::success(result).with_meta(meta).to_json()
         }
-        Err(e) => audit::audited_x_error_response(&guard, state, &e, start).await,
+        Err(ref e) => super::audited_toolkit_error_response(&guard, state, e, start).await,
     }
 }
 
@@ -132,7 +136,9 @@ pub async fn unfollow_user(state: &SharedState, target_user_id: &str) -> String 
         audit::AuditGateResult::EarlyReturn(r) => return r,
     };
 
-    match client.unfollow_user(user_id, target_user_id).await {
+    match tuitbot_core::toolkit::engage::unfollow_user(client.as_ref(), user_id, target_user_id)
+        .await
+    {
         Ok(following) => {
             let _ = tuitbot_core::mcp_policy::McpPolicyEvaluator::record_mutation(
                 &state.pool,
@@ -153,7 +159,7 @@ pub async fn unfollow_user(state: &SharedState, target_user_id: &str) -> String 
             let meta = audit::complete_audited_success(&guard, state, &result_data, start).await;
             ToolResponse::success(result).with_meta(meta).to_json()
         }
-        Err(e) => audit::audited_x_error_response(&guard, state, &e, start).await,
+        Err(ref e) => super::audited_toolkit_error_response(&guard, state, e, start).await,
     }
 }
 
@@ -181,7 +187,7 @@ pub async fn retweet(state: &SharedState, tweet_id: &str) -> String {
         audit::AuditGateResult::EarlyReturn(r) => return r,
     };
 
-    match client.retweet(user_id, tweet_id).await {
+    match tuitbot_core::toolkit::engage::retweet(client.as_ref(), user_id, tweet_id).await {
         Ok(retweeted) => {
             let _ = tuitbot_core::mcp_policy::McpPolicyEvaluator::record_mutation(
                 &state.pool,
@@ -202,7 +208,7 @@ pub async fn retweet(state: &SharedState, tweet_id: &str) -> String {
             let meta = audit::complete_audited_success(&guard, state, &result_data, start).await;
             ToolResponse::success(result).with_meta(meta).to_json()
         }
-        Err(e) => audit::audited_x_error_response(&guard, state, &e, start).await,
+        Err(ref e) => super::audited_toolkit_error_response(&guard, state, e, start).await,
     }
 }
 
@@ -230,7 +236,7 @@ pub async fn unlike_tweet(state: &SharedState, tweet_id: &str) -> String {
         audit::AuditGateResult::EarlyReturn(r) => return r,
     };
 
-    match client.unlike_tweet(user_id, tweet_id).await {
+    match tuitbot_core::toolkit::engage::unlike_tweet(client.as_ref(), user_id, tweet_id).await {
         Ok(liked) => {
             let _ = tuitbot_core::mcp_policy::McpPolicyEvaluator::record_mutation(
                 &state.pool,
@@ -251,7 +257,7 @@ pub async fn unlike_tweet(state: &SharedState, tweet_id: &str) -> String {
             let meta = audit::complete_audited_success(&guard, state, &result_data, start).await;
             ToolResponse::success(result).with_meta(meta).to_json()
         }
-        Err(e) => audit::audited_x_error_response(&guard, state, &e, start).await,
+        Err(ref e) => super::audited_toolkit_error_response(&guard, state, e, start).await,
     }
 }
 
@@ -279,7 +285,7 @@ pub async fn bookmark_tweet(state: &SharedState, tweet_id: &str) -> String {
         audit::AuditGateResult::EarlyReturn(r) => return r,
     };
 
-    match client.bookmark_tweet(user_id, tweet_id).await {
+    match tuitbot_core::toolkit::engage::bookmark_tweet(client.as_ref(), user_id, tweet_id).await {
         Ok(bookmarked) => {
             let _ = tuitbot_core::mcp_policy::McpPolicyEvaluator::record_mutation(
                 &state.pool,
@@ -300,7 +306,7 @@ pub async fn bookmark_tweet(state: &SharedState, tweet_id: &str) -> String {
             let meta = audit::complete_audited_success(&guard, state, &result_data, start).await;
             ToolResponse::success(result).with_meta(meta).to_json()
         }
-        Err(e) => audit::audited_x_error_response(&guard, state, &e, start).await,
+        Err(ref e) => super::audited_toolkit_error_response(&guard, state, e, start).await,
     }
 }
 
@@ -328,7 +334,8 @@ pub async fn unbookmark_tweet(state: &SharedState, tweet_id: &str) -> String {
         audit::AuditGateResult::EarlyReturn(r) => return r,
     };
 
-    match client.unbookmark_tweet(user_id, tweet_id).await {
+    match tuitbot_core::toolkit::engage::unbookmark_tweet(client.as_ref(), user_id, tweet_id).await
+    {
         Ok(bookmarked) => {
             let _ = tuitbot_core::mcp_policy::McpPolicyEvaluator::record_mutation(
                 &state.pool,
@@ -349,7 +356,7 @@ pub async fn unbookmark_tweet(state: &SharedState, tweet_id: &str) -> String {
             let meta = audit::complete_audited_success(&guard, state, &result_data, start).await;
             ToolResponse::success(result).with_meta(meta).to_json()
         }
-        Err(e) => audit::audited_x_error_response(&guard, state, &e, start).await,
+        Err(ref e) => super::audited_toolkit_error_response(&guard, state, e, start).await,
     }
 }
 
@@ -377,7 +384,7 @@ pub async fn unretweet(state: &SharedState, tweet_id: &str) -> String {
         audit::AuditGateResult::EarlyReturn(r) => return r,
     };
 
-    match client.unretweet(user_id, tweet_id).await {
+    match tuitbot_core::toolkit::engage::unretweet(client.as_ref(), user_id, tweet_id).await {
         Ok(retweeted) => {
             let _ = tuitbot_core::mcp_policy::McpPolicyEvaluator::record_mutation(
                 &state.pool,
@@ -398,6 +405,6 @@ pub async fn unretweet(state: &SharedState, tweet_id: &str) -> String {
             let meta = audit::complete_audited_success(&guard, state, &result_data, start).await;
             ToolResponse::success(result).with_meta(meta).to_json()
         }
-        Err(e) => audit::audited_x_error_response(&guard, state, &e, start).await,
+        Err(ref e) => super::audited_toolkit_error_response(&guard, state, e, start).await,
     }
 }

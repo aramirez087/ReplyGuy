@@ -14,6 +14,7 @@ pub mod scoring;
 pub mod startup;
 pub mod storage;
 pub mod strategy;
+pub mod toolkit;
 pub mod x_api;
 
 pub use error::*;
