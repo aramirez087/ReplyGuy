@@ -9,3 +9,4 @@ Step-by-step guides for common operational scenarios.
 | [Rate Limit Storms](rate-limit-storms.md) | Circuit breaker trips, sustained 429/403 errors |
 | [Backup & Restore](backup-restore.md) | Scheduled backups, manual recovery |
 | [Database Maintenance](database-maintenance.md) | WAL checkpoint, cleanup, VACUUM |
+| [MCP Profile Verification](../operations.md#mcp-profile-verification-runbook) | Verify profiles, tool counts, read-only safety |

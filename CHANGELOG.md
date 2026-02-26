@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Three MCP profiles: `--profile full` (64 tools, default), `--profile readonly` (10 tools), `--profile api-readonly` (20 tools). Read-only profiles are safe by construction — mutation tools are not registered, not policy-blocked.
+- `mcp manifest` command for machine-readable profile introspection.
+- Auto-generated tool manifests in `docs/generated/` validated by CI.
+- MCP profile operator runbook for verifying profiles and read-only safety.
+- MCP profiles release checklist with completed tasks, known limitations, and rollback strategy.
+
+### Changed
+
+- MCP documentation updated to reflect profile-based model (replaces legacy lane/api terminology).
+
 ## [0.1.7](https://github.com/aramirez087/TuitBot/compare/tuitbot-cli-v0.1.6...tuitbot-cli-v0.1.7) - 2026-02-26
 
 ### Added

@@ -143,6 +143,11 @@ async fn main() -> anyhow::Result<()> {
     if let Commands::Restore(args) = cli.command {
         return commands::restore::execute(args).await;
     }
+    if let Commands::Mcp(ref args) = cli.command {
+        if let commands::McpSubcommand::Manifest { ref profile } = args.command {
+            return commands::mcp::print_manifest(profile);
+        }
+    }
 
     // Load configuration.
     let config = Config::load(Some(&cli.config)).map_err(|e| {
@@ -170,6 +175,7 @@ async fn main() -> anyhow::Result<()> {
             commands::McpSubcommand::Serve { ref profile } => {
                 commands::mcp::execute(&config, profile).await?;
             }
+            commands::McpSubcommand::Manifest { .. } => unreachable!(),
         },
         Commands::Run(args) => {
             commands::run::execute(&config, args.status_interval).await?;

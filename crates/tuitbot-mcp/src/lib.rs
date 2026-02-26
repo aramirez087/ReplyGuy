@@ -4,9 +4,10 @@
 //! allowing AI agents to natively discover and call analytics, approval queue,
 //! content generation, scoring, and configuration operations.
 //!
-//! Two runtime profiles are available:
-//! - **`workflow`** (default): full TuitBot growth features. All 60+ tools.
-//! - **`api`**: generic X client tools only. No DB, no LLM, no policy gating. ~24 tools.
+//! Three runtime profiles are available:
+//! - **`full`** (default): full TuitBot growth features. All 60+ tools.
+//! - **`readonly`**: minimal read-only X tools (10). No DB, no LLM, no mutations.
+//! - **`api-readonly`**: broader read-only X tools (20). No DB, no LLM, no mutations.
 
 pub mod contract;
 mod kernel;
@@ -27,26 +28,28 @@ use tuitbot_core::startup;
 use tuitbot_core::storage;
 use tuitbot_core::x_api::{XApiClient, XApiHttpClient};
 
-use server::{ApiMcpServer, TuitbotMcpServer};
-use state::{ApiState, AppState};
+use server::{ApiReadonlyMcpServer, ReadonlyMcpServer, TuitbotMcpServer};
+use state::{AppState, ReadonlyState, SharedReadonlyState};
 use tools::idempotency::IdempotencyStore;
 
 pub use state::Profile;
+pub use tools::manifest::{generate_profile_manifest, ProfileManifest};
 
 /// Run the MCP server with the specified profile.
 ///
-/// Dispatches to `run_stdio_server` (workflow) or `run_api_server` (api).
+/// Dispatches to the appropriate server implementation based on profile.
 pub async fn run_server(config: Config, profile: Profile) -> anyhow::Result<()> {
     match profile {
-        Profile::Workflow => run_stdio_server(config).await,
-        Profile::Api => run_api_server(config).await,
+        Profile::Full => run_stdio_server(config).await,
+        Profile::Readonly => run_readonly_server(config).await,
+        Profile::ApiReadonly => run_api_readonly_server(config).await,
     }
 }
 
-/// Run the full workflow MCP server on stdio transport.
+/// Run the full-profile MCP server on stdio transport.
 ///
 /// This is the main entry point called by the CLI `tuitbot mcp serve` subcommand
-/// (or `--profile workflow`). It initializes the database, optionally creates an
+/// (or `--profile full`). It initializes the database, optionally creates an
 /// LLM provider, and serves MCP tools over stdin/stdout.
 pub async fn run_stdio_server(config: Config) -> anyhow::Result<()> {
     // Initialize database
@@ -133,7 +136,7 @@ pub async fn run_stdio_server(config: Config) -> anyhow::Result<()> {
 
     let server = TuitbotMcpServer::new(state);
 
-    tracing::info!("Starting Tuitbot MCP server on stdio (workflow profile)");
+    tracing::info!("Starting Tuitbot MCP server on stdio (full profile)");
 
     let service = server
         .serve(stdio())
@@ -148,22 +151,24 @@ pub async fn run_stdio_server(config: Config) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Run the lightweight API-profile MCP server on stdio transport.
-///
-/// Fails fast if X API tokens are missing or expired — an API profile
-/// with no X client has zero usable tools.
-pub async fn run_api_server(config: Config) -> anyhow::Result<()> {
-    // Load X API tokens (required for API profile)
+// ── Shared init for read-only profiles ──────────────────────────────────
+
+/// Initialize shared readonly state: load tokens, create X client, verify get_me.
+async fn init_readonly_state(
+    config: Config,
+    profile: Profile,
+) -> anyhow::Result<SharedReadonlyState> {
+    // Load X API tokens (required for readonly profiles)
     let tokens = startup::load_tokens_from_file().map_err(|e| {
         anyhow::anyhow!(
-            "API profile requires X API tokens but they are not available: {e}. \
+            "{profile} profile requires X API tokens but they are not available: {e}. \
              Run `tuitbot auth` to authenticate."
         )
     })?;
 
     if tokens.is_expired() {
         anyhow::bail!(
-            "API profile requires valid X API tokens but they are expired. \
+            "{profile} profile requires valid X API tokens but they are expired. \
              Run `tuitbot auth` to re-authenticate."
         );
     }
@@ -173,7 +178,7 @@ pub async fn run_api_server(config: Config) -> anyhow::Result<()> {
     // Verify connectivity and get authenticated user ID
     let user = client.get_me().await.map_err(|e| {
         anyhow::anyhow!(
-            "API profile requires a working X API client but get_me() failed: {e}. \
+            "{profile} profile requires a working X API client but get_me() failed: {e}. \
              Check your network connection or re-authenticate with `tuitbot auth`."
         )
     })?;
@@ -181,7 +186,8 @@ pub async fn run_api_server(config: Config) -> anyhow::Result<()> {
     tracing::info!(
         username = %user.username,
         user_id = %user.id,
-        "X API client initialized (api profile)"
+        profile = %profile,
+        "X API client initialized ({profile} profile)"
     );
 
     // Log provider backend selection.
@@ -199,16 +205,19 @@ pub async fn run_api_server(config: Config) -> anyhow::Result<()> {
         }
     }
 
-    let state = Arc::new(ApiState {
+    Ok(Arc::new(ReadonlyState {
         config,
         x_client: Box::new(client),
         authenticated_user_id: user.id,
-        idempotency: Arc::new(IdempotencyStore::new()),
-    });
+    }))
+}
 
-    let server = ApiMcpServer::new(state);
+/// Run the readonly-profile MCP server on stdio transport (10 tools).
+async fn run_readonly_server(config: Config) -> anyhow::Result<()> {
+    let state = init_readonly_state(config, Profile::Readonly).await?;
+    let server = ReadonlyMcpServer::new(state);
 
-    tracing::info!("Starting Tuitbot MCP server on stdio (api profile)");
+    tracing::info!("Starting Tuitbot MCP server on stdio (readonly profile)");
 
     let service = server
         .serve(stdio())
@@ -216,6 +225,21 @@ pub async fn run_api_server(config: Config) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to start MCP server: {e}"))?;
 
     service.waiting().await?;
+    Ok(())
+}
 
+/// Run the api-readonly-profile MCP server on stdio transport (20 tools).
+async fn run_api_readonly_server(config: Config) -> anyhow::Result<()> {
+    let state = init_readonly_state(config, Profile::ApiReadonly).await?;
+    let server = ApiReadonlyMcpServer::new(state);
+
+    tracing::info!("Starting Tuitbot MCP server on stdio (api-readonly profile)");
+
+    let service = server
+        .serve(stdio())
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to start MCP server: {e}"))?;
+
+    service.waiting().await?;
     Ok(())
 }

@@ -66,3 +66,13 @@ Most read-only commands support:
 ```
 
 Use this for automation, monitoring, and alerting.
+
+## MCP server
+
+```bash
+tuitbot mcp serve                          # Full profile (64 tools, default)
+tuitbot mcp serve --profile readonly       # Read-only (10 tools)
+tuitbot mcp serve --profile api-readonly   # API read-only (20 tools)
+tuitbot mcp manifest                       # Emit tool manifest JSON (full)
+tuitbot mcp manifest --profile readonly    # Emit manifest for profile
+```

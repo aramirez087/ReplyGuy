@@ -1,7 +1,8 @@
 //! DB-free engagement functions taking `&dyn XApiClient` directly.
 //!
-//! These kernel engage tools bypass policy gating and mutation recording,
-//! making them suitable for the API profile where no DB is available.
+//! These kernel engage tools bypass policy gating and mutation recording.
+//! Currently used only by conformance tests; kept as the canonical kernel
+//! abstraction for any future profile that needs direct engage operations.
 
 use std::time::Instant;
 

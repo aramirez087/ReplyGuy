@@ -1,0 +1,209 @@
+{
+  "tuitbot_version": "0.1.7",
+  "mcp_schema_version": "1.0",
+  "profile": "readonly",
+  "tool_count": 10,
+  "tools": [
+    {
+      "name": "get_config",
+      "category": "config",
+      "lane": "shared",
+      "mutation": false,
+      "requires_x_client": false,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow",
+        "readonly",
+        "api_readonly"
+      ],
+      "possible_error_codes": []
+    },
+    {
+      "name": "get_tweet_by_id",
+      "category": "read",
+      "lane": "shared",
+      "mutation": false,
+      "requires_x_client": true,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow",
+        "readonly",
+        "api_readonly"
+      ],
+      "possible_error_codes": [
+        "x_not_configured",
+        "x_rate_limited",
+        "x_auth_expired",
+        "x_forbidden",
+        "x_network_error",
+        "x_api_error"
+      ]
+    },
+    {
+      "name": "health_check",
+      "category": "health",
+      "lane": "shared",
+      "mutation": false,
+      "requires_x_client": false,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow",
+        "readonly",
+        "api_readonly"
+      ],
+      "possible_error_codes": []
+    },
+    {
+      "name": "score_tweet",
+      "category": "scoring",
+      "lane": "shared",
+      "mutation": false,
+      "requires_x_client": false,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow",
+        "readonly",
+        "api_readonly"
+      ],
+      "possible_error_codes": [
+        "invalid_input"
+      ]
+    },
+    {
+      "name": "x_get_home_timeline",
+      "category": "read",
+      "lane": "shared",
+      "mutation": false,
+      "requires_x_client": true,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow",
+        "readonly",
+        "api_readonly"
+      ],
+      "possible_error_codes": [
+        "x_not_configured",
+        "x_rate_limited",
+        "x_auth_expired",
+        "x_forbidden",
+        "x_network_error",
+        "x_api_error"
+      ]
+    },
+    {
+      "name": "x_get_user_by_id",
+      "category": "read",
+      "lane": "shared",
+      "mutation": false,
+      "requires_x_client": true,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow",
+        "readonly",
+        "api_readonly"
+      ],
+      "possible_error_codes": [
+        "x_not_configured",
+        "x_rate_limited",
+        "x_auth_expired",
+        "x_forbidden",
+        "x_network_error",
+        "x_api_error"
+      ]
+    },
+    {
+      "name": "x_get_user_by_username",
+      "category": "read",
+      "lane": "shared",
+      "mutation": false,
+      "requires_x_client": true,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow",
+        "readonly",
+        "api_readonly"
+      ],
+      "possible_error_codes": [
+        "x_not_configured",
+        "x_rate_limited",
+        "x_auth_expired",
+        "x_forbidden",
+        "x_network_error",
+        "x_api_error"
+      ]
+    },
+    {
+      "name": "x_get_user_mentions",
+      "category": "read",
+      "lane": "shared",
+      "mutation": false,
+      "requires_x_client": true,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow",
+        "readonly",
+        "api_readonly"
+      ],
+      "possible_error_codes": [
+        "x_not_configured",
+        "x_rate_limited",
+        "x_auth_expired",
+        "x_forbidden",
+        "x_network_error",
+        "x_api_error"
+      ]
+    },
+    {
+      "name": "x_get_user_tweets",
+      "category": "read",
+      "lane": "shared",
+      "mutation": false,
+      "requires_x_client": true,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow",
+        "readonly",
+        "api_readonly"
+      ],
+      "possible_error_codes": [
+        "x_not_configured",
+        "x_rate_limited",
+        "x_auth_expired",
+        "x_forbidden",
+        "x_network_error",
+        "x_api_error"
+      ]
+    },
+    {
+      "name": "x_search_tweets",
+      "category": "read",
+      "lane": "shared",
+      "mutation": false,
+      "requires_x_client": true,
+      "requires_llm": false,
+      "requires_db": false,
+      "profiles": [
+        "workflow",
+        "readonly",
+        "api_readonly"
+      ],
+      "possible_error_codes": [
+        "x_not_configured",
+        "x_rate_limited",
+        "x_auth_expired",
+        "x_forbidden",
+        "x_network_error",
+        "x_api_error"
+      ]
+    }
+  ]
+}

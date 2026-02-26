@@ -5,7 +5,7 @@
 //! possible error codes. Generated programmatically — the snapshot test in this
 //! module ensures the manifest JSON artifact never drifts from source.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::contract::error_code::ErrorCode;
 
@@ -19,10 +19,10 @@ pub struct ToolManifest {
 }
 
 /// Metadata for a single tool.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ToolEntry {
     /// Tool name as registered in the MCP server (e.g. `"x_post_tweet"`).
-    pub name: &'static str,
+    pub name: String,
     /// Functional category.
     pub category: ToolCategory,
     /// Module lane (shared vs workflow).
@@ -42,7 +42,7 @@ pub struct ToolEntry {
 }
 
 /// Functional category for grouping tools.
-#[derive(Debug, Serialize, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolCategory {
     Read,
@@ -64,16 +64,17 @@ pub enum ToolCategory {
 }
 
 /// MCP server profile.
-#[derive(Debug, Serialize, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum Profile {
     Workflow,
-    Api,
+    Readonly,
+    ApiReadonly,
 }
 
 /// Module lane: whether a tool lives in the shared `tools/` root or
 /// inside `tools/workflow/`.
-#[derive(Debug, Serialize, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum Lane {
     /// Shared tools available to all profiles (config, scoring, response).
@@ -90,12 +91,55 @@ pub fn generate_manifest() -> ToolManifest {
     }
 }
 
+// ── Profile-specific manifest ────────────────────────────────────────────
+
+impl From<crate::state::Profile> for Profile {
+    fn from(p: crate::state::Profile) -> Self {
+        match p {
+            crate::state::Profile::Full => Self::Workflow,
+            crate::state::Profile::Readonly => Self::Readonly,
+            crate::state::Profile::ApiReadonly => Self::ApiReadonly,
+        }
+    }
+}
+
+/// Profile-specific manifest with version metadata and filtered tool list.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ProfileManifest {
+    pub tuitbot_version: String,
+    pub mcp_schema_version: String,
+    pub profile: String,
+    pub tool_count: usize,
+    pub tools: Vec<ToolEntry>,
+}
+
+/// Generate a profile-specific manifest with version metadata.
+///
+/// Filters `all_tools()` to the requested profile, sorts alphabetically
+/// by tool name for deterministic output, and populates version fields.
+pub fn generate_profile_manifest(profile: crate::state::Profile) -> ProfileManifest {
+    let manifest_profile = Profile::from(profile);
+    let mut tools: Vec<ToolEntry> = all_tools()
+        .into_iter()
+        .filter(|t| t.profiles.contains(&manifest_profile))
+        .collect();
+    tools.sort_by(|a, b| a.name.cmp(&b.name));
+
+    ProfileManifest {
+        tuitbot_version: env!("CARGO_PKG_VERSION").to_string(),
+        mcp_schema_version: "1.0".to_string(),
+        profile: profile.to_string(),
+        tool_count: tools.len(),
+        tools,
+    }
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 /// Shorthand constructors.
 #[allow(clippy::too_many_arguments)]
 fn tool(
-    name: &'static str,
+    name: &str,
     category: ToolCategory,
     lane: Lane,
     mutation: bool,
@@ -106,7 +150,7 @@ fn tool(
     error_codes: &[ErrorCode],
 ) -> ToolEntry {
     ToolEntry {
-        name,
+        name: name.to_owned(),
         category,
         lane,
         mutation,
@@ -118,9 +162,14 @@ fn tool(
     }
 }
 
-const BOTH: &[Profile] = &[Profile::Workflow, Profile::Api];
+/// All three profiles.
+const ALL_THREE: &[Profile] = &[Profile::Workflow, Profile::Readonly, Profile::ApiReadonly];
+/// Workflow + api-readonly (not minimal readonly).
+const WF_AND_API_RO: &[Profile] = &[Profile::Workflow, Profile::ApiReadonly];
+/// Workflow only.
 const WF: &[Profile] = &[Profile::Workflow];
-const API: &[Profile] = &[Profile::Api];
+/// Api-readonly only.
+const API_RO: &[Profile] = &[Profile::ApiReadonly];
 
 /// X API read errors.
 const X_READ_ERR: &[ErrorCode] = &[
@@ -298,7 +347,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             false,
-            BOTH,
+            ALL_THREE,
             &[ErrorCode::InvalidInput],
         ),
         // ── Approval Queue ───────────────────────────────────────────
@@ -409,7 +458,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             false,
-            BOTH,
+            ALL_THREE,
             &[],
         ),
         tool(
@@ -420,7 +469,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             false,
-            BOTH,
+            WF_AND_API_RO,
             &[],
         ),
         // ── Capabilities & Health ────────────────────────────────────
@@ -432,7 +481,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             false,
-            BOTH,
+            WF_AND_API_RO,
             &[],
         ),
         tool(
@@ -442,9 +491,9 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             false,
-            true,
-            BOTH,
-            DB_ERR,
+            false,
+            ALL_THREE,
+            &[],
         ),
         // ── Mode & Policy ────────────────────────────────────────────
         tool(
@@ -455,7 +504,7 @@ fn all_tools() -> Vec<ToolEntry> {
             false,
             false,
             false,
-            BOTH,
+            WF_AND_API_RO,
             &[],
         ),
         tool(
@@ -514,7 +563,7 @@ fn all_tools() -> Vec<ToolEntry> {
             WF,
             DB_ERR,
         ),
-        // ── X API Read ───────────────────────────────────────────────
+        // ── X API Core Read (in all 3 profiles) ─────────────────────
         tool(
             "get_tweet_by_id",
             ToolCategory::Read,
@@ -523,7 +572,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             false,
-            BOTH,
+            ALL_THREE,
             X_READ_ERR,
         ),
         tool(
@@ -534,7 +583,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             false,
-            BOTH,
+            ALL_THREE,
             X_READ_ERR,
         ),
         tool(
@@ -545,7 +594,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             false,
-            BOTH,
+            ALL_THREE,
             X_READ_ERR,
         ),
         tool(
@@ -556,7 +605,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             false,
-            BOTH,
+            ALL_THREE,
             X_READ_USER_ERR,
         ),
         tool(
@@ -567,7 +616,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             false,
-            BOTH,
+            ALL_THREE,
             X_READ_ERR,
         ),
         tool(
@@ -578,9 +627,21 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             false,
-            BOTH,
+            ALL_THREE,
             X_READ_USER_ERR,
         ),
+        tool(
+            "x_get_user_by_id",
+            ToolCategory::Read,
+            Lane::Shared,
+            false,
+            true,
+            false,
+            false,
+            ALL_THREE,
+            X_READ_ERR,
+        ),
+        // ── X API Extended Read (workflow + api-readonly) ────────────
         tool(
             "x_get_followers",
             ToolCategory::Read,
@@ -589,7 +650,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             false,
-            BOTH,
+            WF_AND_API_RO,
             X_READ_ERR,
         ),
         tool(
@@ -600,18 +661,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             false,
-            BOTH,
-            X_READ_ERR,
-        ),
-        tool(
-            "x_get_user_by_id",
-            ToolCategory::Read,
-            Lane::Shared,
-            false,
-            true,
-            false,
-            false,
-            BOTH,
+            WF_AND_API_RO,
             X_READ_ERR,
         ),
         tool(
@@ -622,7 +672,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             false,
-            BOTH,
+            WF_AND_API_RO,
             X_READ_ERR,
         ),
         tool(
@@ -633,7 +683,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             false,
-            BOTH,
+            WF_AND_API_RO,
             X_READ_USER_ERR,
         ),
         tool(
@@ -644,7 +694,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             false,
-            BOTH,
+            WF_AND_API_RO,
             X_READ_ERR,
         ),
         tool(
@@ -655,7 +705,7 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             false,
-            BOTH,
+            WF_AND_API_RO,
             X_READ_ERR,
         ),
         tool(
@@ -669,7 +719,7 @@ fn all_tools() -> Vec<ToolEntry> {
             WF,
             DB_ERR,
         ),
-        // ── X API Read (API-only) ────────────────────────────────────
+        // ── X API Read (api-readonly only) ──────────────────────────
         tool(
             "x_get_me",
             ToolCategory::Read,
@@ -678,63 +728,63 @@ fn all_tools() -> Vec<ToolEntry> {
             true,
             false,
             false,
-            API,
+            API_RO,
             X_READ_ERR,
         ),
-        // ── X API Write ──────────────────────────────────────────────
+        // ── X API Write (workflow only) ─────────────────────────────
         tool(
             "x_post_tweet",
             ToolCategory::Write,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             true,
-            BOTH,
+            WF,
             X_WRITE_ERR,
         ),
         tool(
             "x_reply_to_tweet",
             ToolCategory::Write,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             true,
-            BOTH,
+            WF,
             X_WRITE_ERR,
         ),
         tool(
             "x_quote_tweet",
             ToolCategory::Write,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             true,
-            BOTH,
+            WF,
             X_WRITE_ERR,
         ),
         tool(
             "x_delete_tweet",
             ToolCategory::Write,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             true,
-            BOTH,
+            WF,
             X_WRITE_ERR,
         ),
         tool(
             "x_post_thread",
             ToolCategory::Write,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             true,
-            BOTH,
+            WF,
             &[
                 ErrorCode::XNotConfigured,
                 ErrorCode::XRateLimited,
@@ -753,105 +803,105 @@ fn all_tools() -> Vec<ToolEntry> {
                 ErrorCode::PolicyError,
             ],
         ),
-        // ── X API Engage ─────────────────────────────────────────────
+        // ── X API Engage (workflow only) ─────────────────────────────
         tool(
             "x_like_tweet",
             ToolCategory::Engage,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             true,
-            BOTH,
+            WF,
             X_ENGAGE_ERR,
         ),
         tool(
             "x_unlike_tweet",
             ToolCategory::Engage,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             true,
-            BOTH,
+            WF,
             X_ENGAGE_ERR,
         ),
         tool(
             "x_follow_user",
             ToolCategory::Engage,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             true,
-            BOTH,
+            WF,
             X_ENGAGE_ERR,
         ),
         tool(
             "x_unfollow_user",
             ToolCategory::Engage,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             true,
-            BOTH,
+            WF,
             X_ENGAGE_ERR,
         ),
         tool(
             "x_retweet",
             ToolCategory::Engage,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             true,
-            BOTH,
+            WF,
             X_ENGAGE_ERR,
         ),
         tool(
             "x_unretweet",
             ToolCategory::Engage,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             true,
-            BOTH,
+            WF,
             X_ENGAGE_ERR,
         ),
         tool(
             "x_bookmark_tweet",
             ToolCategory::Engage,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             true,
-            BOTH,
+            WF,
             X_ENGAGE_ERR,
         ),
         tool(
             "x_unbookmark_tweet",
             ToolCategory::Engage,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             true,
-            BOTH,
+            WF,
             X_ENGAGE_ERR,
         ),
-        // ── X API Media ──────────────────────────────────────────────
+        // ── X API Media (workflow only) ─────────────────────────────
         tool(
             "x_upload_media",
             ToolCategory::Media,
-            Lane::Shared,
+            Lane::Workflow,
             true,
             true,
             false,
             false,
-            BOTH,
+            WF,
             &[
                 ErrorCode::XNotConfigured,
                 ErrorCode::UnsupportedMediaType,
@@ -1015,7 +1065,11 @@ mod tests {
         let manifest = generate_manifest();
         let mut seen = HashSet::new();
         for t in &manifest.tools {
-            assert!(seen.insert(t.name), "duplicate tool name: {}", t.name);
+            assert!(
+                seen.insert(t.name.as_str()),
+                "duplicate tool name: {}",
+                t.name
+            );
         }
     }
 
