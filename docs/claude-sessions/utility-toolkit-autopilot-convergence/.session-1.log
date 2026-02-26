@@ -1,0 +1,28 @@
+## Completion Summary
+
+### Files Created (4 deliverables)
+
+| File | Lines | Purpose |
+|------|------:|---------|
+| `docs/roadmap/utility-toolkit-autopilot-convergence/charter.md` | 301 | Architecture charter: mission, gap analysis (6 gaps), three-layer target architecture, MCP profile mapping, dependency rules, migration strategy, success criteria |
+| `docs/roadmap/utility-toolkit-autopilot-convergence/architecture-decisions.md` | 386 | 14 non-negotiable design decisions (AD-01 through AD-14) with rationale and rejected alternatives |
+| `docs/roadmap/utility-toolkit-autopilot-convergence/execution-plan.md` | 368 | Locked 7-session plan (Sessions 02-08) with inputs, tasks, outputs, exit criteria, risks, and dependency graph |
+| `docs/roadmap/utility-toolkit-autopilot-convergence/session-01-handoff.md` | 112 | Handoff: completed work, decisions, Session 02 exact inputs (11 file paths + baseline commands) |
+
+### Tests Run
+- No Rust code changed — CI checks not applicable for this documentation-only session.
+
+### Key Decisions Made
+- **Three-layer model**: Toolkit (`core::toolkit/`), Workflow (`core::workflow/`), Autopilot (`core::automation/` refactored)
+- **Module-level layering** within `tuitbot-core`, not new crates (AD-01)
+- **Toolkit is stateless** over `&dyn XApiClient` (AD-02)
+- **Workflow uses `WorkflowCtx`** with borrowed references (AD-03, AD-14)
+- **No policy in toolkit** — raw writes, policy centralized in workflow (AD-04, AD-05)
+- **Autopilot never calls XApiClient directly** (AD-06)
+- **MCP profiles and envelope unchanged** (AD-07, AD-08)
+- **14 total decisions**, zero unresolved
+
+### Warnings for Next Session
+- Session 02 should record baseline test counts and MCP tool counts before making any changes (commands provided in handoff).
+- `adapters.rs` (39KB) is the largest risk in Session 07 — plan for systematic trait-by-trait replacement.
+- Sessions 06 and 07 are independent and can run in parallel if needed.
