@@ -162,37 +162,46 @@ Then navigate to `http://localhost:3001` to access the full graphical dashboard 
 
 ### 3. Command Line Interface (CLI)
 
-For power users who prefer the terminal, Tuitbot is available as a Rust crate:
+For power users who prefer the terminal. **Hello world in under 2 minutes:**
 
 ```bash
-cargo install tuitbot-cli --locked
-tuitbot init
-tuitbot auth
-tuitbot run    # Run daemon
-# OR
-tuitbot tick   # For cron/planners
+cargo install tuitbot-cli --locked   # or grab a binary from Releases
+
+tuitbot init                         # 5 quick questions → config ready
+tuitbot auth                         # authenticate with X
+tuitbot test                         # verify everything works
+tuitbot tick --dry-run               # see the bot in action (no posts)
 ```
+
+That's it — you're running. `init` asks only 5 questions (product name, keywords, LLM provider, API key, X Client ID). Everything else gets safe defaults. Customize later with `tuitbot settings` or `tuitbot init --advanced` for full control.
 
 ---
 
 ## Quick Commands
 
 ```bash
-# Core setup / validation
-tuitbot init
-tuitbot auth
-tuitbot test
+# Setup (hello world path)
+tuitbot init                               # 5-question quickstart
+tuitbot init --advanced                    # full 8-step wizard
+tuitbot auth                               # OAuth 2.0 with X
+tuitbot test                               # validate config + connectivity
+tuitbot tick --dry-run                     # preview what the bot would do
 
-# Operating modes
-tuitbot run
-tuitbot tick --output json
-tuitbot tick --dry-run
+# Run
+tuitbot run                                # long-running daemon
+tuitbot tick --output json                 # single pass for cron/schedulers
+tuitbot tick --loops discovery,content     # run specific loops only
+
+# Configure
+tuitbot settings                           # interactive editor
+tuitbot settings enrich                    # guided profile enrichment
+tuitbot settings --show                    # read-only config view
 
 # Operations
-tuitbot update
-tuitbot stats --output json
-tuitbot settings --show --output json
-tuitbot approve --list --output json
+tuitbot approve --list                     # review queued posts
+tuitbot stats --output json                # analytics snapshot
+tuitbot backup                             # back up database
+tuitbot update                             # check for updates
 
 # AI agent integration (MCP)
 tuitbot mcp serve                          # Full profile (64 tools, default)

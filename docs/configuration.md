@@ -1,12 +1,10 @@
 # Configuration
 
-> **Note**: While power-users and CLI users can edit following paths directly via terminal, the recommended method is using the **Visual Settings UI Editor** inside the Desktop App dashboard under the "Settings" tab.
+> **Note**: The Desktop App provides a **Visual Settings Editor** under the Settings tab. CLI users can edit files directly or use `tuitbot settings` for interactive editing.
 
-## Config file location
+## Config File
 
-Default path:
-
-- `~/.tuitbot/config.toml`
+Default path: `~/.tuitbot/config.toml`
 
 Custom path:
 
@@ -14,22 +12,58 @@ Custom path:
 tuitbot -c /path/to/config.toml <command>
 ```
 
-## High-Level Sections
+## Quickstart vs Advanced Config
 
-- `mode`: operating mode (`autopilot` or `composer`).
-- `x_api`: OAuth/app settings for X integration.
-- `llm`: provider and model settings.
-- `limits`: rate and behavior guardrails.
-- `intervals`: loop timing.
-- `scheduling`: active hours and slot windows.
-- `features`: loop enable/disable switches.
+`tuitbot init` generates a minimal config with safe defaults. Only 5 fields are required to start:
+
+| Field | Section | Required by |
+|-------|---------|-------------|
+| `product_name` | `[business]` | Quickstart |
+| `product_keywords` | `[business]` | Quickstart |
+| `provider` | `[llm]` | Quickstart |
+| `api_key` | `[llm]` | Quickstart (except ollama) |
+| `client_id` | `[x_api]` | Quickstart |
+
+Everything else uses defaults. Run `tuitbot init --advanced` for the full 8-step wizard, or enrich progressively after setup.
+
+## Config Sections
+
+| Section | Purpose |
+|---------|---------|
+| `mode` | Operating mode (`autopilot` or `composer`) |
+| `[x_api]` | OAuth credentials for X integration |
+| `[business]` | Product profile, keywords, voice, persona |
+| `[llm]` | LLM provider, model, and API key |
+| `[targets]` | Target account monitoring |
+| `[scoring]` | 6-signal scoring engine weights and threshold |
+| `[limits]` | Rate limits and safety guardrails |
+| `[intervals]` | Automation loop timing |
+| `[schedule]` | Active hours and timezone |
+| `[storage]` | Database path and retention |
+| `[logging]` | Log level and status interval |
+| `[mcp_policy]` | MCP mutation policy enforcement |
+| `[circuit_breaker]` | X API rate-limit protection |
+
+## Progressive Enrichment
+
+The quickstart config is intentionally minimal. Enrich your profile in stages for better results:
+
+```bash
+tuitbot settings enrich
+```
+
+| Stage | Fields | Impact |
+|-------|--------|--------|
+| **Voice** | `brand_voice`, `reply_style`, `content_style` | Shapes every LLM-generated reply and tweet |
+| **Persona** | `persona_opinions`, `persona_experiences`, `content_pillars` | Makes content authentic and distinctive |
+| **Targeting** | `targets.accounts`, `competitor_keywords` | Focuses discovery on high-value conversations |
+
+Check enrichment status with `tuitbot test` — it reports which stages are complete and suggests the next one.
 
 ## Operating Mode
 
-Tuitbot supports two operating modes that control how much autonomy the agent has:
-
 | Mode | Behavior |
-|---|---|
+|------|----------|
 | `autopilot` (default) | All automation loops run. Posts automatically when `approval_mode = false`, or queues for review when `approval_mode = true`. |
 | `composer` | Autonomous loops disabled. Discovery runs read-only. Approval mode is always on. You write content with AI Assist and the Discovery Feed. |
 
@@ -41,29 +75,41 @@ mode = "composer"
 export TUITBOT_MODE=composer
 ```
 
-Setting `mode = "composer"` implies `approval_mode = true` — you do not need to set both. See the [Composer Mode guide](composer-mode.md) for full details.
+Setting `mode = "composer"` implies `approval_mode = true`. See the [Composer Mode guide](composer-mode.md) for details.
 
 ## Safety Defaults
 
-The default profile is intentionally conservative:
+The default config is intentionally conservative:
 
-- reply caps
-- per-author caps
-- banned phrase checks
-- active-hours enforcement
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `approval_mode` | `true` | All posts queued for human review |
+| `max_replies_per_day` | `5` | Hard cap on daily replies |
+| `max_tweets_per_day` | `6` | Hard cap on daily tweets |
+| `max_replies_per_author_per_day` | `1` | Anti-harassment limit |
+| `product_mention_ratio` | `0.2` | Max 20% of replies mention product |
+| `banned_phrases` | `["check out", "you should try", ...]` | Blocked salesy phrases |
+| Active hours | 8 AM – 10 PM UTC | Sleeps outside these hours |
 
-## Validation
+## Environment Variable Overrides
+
+Override any config value using the `TUITBOT_` prefix with `__` (double underscore) as the section separator:
 
 ```bash
-tuitbot settings --show
-tuitbot test
+export TUITBOT_X_API__CLIENT_ID=your_client_id
+export TUITBOT_X_API__CLIENT_SECRET=your_secret
+export TUITBOT_LLM__API_KEY=sk-your-key
+export TUITBOT_LLM__PROVIDER=openai
+export TUITBOT_MODE=composer
 ```
 
-Use these commands after every config change.
+**Precedence:** CLI flags > environment variables > `config.toml` > built-in defaults.
+
+This is particularly useful for Docker and CI environments where you don't want secrets in config files.
 
 ## MCP Mutation Policy
 
-The `[mcp_policy]` section controls how MCP mutation tools (post, reply, like, follow, etc.) are gated before execution. This is the safety layer between AI agents and real X API actions.
+The `[mcp_policy]` section controls how MCP mutation tools are gated before execution:
 
 ```toml
 [mcp_policy]
@@ -75,31 +121,30 @@ max_mutations_per_hour = 20
 ```
 
 | Field | Default | Description |
-|---|---|---|
-| `enforce_for_mutations` | `true` | Master switch. Set to `false` to disable all policy checks. |
-| `require_approval_for` | `["post_tweet", "reply_to_tweet", "follow_user", "like_tweet"]` | Tools routed to the approval queue. |
-| `blocked_tools` | `[]` | Tools completely blocked. Cannot overlap with `require_approval_for`. |
-| `dry_run_mutations` | `false` | Return dry-run responses without executing. |
-| `max_mutations_per_hour` | `20` | Aggregate hourly rate limit for all MCP mutations. |
+|-------|---------|-------------|
+| `enforce_for_mutations` | `true` | Master switch for policy checks |
+| `require_approval_for` | `[...]` | Tools routed to the approval queue |
+| `blocked_tools` | `[]` | Tools completely blocked |
+| `dry_run_mutations` | `false` | Return dry-run responses without executing |
+| `max_mutations_per_hour` | `20` | Aggregate hourly rate limit for all MCP mutations |
 
 **Evaluation order** (safest wins): disabled? > blocked? > dry_run? > rate limited? > requires approval? > allow.
 
 **Composer mode**: All mutations require approval regardless of `require_approval_for`.
 
-**Environment variable overrides**:
+## Validation
+
+After any config change, verify with:
 
 ```bash
-export TUITBOT_MCP_POLICY__ENFORCE_FOR_MUTATIONS=true
-export TUITBOT_MCP_POLICY__REQUIRE_APPROVAL_FOR="post_tweet,reply_to_tweet"
-export TUITBOT_MCP_POLICY__BLOCKED_TOOLS="follow_user"
-export TUITBOT_MCP_POLICY__DRY_RUN_MUTATIONS=false
-export TUITBOT_MCP_POLICY__MAX_MUTATIONS_PER_HOUR=20
+tuitbot test                    # full diagnostic check
+tuitbot settings --show         # read-only config view
 ```
 
 ## Production Guidance
 
-- Keep secrets out of shell history.
-- Store config on persistent volume.
-- Back up SQLite DB before major upgrades.
-- Prefer approval mode when testing new prompts.
-- Use Composer mode for new accounts until you trust the AI's output quality.
+- Keep secrets out of shell history — use environment variables or a secrets manager.
+- Store config on a persistent volume in Docker deployments.
+- Back up the SQLite database before major upgrades: `tuitbot backup`.
+- Start with `approval_mode = true` until you trust the AI's output quality.
+- Use Composer mode for new accounts until confident in content tone.
