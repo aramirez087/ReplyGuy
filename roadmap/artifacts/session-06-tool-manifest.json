@@ -331,6 +331,22 @@
       "possible_error_codes": []
     },
     {
+      "name": "get_mutation_detail",
+      "category": "analytics",
+      "lane": "workflow",
+      "mutation": false,
+      "requires_x_client": false,
+      "requires_llm": false,
+      "requires_db": true,
+      "profiles": [
+        "write",
+        "admin"
+      ],
+      "possible_error_codes": [
+        "db_error"
+      ]
+    },
+    {
       "name": "get_pending_count",
       "category": "approval",
       "lane": "workflow",
@@ -365,6 +381,22 @@
     {
       "name": "get_rate_limits",
       "category": "policy",
+      "lane": "workflow",
+      "mutation": false,
+      "requires_x_client": false,
+      "requires_llm": false,
+      "requires_db": true,
+      "profiles": [
+        "write",
+        "admin"
+      ],
+      "possible_error_codes": [
+        "db_error"
+      ]
+    },
+    {
+      "name": "get_recent_mutations",
+      "category": "analytics",
       "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,

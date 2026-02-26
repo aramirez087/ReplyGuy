@@ -3,13 +3,26 @@
 //! Validates that every kernel read/write/engage tool produces a valid
 //! ToolResponse envelope, and that error paths produce correct ErrorCode
 //! values with accurate retryable flags and retry_after_ms fields.
+//!
+//! ## Test categories
+//!
+//! - **Deterministic** (`aggregate`, `read`, `write`, `engage`, `errors`):
+//!   Mock-based, run in CI without credentials.
+//! - **Live** (`live`): `#[ignore]` tests that hit real X API with sandbox
+//!   credentials. Run with `cargo test -p tuitbot-mcp live -- --ignored`.
+//! - **Coverage** (`coverage`): Generates machine-readable and markdown
+//!   endpoint coverage reports from manifest introspection.
 
 #[cfg(test)]
 mod aggregate;
 #[cfg(test)]
+mod coverage;
+#[cfg(test)]
 mod engage;
 #[cfg(test)]
 mod errors;
+#[cfg(test)]
+mod live;
 #[cfg(test)]
 mod read;
 #[cfg(test)]
