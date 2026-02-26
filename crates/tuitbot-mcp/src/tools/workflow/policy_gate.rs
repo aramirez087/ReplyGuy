@@ -1,0 +1,227 @@
+//! MCP-side policy gate that translates policy decisions to tool responses.
+//!
+//! Each mutation tool calls [`check_policy`] at the top; on non-Allow
+//! decisions the function returns an `EarlyReturn` with a pre-formatted
+//! JSON response so the tool can bail immediately.
+
+use std::time::Instant;
+
+use tuitbot_core::mcp_policy::{McpPolicyEvaluator, PolicyDecision, PolicyDenialReason};
+use tuitbot_core::storage::rate_limits;
+
+use crate::state::SharedState;
+
+use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
+
+/// Result of a policy gate check.
+pub enum GateResult {
+    /// The mutation may proceed.
+    Proceed,
+    /// The mutation was intercepted; return this JSON to the caller.
+    EarlyReturn(String),
+}
+
+/// Check the MCP policy for a mutation tool.
+///
+/// On `Allow`, returns `GateResult::Proceed` so the caller continues.
+/// On any other decision, returns `GateResult::EarlyReturn` with a
+/// structured JSON response.
+pub async fn check_policy(
+    state: &SharedState,
+    tool_name: &str,
+    mutation_params_json: &str,
+    start: Instant,
+) -> GateResult {
+    let decision = match McpPolicyEvaluator::evaluate(
+        &state.pool,
+        &state.config.mcp_policy,
+        &state.config.mode,
+        tool_name,
+    )
+    .await
+    {
+        Ok(d) => d,
+        Err(e) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let json = ToolResponse::error(
+                ErrorCode::PolicyError,
+                format!("Policy evaluation failed: {e}"),
+            )
+            .with_meta(ToolMeta::new(elapsed))
+            .to_json();
+            return GateResult::EarlyReturn(json);
+        }
+    };
+
+    // Log the decision (best-effort, don't fail the request)
+    let _ = McpPolicyEvaluator::log_decision(&state.pool, tool_name, &decision).await;
+
+    match decision {
+        PolicyDecision::Allow => GateResult::Proceed,
+
+        PolicyDecision::RouteToApproval {
+            ref reason,
+            ref rule_id,
+        } => {
+            let reason = reason.clone();
+            let matched_rule_id = rule_id.clone();
+            // Build detected_risks JSON from rule_id.
+            let detected_risks = match &rule_id {
+                Some(rid) => format!(r#"["policy_rule:{rid}"]"#),
+                None => "[]".to_string(),
+            };
+            // Enqueue into approval queue with context.
+            let enqueue_result = tuitbot_core::storage::approval_queue::enqueue_with_context(
+                &state.pool,
+                tool_name,
+                "", // no target tweet ID for generic mutations
+                "", // no target author
+                mutation_params_json,
+                "mcp_policy",
+                tool_name,
+                0.0,
+                "[]",
+                Some(&reason),
+                Some(&detected_risks),
+            )
+            .await;
+
+            let elapsed = start.elapsed().as_millis() as u64;
+            super::telemetry::record(
+                &state.pool,
+                tool_name,
+                "mutation",
+                elapsed,
+                true,
+                None,
+                Some("route_to_approval"),
+                None,
+            )
+            .await;
+            let json = match enqueue_result {
+                Ok(id) => ToolResponse::success(serde_json::json!({
+                    "routed_to_approval": true,
+                    "approval_queue_id": id,
+                    "reason": reason,
+                    "matched_rule_id": matched_rule_id,
+                }))
+                .with_meta(ToolMeta::new(elapsed))
+                .to_json(),
+                Err(e) => ToolResponse::error(
+                    ErrorCode::PolicyError,
+                    format!("Failed to enqueue for approval: {e}"),
+                )
+                .with_meta(ToolMeta::new(elapsed))
+                .to_json(),
+            };
+            GateResult::EarlyReturn(json)
+        }
+
+        PolicyDecision::Deny { reason, rule_id } => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let code = match &reason {
+                PolicyDenialReason::ToolBlocked => ErrorCode::PolicyDeniedBlocked,
+                PolicyDenialReason::RateLimited => ErrorCode::PolicyDeniedRateLimited,
+                PolicyDenialReason::HardRule => ErrorCode::PolicyDeniedHardRule,
+                PolicyDenialReason::UserRule => ErrorCode::PolicyDeniedUserRule,
+            };
+            super::telemetry::record(
+                &state.pool,
+                tool_name,
+                "mutation",
+                elapsed,
+                false,
+                Some(code.as_str()),
+                Some("deny"),
+                None,
+            )
+            .await;
+            let mut resp = ToolResponse::error(code, format!("Policy denied: {reason}"))
+                .with_policy_decision("denied")
+                .with_meta(ToolMeta::new(elapsed));
+
+            // For rate-limited denials, attach the reset timestamp.
+            if matches!(reason, PolicyDenialReason::RateLimited) {
+                // Try the v2 rate limit key first, then fall back to legacy
+                let rl_key = rule_id.as_deref().unwrap_or("mcp_mutation");
+                if let Ok(limits) = rate_limits::get_all_rate_limits(&state.pool).await {
+                    if let Some(rl) = limits.iter().find(|l| l.action_type == rl_key) {
+                        if let Ok(start_ts) = chrono::NaiveDateTime::parse_from_str(
+                            &rl.period_start,
+                            "%Y-%m-%dT%H:%M:%SZ",
+                        ) {
+                            let reset = start_ts + chrono::Duration::seconds(rl.period_seconds);
+                            resp = resp.with_rate_limit_reset(
+                                reset.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+                            );
+                        }
+                    }
+                }
+            }
+
+            GateResult::EarlyReturn(resp.to_json())
+        }
+
+        PolicyDecision::DryRun { rule_id } => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            super::telemetry::record(
+                &state.pool,
+                tool_name,
+                "mutation",
+                elapsed,
+                true,
+                None,
+                Some("dry_run"),
+                None,
+            )
+            .await;
+            let json = ToolResponse::success(serde_json::json!({
+                "dry_run": true,
+                "would_execute": tool_name,
+                "params": mutation_params_json,
+                "matched_rule_id": rule_id,
+            }))
+            .with_meta(ToolMeta::new(elapsed))
+            .to_json();
+            GateResult::EarlyReturn(json)
+        }
+    }
+}
+
+/// Get the current MCP policy status: config + rate limit usage + v2 fields.
+pub async fn get_policy_status(state: &SharedState) -> String {
+    let start = Instant::now();
+
+    let rate_limit_info = match rate_limits::get_all_rate_limits(&state.pool).await {
+        Ok(limits) => {
+            let mcp = limits.iter().find(|l| l.action_type == "mcp_mutation");
+            match mcp {
+                Some(rl) => serde_json::json!({
+                    "used": rl.request_count,
+                    "max": rl.max_requests,
+                    "period_seconds": rl.period_seconds,
+                    "period_start": rl.period_start,
+                }),
+                None => serde_json::json!({"error": "mcp_mutation rate limit not initialized"}),
+            }
+        }
+        Err(e) => serde_json::json!({"error": e.to_string()}),
+    };
+
+    let elapsed = start.elapsed().as_millis() as u64;
+
+    ToolResponse::success(serde_json::json!({
+        "enforce_for_mutations": state.config.mcp_policy.enforce_for_mutations,
+        "require_approval_for": state.config.mcp_policy.require_approval_for,
+        "blocked_tools": state.config.mcp_policy.blocked_tools,
+        "dry_run_mutations": state.config.mcp_policy.dry_run_mutations,
+        "max_mutations_per_hour": state.config.mcp_policy.max_mutations_per_hour,
+        "mode": state.config.mode.to_string(),
+        "rate_limit": rate_limit_info,
+        "template": state.config.mcp_policy.template,
+        "rules": state.config.mcp_policy.rules,
+        "rate_limits": state.config.mcp_policy.rate_limits,
+    }))
+    .with_meta(ToolMeta::new(elapsed))
+    .to_json()
+}

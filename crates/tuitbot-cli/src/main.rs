@@ -167,8 +167,8 @@ async fn main() -> anyhow::Result<()> {
             unreachable!()
         }
         Commands::Mcp(args) => match args.command {
-            commands::McpSubcommand::Serve => {
-                commands::mcp::execute(&config).await?;
+            commands::McpSubcommand::Serve { ref profile } => {
+                commands::mcp::execute(&config, profile).await?;
             }
         },
         Commands::Run(args) => {

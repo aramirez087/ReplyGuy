@@ -3,7 +3,14 @@
 //! Exposes Tuitbot operations as structured MCP tools over stdio transport,
 //! allowing AI agents to natively discover and call analytics, approval queue,
 //! content generation, scoring, and configuration operations.
+//!
+//! Two runtime profiles are available:
+//! - **`workflow`** (default): full TuitBot growth features. All 60+ tools.
+//! - **`api`**: generic X client tools only. No DB, no LLM, no policy gating. ~24 tools.
 
+pub mod contract;
+mod kernel;
+mod provider;
 mod requests;
 mod server;
 mod state;
@@ -20,14 +27,27 @@ use tuitbot_core::startup;
 use tuitbot_core::storage;
 use tuitbot_core::x_api::{XApiClient, XApiHttpClient};
 
-use server::TuitbotMcpServer;
-use state::AppState;
+use server::{ApiMcpServer, TuitbotMcpServer};
+use state::{ApiState, AppState};
+use tools::idempotency::IdempotencyStore;
 
-/// Run the MCP server on stdio transport.
+pub use state::Profile;
+
+/// Run the MCP server with the specified profile.
 ///
-/// This is the main entry point called by the CLI `tuitbot mcp serve` subcommand.
-/// It initializes the database, optionally creates an LLM provider, and serves
-/// MCP tools over stdin/stdout.
+/// Dispatches to `run_stdio_server` (workflow) or `run_api_server` (api).
+pub async fn run_server(config: Config, profile: Profile) -> anyhow::Result<()> {
+    match profile {
+        Profile::Workflow => run_stdio_server(config).await,
+        Profile::Api => run_api_server(config).await,
+    }
+}
+
+/// Run the full workflow MCP server on stdio transport.
+///
+/// This is the main entry point called by the CLI `tuitbot mcp serve` subcommand
+/// (or `--profile workflow`). It initializes the database, optionally creates an
+/// LLM provider, and serves MCP tools over stdin/stdout.
 pub async fn run_stdio_server(config: Config) -> anyhow::Result<()> {
     // Initialize database
     let pool = storage::init_db(&config.storage.db_path).await?;
@@ -87,17 +107,33 @@ pub async fn run_stdio_server(config: Config) -> anyhow::Result<()> {
             }
         };
 
+    // Log provider backend selection.
+    let backend = provider::parse_backend(&config.x_api.provider_backend);
+    match backend {
+        provider::ProviderBackend::XApi => {
+            tracing::info!(backend = "x_api", "Provider backend: official X API");
+        }
+        provider::ProviderBackend::Scraper => {
+            tracing::warn!(
+                backend = "scraper",
+                allow_mutations = config.x_api.scraper_allow_mutations,
+                "Provider backend: scraper (elevated risk)"
+            );
+        }
+    }
+
     let state = Arc::new(AppState {
         pool: pool.clone(),
         config,
         llm_provider,
         x_client,
         authenticated_user_id,
+        idempotency: Arc::new(IdempotencyStore::new()),
     });
 
     let server = TuitbotMcpServer::new(state);
 
-    tracing::info!("Starting Tuitbot MCP server on stdio");
+    tracing::info!("Starting Tuitbot MCP server on stdio (workflow profile)");
 
     let service = server
         .serve(stdio())
@@ -108,6 +144,78 @@ pub async fn run_stdio_server(config: Config) -> anyhow::Result<()> {
 
     // Clean shutdown
     pool.close().await;
+
+    Ok(())
+}
+
+/// Run the lightweight API-profile MCP server on stdio transport.
+///
+/// Fails fast if X API tokens are missing or expired — an API profile
+/// with no X client has zero usable tools.
+pub async fn run_api_server(config: Config) -> anyhow::Result<()> {
+    // Load X API tokens (required for API profile)
+    let tokens = startup::load_tokens_from_file().map_err(|e| {
+        anyhow::anyhow!(
+            "API profile requires X API tokens but they are not available: {e}. \
+             Run `tuitbot auth` to authenticate."
+        )
+    })?;
+
+    if tokens.is_expired() {
+        anyhow::bail!(
+            "API profile requires valid X API tokens but they are expired. \
+             Run `tuitbot auth` to re-authenticate."
+        );
+    }
+
+    let client = XApiHttpClient::new(tokens.access_token);
+
+    // Verify connectivity and get authenticated user ID
+    let user = client.get_me().await.map_err(|e| {
+        anyhow::anyhow!(
+            "API profile requires a working X API client but get_me() failed: {e}. \
+             Check your network connection or re-authenticate with `tuitbot auth`."
+        )
+    })?;
+
+    tracing::info!(
+        username = %user.username,
+        user_id = %user.id,
+        "X API client initialized (api profile)"
+    );
+
+    // Log provider backend selection.
+    let backend = provider::parse_backend(&config.x_api.provider_backend);
+    match backend {
+        provider::ProviderBackend::XApi => {
+            tracing::info!(backend = "x_api", "Provider backend: official X API");
+        }
+        provider::ProviderBackend::Scraper => {
+            tracing::warn!(
+                backend = "scraper",
+                allow_mutations = config.x_api.scraper_allow_mutations,
+                "Provider backend: scraper (elevated risk)"
+            );
+        }
+    }
+
+    let state = Arc::new(ApiState {
+        config,
+        x_client: Box::new(client),
+        authenticated_user_id: user.id,
+        idempotency: Arc::new(IdempotencyStore::new()),
+    });
+
+    let server = ApiMcpServer::new(state);
+
+    tracing::info!("Starting Tuitbot MCP server on stdio (api profile)");
+
+    let service = server
+        .serve(stdio())
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to start MCP server: {e}"))?;
+
+    service.waiting().await?;
 
     Ok(())
 }
