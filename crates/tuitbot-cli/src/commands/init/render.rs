@@ -20,11 +20,40 @@ fn optional_toml_array(key: &str, items: &[String], placeholder: &str) -> String
 }
 
 /// Render a complete, well-commented TOML config from wizard answers.
+///
+/// Quickstart-aware: empty `industry_topics`, `target_audience`, and
+/// `product_description` are rendered as comments so the TOML stays
+/// valid while signalling that these fields are optional.
 pub(super) fn render_config_toml(r: &WizardResult) -> String {
     let client_secret_line =
         optional_toml_string("client_secret", &r.client_secret, "your-client-secret-here");
     let product_url_line =
         optional_toml_string("product_url", &r.product_url, "https://example.com");
+
+    let product_description_line = if r.product_description.is_empty() {
+        "# product_description = \"One-line description of your product\"".to_string()
+    } else {
+        format!(
+            "product_description = \"{}\"",
+            escape_toml(&r.product_description)
+        )
+    };
+
+    let target_audience_line = if r.target_audience.is_empty() {
+        "# target_audience = \"Who is your target audience?\"".to_string()
+    } else {
+        format!("target_audience = \"{}\"", escape_toml(&r.target_audience))
+    };
+
+    let industry_topics_line = if r.industry_topics.is_empty() {
+        "# industry_topics — defaults to product_keywords".to_string()
+    } else {
+        format!(
+            "industry_topics = {}",
+            format_toml_array(&r.industry_topics)
+        )
+    };
+
     let brand_voice_line = optional_toml_string(
         "brand_voice",
         &r.brand_voice,
@@ -106,26 +135,22 @@ mode = "manual"
 # Describe your product so Tuitbot can find relevant conversations
 # and generate on-brand content.
 [business]
-product_name = "{product_name}"
-product_description = "{product_description}"
-{product_url_line}
-target_audience = "{target_audience}"
 
-# Keywords for tweet discovery (Tuitbot searches for tweets containing these).
+# ---- Quickstart (required) ----
+product_name = "{product_name}"
 product_keywords = {product_keywords}
 
-# Optional: competitor keywords for discovery.
+# ---- Optional context ----
+{product_description_line}
+{product_url_line}
+{target_audience_line}
 competitor_keywords = []
+{industry_topics_line}
 
-# Topics for original content generation (tweets and threads).
-industry_topics = {industry_topics}
-
-# Brand voice and style — shapes how the bot sounds in all generated content.
+# ---- Enrichment (shape voice and persona) ----
 {brand_voice_line}
 {reply_style_line}
 {content_style_line}
-
-# Persona — strong opinions, experiences, and pillars make content more authentic.
 {persona_opinions_line}
 {persona_experiences_line}
 {content_pillars_line}
@@ -192,11 +217,11 @@ active_days = {active_days}
         client_id = escape_toml(&r.client_id),
         client_secret_line = client_secret_line,
         product_name = escape_toml(&r.product_name),
-        product_description = escape_toml(&r.product_description),
-        product_url_line = product_url_line,
-        target_audience = escape_toml(&r.target_audience),
         product_keywords = format_toml_array(&r.product_keywords),
-        industry_topics = format_toml_array(&r.industry_topics),
+        product_description_line = product_description_line,
+        product_url_line = product_url_line,
+        target_audience_line = target_audience_line,
+        industry_topics_line = industry_topics_line,
         brand_voice_line = brand_voice_line,
         reply_style_line = reply_style_line,
         content_style_line = content_style_line,

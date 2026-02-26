@@ -120,7 +120,7 @@ async fn main() -> anyhow::Result<()> {
     // Handle `init`, `update`, `upgrade`, and `settings` before general config
     // loading (they manage their own config lifecycle).
     if let Commands::Init(args) = cli.command {
-        return commands::init::execute(args.force, args.non_interactive).await;
+        return commands::init::execute(args.force, args.non_interactive, args.advanced).await;
     }
     if let Commands::Update(args) = cli.command {
         return commands::update::execute(

@@ -48,6 +48,10 @@ pub struct InitArgs {
     /// Skip interactive wizard and copy template config
     #[arg(long)]
     pub non_interactive: bool,
+
+    /// Run the full 8-step advanced setup wizard
+    #[arg(long)]
+    pub advanced: bool,
 }
 
 /// Arguments for the `run` subcommand.

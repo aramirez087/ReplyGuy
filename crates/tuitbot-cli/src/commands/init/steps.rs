@@ -1,4 +1,4 @@
-/// Interactive wizard steps 1–8.
+/// Interactive wizard steps: quickstart (5 prompts) and advanced (8 steps).
 use anyhow::Result;
 use dialoguer::{Confirm, Input, Select};
 
@@ -6,6 +6,114 @@ use super::display::{print_step_header, print_step_subtitle};
 use super::helpers::{capitalize, non_empty, parse_csv};
 use super::prompts;
 use super::wizard::WizardResult;
+
+/// Quickstart: collect 5 critical inputs, default everything else.
+pub(super) fn step_quickstart() -> Result<WizardResult> {
+    // Prompt 1: Product name (easy, builds momentum)
+    let product_name: String = Input::new()
+        .with_prompt("Product name")
+        .validate_with(|input: &String| -> std::result::Result<(), &str> {
+            if input.trim().is_empty() {
+                Err("Product name cannot be empty")
+            } else {
+                Ok(())
+            }
+        })
+        .interact_text()?;
+
+    // Prompt 2: Discovery keywords (CSV, at least 1)
+    let keywords_raw: String = Input::new()
+        .with_prompt("Discovery keywords (comma-separated)")
+        .validate_with(|input: &String| -> std::result::Result<(), &str> {
+            if parse_csv(input).is_empty() {
+                Err("At least one keyword is required")
+            } else {
+                Ok(())
+            }
+        })
+        .interact_text()?;
+    let keywords = parse_csv(&keywords_raw);
+
+    // Prompt 3: LLM provider
+    let providers = &["openai", "anthropic", "ollama"];
+    let selection = Select::new()
+        .with_prompt("LLM provider")
+        .items(providers)
+        .default(0)
+        .interact()?;
+    let provider = providers[selection].to_string();
+
+    // Prompt 4: API key (skipped for ollama)
+    let api_key = if provider == "ollama" {
+        None
+    } else {
+        let key: String = Input::new()
+            .with_prompt(format!("{} API key", capitalize(&provider)))
+            .validate_with(|input: &String| -> std::result::Result<(), &str> {
+                if input.trim().is_empty() {
+                    Err("API key is required for this provider")
+                } else {
+                    Ok(())
+                }
+            })
+            .interact_text()?;
+        Some(key.trim().to_string())
+    };
+
+    let (default_model, base_url) = match provider.as_str() {
+        "openai" => ("gpt-4o-mini", None),
+        "anthropic" => ("claude-sonnet-4-6", None),
+        "ollama" => ("llama3.2", Some("http://localhost:11434/v1".to_string())),
+        _ => ("", None),
+    };
+
+    // Prompt 5: X API Client ID (highest friction last)
+    let client_id: String = Input::new()
+        .with_prompt("X API Client ID")
+        .validate_with(|input: &String| -> std::result::Result<(), &str> {
+            if input.trim().is_empty() {
+                Err("Client ID cannot be empty")
+            } else {
+                Ok(())
+            }
+        })
+        .interact_text()?;
+
+    Ok(WizardResult {
+        client_id: client_id.trim().to_string(),
+        client_secret: None,
+        product_name: product_name.trim().to_string(),
+        product_description: String::new(),
+        product_url: None,
+        target_audience: String::new(),
+        product_keywords: keywords,
+        industry_topics: vec![], // empty → effective_industry_topics() derives from keywords
+        brand_voice: None,
+        reply_style: None,
+        content_style: None,
+        persona_opinions: vec![],
+        persona_experiences: vec![],
+        content_pillars: vec![],
+        target_accounts: vec![],
+        approval_mode: true, // safe default
+        timezone: "UTC".to_string(),
+        active_hours_start: 8,
+        active_hours_end: 22,
+        active_days: vec![
+            "Mon".to_string(),
+            "Tue".to_string(),
+            "Wed".to_string(),
+            "Thu".to_string(),
+            "Fri".to_string(),
+            "Sat".to_string(),
+            "Sun".to_string(),
+        ],
+        llm_provider: provider,
+        llm_api_key: api_key,
+        llm_model: default_model.to_string(),
+        llm_base_url: base_url,
+    })
+}
 
 /// Step 1/8: X API credentials.
 pub(super) fn step_x_api() -> Result<WizardResult> {

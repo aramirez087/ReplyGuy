@@ -41,7 +41,7 @@ pub fn score_tweet(config: &Config, input: &ScoreTweetInput<'_>) -> String {
         .product_keywords
         .iter()
         .chain(config.business.competitor_keywords.iter())
-        .chain(config.business.industry_topics.iter())
+        .chain(config.business.effective_industry_topics().iter())
         .cloned()
         .collect();
 

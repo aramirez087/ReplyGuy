@@ -75,7 +75,7 @@ pub async fn inputs(
 
     Ok(Json(json!({
         "content_pillars": config.business.content_pillars,
-        "industry_topics": config.business.industry_topics,
+        "industry_topics": config.business.effective_industry_topics(),
         "product_keywords": config.business.product_keywords,
         "competitor_keywords": config.business.competitor_keywords,
         "target_accounts": target_usernames,

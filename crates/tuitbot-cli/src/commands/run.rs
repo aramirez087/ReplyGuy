@@ -102,7 +102,7 @@ pub async fn execute(config: &Config, status_interval: u64) -> anyhow::Result<()
                 deps.tweet_gen.clone(),
                 deps.content_safety.clone(),
                 deps.content_storage.clone(),
-                config.business.industry_topics.clone(),
+                config.business.effective_industry_topics().to_vec(),
                 config.intervals.content_post_window_seconds,
                 false,
             )
@@ -127,7 +127,7 @@ pub async fn execute(config: &Config, status_interval: u64) -> anyhow::Result<()
                 deps.content_safety.clone(),
                 deps.content_storage.clone(),
                 deps.thread_poster.clone(),
-                config.business.industry_topics.clone(),
+                config.business.effective_industry_topics().to_vec(),
                 config.intervals.thread_interval_seconds,
                 false,
             );

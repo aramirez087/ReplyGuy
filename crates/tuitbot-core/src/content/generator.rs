@@ -99,11 +99,20 @@ impl ContentGenerator {
 
         let persona_section = self.format_persona_context();
 
+        let audience_section = if self.business.target_audience.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "\nYour target audience is: {}.",
+                self.business.target_audience
+            )
+        };
+
         let product_rule = if mention_product {
             let product_url = self.business.product_url.as_deref().unwrap_or("");
             format!(
-                "You are a helpful community member who uses {} ({}).\n\
-                 Your target audience is: {}.\n\
+                "You are a helpful community member who uses {} ({}).\
+                 {audience_section}\n\
                  Product URL: {}\
                  {voice_section}\
                  {reply_section}\
@@ -117,14 +126,13 @@ impl ContentGenerator {
                  - Do not use emojis excessively.",
                 self.business.product_name,
                 self.business.product_description,
-                self.business.target_audience,
                 product_url,
                 self.business.product_name,
             )
         } else {
             format!(
-                "You are a helpful community member.\n\
-                 Your target audience is: {}.\
+                "You are a helpful community member.\
+                 {audience_section}\
                  {voice_section}\
                  {reply_section}\
                  {archetype_section}\
@@ -135,7 +143,7 @@ impl ContentGenerator {
                  - Do NOT mention {} or any product. Just be genuinely helpful.\n\
                  - Do not use hashtags.\n\
                  - Do not use emojis excessively.",
-                self.business.target_audience, self.business.product_name,
+                self.business.product_name,
             )
         };
 
@@ -228,9 +236,15 @@ impl ContentGenerator {
 
         let persona_section = self.format_persona_context();
 
+        let audience_section = if self.business.target_audience.is_empty() {
+            String::new()
+        } else {
+            format!("\nYour audience: {}.", self.business.target_audience)
+        };
+
         let system = format!(
-            "You are {}'s social media voice. {}.\n\
-             Your audience: {}.\
+            "You are {}'s social media voice. {}.\
+             {audience_section}\
              {voice_section}\
              {content_section}\
              {format_section}\
@@ -242,7 +256,6 @@ impl ContentGenerator {
              - Do not mention {} directly unless it is central to the topic.",
             self.business.product_name,
             self.business.product_description,
-            self.business.target_audience,
             self.business.product_name,
         );
 
@@ -332,9 +345,15 @@ impl ContentGenerator {
 
         let persona_section = self.format_persona_context();
 
+        let audience_section = if self.business.target_audience.is_empty() {
+            String::new()
+        } else {
+            format!("\nYour audience: {}.", self.business.target_audience)
+        };
+
         let system = format!(
-            "You are {}'s social media voice. {}.\n\
-             Your audience: {}.\
+            "You are {}'s social media voice. {}.\
+             {audience_section}\
              {voice_section}\
              {content_section}\
              {structure_section}\
@@ -346,9 +365,7 @@ impl ContentGenerator {
              - The first tweet should hook the reader.\n\
              - The last tweet should include a call to action or summary.\n\
              - Do not use hashtags.",
-            self.business.product_name,
-            self.business.product_description,
-            self.business.target_audience,
+            self.business.product_name, self.business.product_description,
         );
 
         let user_message = format!("Write a thread about: {topic}");

@@ -260,7 +260,7 @@ impl TuitbotMcpServer {
             self.state
                 .config
                 .business
-                .industry_topics
+                .effective_industry_topics()
                 .first()
                 .cloned()
                 .unwrap_or_else(|| "general industry trends".to_string())
@@ -290,7 +290,7 @@ impl TuitbotMcpServer {
             self.state
                 .config
                 .business
-                .industry_topics
+                .effective_industry_topics()
                 .first()
                 .cloned()
                 .unwrap_or_else(|| "general industry trends".to_string())

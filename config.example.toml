@@ -67,27 +67,29 @@ mode = "manual"
 # Describe your product so Tuitbot can find relevant conversations
 # and generate on-brand content.
 [business]
+
+# ---- Quickstart (required) ----
 # REQUIRED: Your product name.
 product_name = "Docklet"
-
-# REQUIRED: One-line description of your product.
-product_description = "Floating command strip for macOS — media controls, clipboard, AirDrop, timers, and more"
-
-# Optional: URL to your product website.
-product_url = "https://getdocklet.app"
-
-# REQUIRED: Who is your target audience?
-target_audience = "Mac power users, developers, and productivity enthusiasts"
 
 # REQUIRED: Keywords for tweet discovery (at least 1).
 # Tuitbot searches for tweets containing these keywords.
 product_keywords = ["macos productivity", "mac menu bar", "mac clipboard manager"]
 
-# Optional: Competitor keywords for discovery.
+# ---- Optional context (improve targeting but have sane defaults) ----
+# One-line description of your product.
+product_description = "Floating command strip for macOS — media controls, clipboard, AirDrop, timers, and more"
+
+# URL to your product website.
+product_url = "https://getdocklet.app"
+
+# Who is your target audience?
+target_audience = "Mac power users, developers, and productivity enthusiasts"
+
+# Competitor keywords for discovery.
 competitor_keywords = ["notchnook alternative", "dynamic island mac", "bartender mac"]
 
-# REQUIRED: Topics for original content generation (at least 1).
-# Tuitbot creates educational tweets and threads on these topics.
+# Topics for original content generation. Defaults to product_keywords if omitted.
 industry_topics = [
     "Mac productivity tips",
     "macOS power user workflows",
@@ -95,29 +97,30 @@ industry_topics = [
     "Indie Mac app development",
 ]
 
-# Optional: Describe your brand's voice and personality.
+# ---- Enrichment (shape voice and persona — unlock via progressive setup) ----
+# Describe your brand's voice and personality.
 # This shapes how all generated content sounds.
 # Example: "Friendly technical expert. Casual tone, occasionally witty,
 # explains complex topics simply. Sounds like a knowledgeable friend."
 # brand_voice = "your brand voice description here"
 
-# Optional: Specific guidelines for how replies should feel.
+# Specific guidelines for how replies should feel.
 # Example: "Lead with genuine help. Ask follow-up questions. Only mention
 # our product if directly relevant. Never be pushy or salesy."
 # reply_style = "your reply style guidelines here"
 
-# Optional: Specific guidelines for original tweets and threads.
+# Specific guidelines for original tweets and threads.
 # Example: "Share practical tips with real examples. Prefer 'here's what I
 # learned' framing over lecturing. End threads with actionable takeaways."
 # content_style = "your content style guidelines here"
 
-# Optional: Opinions the persona holds (adds variety to content).
+# Opinions the persona holds (adds variety to content).
 # persona_opinions = ["Native apps beat web wrappers for performance", "Keyboard shortcuts are underrated"]
 
-# Optional: Experiences the persona can reference (keeps content authentic).
+# Experiences the persona can reference (keeps content authentic).
 # persona_experiences = ["Built a macOS menu bar app from scratch", "Switched from Electron to SwiftUI"]
 
-# Optional: Core content pillars (broad themes the account focuses on).
+# Core content pillars (broad themes the account focuses on).
 # content_pillars = ["macOS productivity", "indie development", "Swift programming"]
 
 # --- Scoring Engine ---

@@ -154,12 +154,31 @@ pub struct AuthConfig {
 }
 
 /// Business profile for content targeting and keyword matching.
+///
+/// Fields are grouped into two tiers:
+///
+/// **Quickstart fields** (required for a working config):
+/// - `product_name`, `product_keywords`
+///
+/// **Optional context** (improve targeting but have sane defaults):
+/// - `product_description`, `product_url`, `target_audience`,
+///   `competitor_keywords`, `industry_topics`
+///
+/// **Enrichment fields** (shape voice/persona — unlocked via progressive setup):
+/// - `brand_voice`, `reply_style`, `content_style`,
+///   `persona_opinions`, `persona_experiences`, `content_pillars`
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct BusinessProfile {
+    // -- Quickstart fields --
     /// Name of the user's product.
     #[serde(default)]
     pub product_name: String,
 
+    /// Keywords for tweet discovery.
+    #[serde(default)]
+    pub product_keywords: Vec<String>,
+
+    // -- Optional context --
     /// One-line description of the product.
     #[serde(default)]
     pub product_description: String,
@@ -172,18 +191,16 @@ pub struct BusinessProfile {
     #[serde(default)]
     pub target_audience: String,
 
-    /// Keywords for tweet discovery.
-    #[serde(default)]
-    pub product_keywords: Vec<String>,
-
     /// Competitor-related keywords for discovery.
     #[serde(default)]
     pub competitor_keywords: Vec<String>,
 
-    /// Topics for content generation.
+    /// Topics for content generation. Defaults to `product_keywords` when empty
+    /// (see [`Self::effective_industry_topics`]).
     #[serde(default)]
     pub industry_topics: Vec<String>,
 
+    // -- Enrichment fields --
     /// Brand voice / personality description for all generated content.
     #[serde(default)]
     pub brand_voice: Option<String>,
@@ -207,6 +224,48 @@ pub struct BusinessProfile {
     /// Core content pillars (broad themes the account focuses on).
     #[serde(default)]
     pub content_pillars: Vec<String>,
+}
+
+impl BusinessProfile {
+    /// Create a quickstart profile with only the required fields.
+    ///
+    /// Copies `product_keywords` into `industry_topics` so content loops
+    /// have topics to work with even without explicit configuration.
+    pub fn quickstart(product_name: String, product_keywords: Vec<String>) -> Self {
+        Self {
+            product_name,
+            industry_topics: product_keywords.clone(),
+            product_keywords,
+            ..Default::default()
+        }
+    }
+
+    /// Returns the effective industry topics for content generation.
+    ///
+    /// If `industry_topics` is non-empty, returns it directly.
+    /// Otherwise falls back to `product_keywords`, so quickstart users
+    /// never need to configure topics separately.
+    pub fn effective_industry_topics(&self) -> &[String] {
+        if self.industry_topics.is_empty() {
+            &self.product_keywords
+        } else {
+            &self.industry_topics
+        }
+    }
+
+    /// Returns `true` if any enrichment field has been set.
+    ///
+    /// Enrichment fields are: `brand_voice`, `reply_style`, `content_style`,
+    /// `persona_opinions`, `persona_experiences`, `content_pillars`.
+    /// Used by progressive enrichment to decide whether to show setup hints.
+    pub fn is_enriched(&self) -> bool {
+        self.brand_voice.as_ref().is_some_and(|v| !v.is_empty())
+            || self.reply_style.as_ref().is_some_and(|v| !v.is_empty())
+            || self.content_style.as_ref().is_some_and(|v| !v.is_empty())
+            || !self.persona_opinions.is_empty()
+            || !self.persona_experiences.is_empty()
+            || !self.content_pillars.is_empty()
+    }
 }
 
 /// Scoring engine weights and threshold.
@@ -1656,5 +1715,58 @@ thread_preferred_time = "10:00"
         assert!(!config.approval_mode);
         env::remove_var("OPENCLAW_AGENT_ID");
         env::remove_var("TUITBOT_APPROVAL_MODE");
+    }
+
+    // --- BusinessProfile quickstart/enrichment tests ---
+
+    #[test]
+    fn quickstart_minimal_config_validates() {
+        let mut config = Config::default();
+        config.business = BusinessProfile::quickstart(
+            "MyApp".to_string(),
+            vec!["rust cli".to_string(), "developer tools".to_string()],
+        );
+        config.llm.provider = "ollama".to_string();
+        config.x_api.client_id = "test-client-id".to_string();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn quickstart_industry_topics_derived_from_keywords() {
+        let profile = BusinessProfile {
+            product_keywords: vec!["rust".to_string(), "cli".to_string()],
+            industry_topics: vec![],
+            ..Default::default()
+        };
+        assert_eq!(
+            profile.effective_industry_topics(),
+            &["rust".to_string(), "cli".to_string()]
+        );
+    }
+
+    #[test]
+    fn explicit_industry_topics_override_derived() {
+        let profile = BusinessProfile {
+            product_keywords: vec!["rust".to_string()],
+            industry_topics: vec!["Rust development".to_string()],
+            ..Default::default()
+        };
+        assert_eq!(
+            profile.effective_industry_topics(),
+            &["Rust development".to_string()]
+        );
+    }
+
+    #[test]
+    fn is_enriched_false_for_quickstart() {
+        let profile = BusinessProfile::quickstart("App".to_string(), vec!["test".to_string()]);
+        assert!(!profile.is_enriched());
+    }
+
+    #[test]
+    fn is_enriched_true_with_brand_voice() {
+        let mut profile = BusinessProfile::quickstart("App".to_string(), vec!["test".to_string()]);
+        profile.brand_voice = Some("Friendly and casual".to_string());
+        assert!(profile.is_enriched());
     }
 }

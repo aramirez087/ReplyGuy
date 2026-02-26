@@ -535,7 +535,8 @@ async fn run_content(
         };
     }
 
-    if config.business.industry_topics.is_empty() {
+    let effective_topics = config.business.effective_industry_topics();
+    if effective_topics.is_empty() {
         return LoopOutcome::Skipped {
             reason: "no industry topics configured".to_string(),
         };
@@ -545,7 +546,7 @@ async fn run_content(
         deps.tweet_gen.clone(),
         deps.content_safety.clone(),
         deps.content_storage.clone(),
-        config.business.industry_topics.clone(),
+        effective_topics.to_vec(),
         config.intervals.content_post_window_seconds,
         deps.target_loop_config.dry_run,
     )
@@ -594,7 +595,8 @@ async fn run_thread(
         };
     }
 
-    if config.business.industry_topics.is_empty() {
+    let effective_topics = config.business.effective_industry_topics();
+    if effective_topics.is_empty() {
         return LoopOutcome::Skipped {
             reason: "no industry topics configured".to_string(),
         };
@@ -605,7 +607,7 @@ async fn run_thread(
         deps.content_safety.clone(),
         deps.content_storage.clone(),
         deps.thread_poster.clone(),
-        config.business.industry_topics.clone(),
+        effective_topics.to_vec(),
         config.intervals.thread_interval_seconds,
         deps.target_loop_config.dry_run,
     );

@@ -179,7 +179,7 @@ fn check_business_profile(config: &Config) -> CheckResult {
 
     let keyword_count =
         config.business.product_keywords.len() + config.business.competitor_keywords.len();
-    let topic_count = config.business.industry_topics.len();
+    let topic_count = config.business.effective_industry_topics().len();
 
     if keyword_count == 0 {
         return CheckResult::fail(

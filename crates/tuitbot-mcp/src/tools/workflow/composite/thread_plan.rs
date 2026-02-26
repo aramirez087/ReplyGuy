@@ -91,9 +91,14 @@ pub async fn execute(
 
     // Relevance heuristic: check if topic overlaps with configured industry topics
     let topic_lower = topic.to_lowercase();
-    let relevance = state.config.business.industry_topics.iter().any(|t| {
-        topic_lower.contains(&t.to_lowercase()) || t.to_lowercase().contains(&topic_lower)
-    });
+    let relevance = state
+        .config
+        .business
+        .effective_industry_topics()
+        .iter()
+        .any(|t| {
+            topic_lower.contains(&t.to_lowercase()) || t.to_lowercase().contains(&topic_lower)
+        });
 
     let estimated_performance = if relevance { "high" } else { "medium" };
 

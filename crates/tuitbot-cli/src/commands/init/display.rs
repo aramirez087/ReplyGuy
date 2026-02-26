@@ -169,3 +169,46 @@ pub(super) fn print_remaining_steps(steps: &[&str]) {
         eprintln!("  {}. {step}", i + 1);
     }
 }
+
+/// Print the quickstart welcome banner (replaces the 8-step banner).
+pub(super) fn print_quickstart_banner() {
+    let bold = Style::new().bold();
+    let dim = Style::new().dim();
+
+    eprintln!();
+    eprintln!("{}", bold.apply_to("Tuitbot Quick Setup"));
+    eprintln!("{}", dim.apply_to("───────────────────"));
+    eprintln!(
+        "{}",
+        dim.apply_to("5 questions to get you running. Use --advanced for full configuration.")
+    );
+    eprintln!();
+}
+
+/// Print a compact summary of quickstart-collected values.
+pub(super) fn print_quickstart_summary(result: &WizardResult) {
+    let bold = Style::new().bold();
+    let dim = Style::new().dim();
+
+    eprintln!();
+    eprintln!("{}", bold.apply_to("Configuration Summary"));
+    eprintln!("{}", dim.apply_to("─────────────────────"));
+    eprintln!("  Product:     {}", result.product_name);
+    eprintln!("  Keywords:    {}", result.product_keywords.join(", "));
+    eprintln!(
+        "  LLM:         {} ({})",
+        result.llm_provider, result.llm_model
+    );
+    eprintln!("  X API:       {} (Client ID set)", result.client_id);
+    eprintln!("  Approval:    on (all posts queued for review)");
+    eprintln!();
+    eprintln!(
+        "  {}",
+        dim.apply_to("Defaults applied: UTC schedule, no brand voice, no persona.")
+    );
+    eprintln!(
+        "  {}",
+        dim.apply_to("Customize later: tuitbot init --advanced  or  tuitbot settings")
+    );
+    eprintln!();
+}
