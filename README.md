@@ -195,23 +195,26 @@ tuitbot settings --show --output json
 tuitbot approve --list --output json
 
 # AI agent integration (MCP)
-tuitbot mcp serve                  # Workflow profile (64 tools, default)
-tuitbot mcp serve --profile api    # API profile (34 tools)
+tuitbot mcp serve                          # Full profile (64 tools, default)
+tuitbot mcp serve --profile readonly       # Read-only (10 tools)
+tuitbot mcp serve --profile api-readonly   # API read-only (20 tools)
 ```
 
 ---
 
 ## AI Agent Integration (MCP)
 
-Tuitbot includes an MCP server that exposes **64 tools** for AI agents (Claude Code, custom agents, etc.). Three integration lanes serve different use cases:
+Tuitbot includes an MCP server that exposes up to **64 tools** for AI agents (Claude Code, custom agents, etc.). Three profiles serve different use cases:
 
-| Lane | Command | Tools | Use Case |
-|------|---------|-------|----------|
-| **Official API** | `tuitbot mcp serve --profile api` | 34 | Direct X API access with policy safety net |
-| **Scraper** | Same + `provider_backend = "scraper"` | 34 | Read-heavy agents without API tokens |
-| **Workflow** | `tuitbot mcp serve` | 64 | Full growth co-pilot: analytics, content gen, approval workflows |
+| Profile | Command | Tools | Use Case |
+|---------|---------|-------|----------|
+| **Full** (default) | `tuitbot mcp serve` | 64 | Full growth co-pilot: analytics, content gen, approval workflows |
+| **Read-only** | `tuitbot mcp serve --profile readonly` | 10 | Safe read surface — utility, config, and health tools only |
+| **API read-only** | `tuitbot mcp serve --profile api-readonly` | 20 | X API reads + utility tools, no mutations |
 
-**Claude Code config (Workflow — recommended):**
+Read-only profiles are safe by construction — mutation tools are never registered, not policy-blocked. You get typed schemas, structured errors, rate-limit awareness, retry/backoff, and stable output formats with zero mutation risk.
+
+**Claude Code config (Full — default, recommended):**
 
 ```json
 {
@@ -224,20 +227,20 @@ Tuitbot includes an MCP server that exposes **64 tools** for AI agents (Claude C
 }
 ```
 
-**Claude Code config (API only):**
+**Claude Code config (Read-only):**
 
 ```json
 {
   "mcpServers": {
     "tuitbot": {
       "command": "tuitbot",
-      "args": ["mcp", "serve", "--profile", "api"]
+      "args": ["mcp", "serve", "--profile", "readonly"]
     }
   }
 }
 ```
 
-All tools return structured `{ success, data, error, meta }` envelopes with 28 typed error codes, retryable flags, and per-invocation telemetry. Mutations are policy-gated with approval routing, dry-run mode, and hourly rate limiting.
+All tools return structured `{ success, data, error, meta }` envelopes with 28 typed error codes, retryable flags, and per-invocation telemetry. Mutations (full profile only) are policy-gated with approval routing, dry-run mode, and hourly rate limiting.
 
 Full reference: [MCP Reference](https://aramirez087.github.io/TuitBot/mcp-reference/).
 

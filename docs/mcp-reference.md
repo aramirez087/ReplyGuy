@@ -1,17 +1,20 @@
 # MCP Reference
 
 Tuitbot ships with an MCP server so AI agents can call tools with typed inputs.
-The server exposes **64 tools** across three lanes — from raw X API access to
-full autonomous growth workflows.
+The server exposes up to **64 tools** across three profiles — from minimal
+read-only surfaces to the full autonomous growth co-pilot.
 
 ## Quick Start
 
 ```bash
-# Default: full workflow profile (64 tools)
+# Full profile (64 tools, default)
 tuitbot mcp serve
 
-# API-only profile (34 tools)
-tuitbot mcp serve --profile api
+# Read-only profile (10 tools)
+tuitbot mcp serve --profile readonly
+
+# API read-only profile (20 tools)
+tuitbot mcp serve --profile api-readonly
 
 # With custom config
 tuitbot -c /path/to/config.toml mcp serve
@@ -31,30 +34,41 @@ These files include tool names, categories, mutation flags, dependency
 requirements, profiles, and possible error codes. Regenerate after any tool or
 profile change with `bash scripts/generate-mcp-manifests.sh`.
 
-## Three MCP Lanes
+## MCP Profiles
 
-TuitBot's MCP server offers three integration lanes, each serving a different use case:
+TuitBot's MCP server offers three profiles, each exposing a curated set of tools:
 
-| Lane | Command | Tools | Prerequisites | Use Case |
-|------|---------|-------|---------------|----------|
-| **1 — Official API** | `tuitbot mcp serve --profile api` | 34 | X API tokens (`tuitbot auth`) | Drop-in replacement for thin X wrappers with policy safety |
-| **2 — Scraper** | `tuitbot mcp serve --profile api` | 34 | `provider_backend = "scraper"` in config | Read-heavy agents without official API tokens |
-| **3 — Workflow** | `tuitbot mcp serve` | 64 | X API tokens + LLM provider + SQLite DB | Full autonomous growth co-pilot (default) |
+| Profile | Command | Tools | Use Case |
+|---------|---------|-------|----------|
+| **Full** (default) | `tuitbot mcp serve` | 64 | Full autonomous growth co-pilot — reads, writes, analytics, content gen, approval workflows |
+| **Read-only** | `tuitbot mcp serve --profile readonly` | 10 | Minimal safe surface — utility, config, health, scoring tools only |
+| **API read-only** | `tuitbot mcp serve --profile api-readonly` | 20 | X API reads + utility tools — no mutations, no workflow tools |
 
-### Choosing a Lane
+### Choosing a Profile
 
-| Question | Answer | Lane |
-|----------|--------|------|
-| Need direct X API access only? | Yes | Lane 1 |
-| No official X API tokens? | Yes | Lane 2 |
-| Need analytics, content generation, approval workflows? | Yes | Lane 3 |
-| Want composite multi-step workflows? | Yes | Lane 3 |
-| Replacing a thin X MCP wrapper? | Yes | Lane 1 or Lane 3 |
-| Default / unsure? | — | Lane 3 (default) |
+| Question | Answer | Profile |
+|----------|--------|---------|
+| Need full growth co-pilot with content gen and approval workflows? | Yes | `full` |
+| Need X API reads without any mutation risk? | Yes | `api-readonly` |
+| Need minimal tooling for config validation and health checks? | Yes | `readonly` |
+| Replacing a thin X MCP wrapper? | Yes | `full` or `api-readonly` |
+| Default / unsure? | — | `full` (default) |
+
+### Why Read-Only TuitBot?
+
+Read-only profiles (`readonly` and `api-readonly`) give AI agents structured access to TuitBot's intelligence without any mutation risk:
+
+1. **Typed schemas + structured errors** — every tool returns a v1.0 envelope (`success`, `data`, `error`, `meta`) with 28 typed error codes.
+2. **Rate-limit awareness** — built-in backoff and retry logic; never burns your API quota.
+3. **Stable output formats** — machine-readable manifests and deterministic JSON for reliable agent parsing.
+4. **Reliability** — retry, backoff, and pagination built into every tool invocation.
+5. **Higher-level read intelligence** — scoring, health checks, config validation, and X API reads without mutation risk.
+
+Read-only profiles are safe by construction: mutation tools are never registered on the server, not merely policy-blocked.
 
 ## Claude Code Configuration
 
-**Lane 3 — Workflow (default, recommended):**
+**Full profile (default, recommended):**
 
 ```json
 {
@@ -67,14 +81,27 @@ TuitBot's MCP server offers three integration lanes, each serving a different us
 }
 ```
 
-**Lane 1 — API only:**
+**Read-only profile:**
 
 ```json
 {
   "mcpServers": {
     "tuitbot": {
       "command": "tuitbot",
-      "args": ["mcp", "serve", "--profile", "api"]
+      "args": ["mcp", "serve", "--profile", "readonly"]
+    }
+  }
+}
+```
+
+**API read-only profile:**
+
+```json
+{
+  "mcpServers": {
+    "tuitbot": {
+      "command": "tuitbot",
+      "args": ["mcp", "serve", "--profile", "api-readonly"]
     }
   }
 }
@@ -541,7 +568,7 @@ Dry-run mode:
 |------------|-------------|----------------|
 | Direct X read tools | 14 tools | Yes |
 | Direct X write/engage/media tools | 14 tools | Yes |
-| Three integration lanes (API/Scraper/Workflow) | Yes | No |
+| Three profiles (full/readonly/api-readonly) | Yes | No |
 | Scraper backend (no API tokens required) | Yes | No |
 | Centralized mutation policy engine | Yes — per-tool blocking, approval routing, dry-run, rate limits | No |
 | Approval queue routing | Yes — configurable via `require_approval_for` | No |
@@ -571,8 +598,9 @@ tuitbot auth        # OAuth 2.0 PKCE flow for X
 ### Step 2: Start the MCP server
 
 ```bash
-tuitbot mcp serve                  # Lane 3: Workflow (default)
-tuitbot mcp serve --profile api    # Lane 1: API only
+tuitbot mcp serve                          # Full profile (default)
+tuitbot mcp serve --profile api-readonly   # API read-only (20 tools, no mutations)
+tuitbot mcp serve --profile readonly       # Read-only (10 tools, minimal surface)
 ```
 
 ### Step 3: Map your tool calls
@@ -632,5 +660,5 @@ Start with `dry_run_mutations = true` to verify agent behavior.
 - Use approval mode if agent autonomy should be constrained. In Composer mode, approval mode is always on.
 - Prefer Composer mode for agents that should assist rather than act autonomously.
 - Prefer JSON outputs for deterministic agent behavior.
-- The `--profile api` flag is useful for agents that only need X API access without workflow overhead.
+- Use `--profile api-readonly` for agents that only need X API reads without workflow overhead, or `--profile readonly` for the minimal safe surface.
 - Scraper backend carries elevated risk of account restrictions — use for read-heavy, experimental integrations only.
