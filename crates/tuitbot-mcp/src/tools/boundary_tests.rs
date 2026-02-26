@@ -5,8 +5,63 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::tools::manifest::{generate_manifest, Lane, Profile};
+    use crate::contract::error_code::ErrorCode;
+    use crate::tools::manifest::{generate_manifest, Lane, Profile, ToolCategory};
     use std::collections::HashSet;
+
+    // ── Helpers ──────────────────────────────────────────────────────
+
+    /// Hardcoded denylist of tools that perform mutations.
+    /// Must stay in sync with `mutation: true` flags in the manifest.
+    fn mutation_denylist() -> &'static [&'static str] {
+        &[
+            "x_post_tweet",
+            "x_reply_to_tweet",
+            "x_quote_tweet",
+            "x_delete_tweet",
+            "x_post_thread",
+            "x_like_tweet",
+            "x_unlike_tweet",
+            "x_follow_user",
+            "x_unfollow_user",
+            "x_retweet",
+            "x_unretweet",
+            "x_bookmark_tweet",
+            "x_unbookmark_tweet",
+            "x_upload_media",
+            "approve_item",
+            "approve_all",
+            "reject_item",
+            "propose_and_queue_replies",
+            "compose_tweet",
+        ]
+    }
+
+    /// Extract `#[tool]`-annotated function names from server source code.
+    ///
+    /// Scans lines: when `#[tool]` is found, captures the function name from
+    /// the next `async fn <name>(` line.
+    fn extract_tool_fn_names(source: &str) -> Vec<String> {
+        let mut names = Vec::new();
+        let mut saw_tool_attr = false;
+        for line in source.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("#[tool") {
+                saw_tool_attr = true;
+                continue;
+            }
+            if saw_tool_attr {
+                if let Some(rest) = trimmed.strip_prefix("async fn ") {
+                    if let Some(paren) = rest.find('(') {
+                        names.push(rest[..paren].to_string());
+                    }
+                }
+                // Reset regardless — we only look at the line immediately after #[tool].
+                saw_tool_attr = false;
+            }
+        }
+        names
+    }
 
     // ── Source-level isolation ───────────────────────────────────────
 
@@ -178,9 +233,9 @@ mod tests {
             .iter()
             .filter(|t| t.profiles.contains(&Profile::Workflow))
             .count();
-        assert!(
-            wf_count >= 50 && wf_count <= 70,
-            "Workflow profile has {wf_count} tools (expected 50-70)"
+        assert_eq!(
+            wf_count, 64,
+            "Workflow profile has {wf_count} tools (expected 64)"
         );
     }
 
@@ -236,6 +291,274 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ── Explicit mutation denylist ──────────────────────────────────
+
+    /// Hardcoded denylist check: no known mutation tool may appear in Readonly.
+    #[test]
+    fn readonly_denies_known_mutation_tools() {
+        let manifest = generate_manifest();
+        let ro_names: HashSet<&str> = manifest
+            .tools
+            .iter()
+            .filter(|t| t.profiles.contains(&Profile::Readonly))
+            .map(|t| t.name.as_str())
+            .collect();
+
+        for &name in mutation_denylist() {
+            assert!(
+                !ro_names.contains(name),
+                "SAFETY VIOLATION: mutation tool '{name}' found in readonly profile"
+            );
+        }
+    }
+
+    /// Hardcoded denylist check: no known mutation tool may appear in ApiReadonly.
+    #[test]
+    fn api_readonly_denies_known_mutation_tools() {
+        let manifest = generate_manifest();
+        let api_ro_names: HashSet<&str> = manifest
+            .tools
+            .iter()
+            .filter(|t| t.profiles.contains(&Profile::ApiReadonly))
+            .map(|t| t.name.as_str())
+            .collect();
+
+        for &name in mutation_denylist() {
+            assert!(
+                !api_ro_names.contains(name),
+                "SAFETY VIOLATION: mutation tool '{name}' found in api-readonly profile"
+            );
+        }
+    }
+
+    /// Cross-check: every `mutation: true` tool must be in the denylist,
+    /// and every denylist entry must be `mutation: true` in the manifest.
+    /// Catches stale denylists AND missed mutation flags.
+    #[test]
+    fn denylist_matches_manifest_mutation_set() {
+        let manifest = generate_manifest();
+        let denylist: HashSet<&str> = mutation_denylist().iter().copied().collect();
+
+        let manifest_mutations: HashSet<&str> = manifest
+            .tools
+            .iter()
+            .filter(|t| t.mutation)
+            .map(|t| t.name.as_str())
+            .collect();
+
+        // Every manifest mutation tool must be in the denylist.
+        for name in &manifest_mutations {
+            assert!(
+                denylist.contains(name),
+                "manifest has mutation tool '{name}' not in denylist — add it"
+            );
+        }
+
+        // Every denylist entry must be a mutation tool in the manifest.
+        for &name in &denylist {
+            assert!(
+                manifest_mutations.contains(name),
+                "denylist entry '{name}' is not mutation:true in manifest — stale entry?"
+            );
+        }
+    }
+
+    // ── Category-level guards ────────────────────────────────────────
+
+    /// No tool with a mutation category (Write, Engage, Media, Approval) may
+    /// appear in Readonly or ApiReadonly profiles.
+    #[test]
+    fn readonly_profiles_exclude_mutation_categories() {
+        let manifest = generate_manifest();
+        let mutation_cats = [
+            ToolCategory::Write,
+            ToolCategory::Engage,
+            ToolCategory::Media,
+            ToolCategory::Approval,
+        ];
+
+        for t in &manifest.tools {
+            let in_ro = t.profiles.contains(&Profile::Readonly)
+                || t.profiles.contains(&Profile::ApiReadonly);
+            if in_ro && mutation_cats.contains(&t.category) {
+                panic!(
+                    "tool '{}' has mutation category {:?} but is in a read-only profile",
+                    t.name, t.category
+                );
+            }
+        }
+    }
+
+    /// Every tool with `mutation: true` must have `profiles == [Workflow]` only.
+    #[test]
+    fn every_mutation_tool_is_workflow_only() {
+        let manifest = generate_manifest();
+        for t in &manifest.tools {
+            if t.mutation {
+                assert_eq!(
+                    t.profiles,
+                    vec![Profile::Workflow],
+                    "mutation tool '{}' has profiles {:?} — expected [Workflow] only",
+                    t.name,
+                    t.profiles
+                );
+            }
+        }
+    }
+
+    // ── Dependency guards ────────────────────────────────────────────
+
+    /// No tool in the Readonly profile may require database access.
+    #[test]
+    fn readonly_tools_require_no_db() {
+        let manifest = generate_manifest();
+        for t in &manifest.tools {
+            if t.profiles.contains(&Profile::Readonly) {
+                assert!(
+                    !t.requires_db,
+                    "Readonly tool '{}' has requires_db: true",
+                    t.name
+                );
+            }
+        }
+    }
+
+    /// No tool in Readonly or ApiReadonly profiles may require an LLM provider.
+    #[test]
+    fn readonly_tools_require_no_llm() {
+        let manifest = generate_manifest();
+        for t in &manifest.tools {
+            let in_ro = t.profiles.contains(&Profile::Readonly)
+                || t.profiles.contains(&Profile::ApiReadonly);
+            if in_ro {
+                assert!(
+                    !t.requires_llm,
+                    "read-only tool '{}' has requires_llm: true",
+                    t.name
+                );
+            }
+        }
+    }
+
+    // ── Server source cross-checks ───────────────────────────────────
+
+    /// The number of `#[tool]` annotations in readonly.rs must match
+    /// the manifest Readonly profile count (10).
+    #[test]
+    fn readonly_server_tool_count_matches_manifest() {
+        let source = include_str!("../server/readonly.rs");
+        let fn_names = extract_tool_fn_names(source);
+        assert_eq!(
+            fn_names.len(),
+            10,
+            "readonly.rs has {} #[tool] functions (expected 10): {:?}",
+            fn_names.len(),
+            fn_names
+        );
+    }
+
+    /// The number of `#[tool]` annotations in api_readonly.rs must match
+    /// the manifest ApiReadonly profile count (20).
+    #[test]
+    fn api_readonly_server_tool_count_matches_manifest() {
+        let source = include_str!("../server/api_readonly.rs");
+        let fn_names = extract_tool_fn_names(source);
+        assert_eq!(
+            fn_names.len(),
+            20,
+            "api_readonly.rs has {} #[tool] functions (expected 20): {:?}",
+            fn_names.len(),
+            fn_names
+        );
+    }
+
+    /// No `#[tool]`-annotated function in readonly.rs or api_readonly.rs may
+    /// share a name with any denylist entry.
+    #[test]
+    fn readonly_servers_contain_no_denylist_functions() {
+        let denylist: HashSet<&str> = mutation_denylist().iter().copied().collect();
+
+        for (label, source) in [
+            ("readonly.rs", include_str!("../server/readonly.rs")),
+            ("api_readonly.rs", include_str!("../server/api_readonly.rs")),
+        ] {
+            let fn_names = extract_tool_fn_names(source);
+            for name in &fn_names {
+                assert!(
+                    !denylist.contains(name.as_str()),
+                    "SAFETY VIOLATION: {label} contains denylist function '{name}'"
+                );
+            }
+        }
+    }
+
+    // ── Tighten existing + error code guards ─────────────────────────
+
+    /// No tool in Readonly or ApiReadonly profiles may declare policy error codes
+    /// that only apply to mutation paths.
+    #[test]
+    fn readonly_profiles_have_no_policy_error_codes() {
+        let manifest = generate_manifest();
+        let policy_codes: HashSet<ErrorCode> = HashSet::from([
+            ErrorCode::PolicyDeniedBlocked,
+            ErrorCode::PolicyDeniedRateLimited,
+            ErrorCode::PolicyDeniedHardRule,
+            ErrorCode::PolicyDeniedUserRule,
+            ErrorCode::PolicyError,
+            ErrorCode::ScraperMutationBlocked,
+        ]);
+
+        for t in &manifest.tools {
+            let in_ro = t.profiles.contains(&Profile::Readonly)
+                || t.profiles.contains(&Profile::ApiReadonly);
+            if in_ro {
+                for code in &t.possible_error_codes {
+                    assert!(
+                        !policy_codes.contains(code),
+                        "read-only tool '{}' declares policy error code '{}'",
+                        t.name,
+                        code.as_str()
+                    );
+                }
+            }
+        }
+    }
+
+    /// ApiReadonly must be a strict superset of Readonly:
+    /// every Readonly tool is in ApiReadonly, and ApiReadonly has strictly more.
+    #[test]
+    fn api_readonly_is_superset_of_readonly() {
+        let manifest = generate_manifest();
+        let ro_names: HashSet<&str> = manifest
+            .tools
+            .iter()
+            .filter(|t| t.profiles.contains(&Profile::Readonly))
+            .map(|t| t.name.as_str())
+            .collect();
+        let api_ro_names: HashSet<&str> = manifest
+            .tools
+            .iter()
+            .filter(|t| t.profiles.contains(&Profile::ApiReadonly))
+            .map(|t| t.name.as_str())
+            .collect();
+
+        // Every Readonly tool must be in ApiReadonly.
+        for name in &ro_names {
+            assert!(
+                api_ro_names.contains(name),
+                "Readonly tool '{name}' missing from ApiReadonly"
+            );
+        }
+
+        // ApiReadonly must have strictly more tools.
+        assert!(
+            api_ro_names.len() > ro_names.len(),
+            "ApiReadonly ({}) should have strictly more tools than Readonly ({})",
+            api_ro_names.len(),
+            ro_names.len()
+        );
     }
 
     // ── Regression ──────────────────────────────────────────────────
