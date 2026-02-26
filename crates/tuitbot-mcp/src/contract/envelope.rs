@@ -36,6 +36,9 @@ pub struct ToolError {
     /// Unix epoch or ISO-8601 timestamp when a rate limit resets.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rate_limit_reset: Option<String>,
+    /// Milliseconds the agent should wait before retrying (rate-limit hint).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after_ms: Option<u64>,
     /// Policy decision label (e.g. `"denied"`, `"routed_to_approval"`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policy_decision: Option<String>,
@@ -53,6 +56,18 @@ pub struct WorkflowContext {
     pub approval_mode: bool,
 }
 
+/// Normalized pagination metadata extracted from API responses.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PaginationInfo {
+    /// Opaque token for fetching the next page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_token: Option<String>,
+    /// Number of results in this page.
+    pub result_count: u32,
+    /// Whether more results are available (derived from `next_token.is_some()`).
+    pub has_more: bool,
+}
+
 /// Execution metadata attached to a tool response.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ToolMeta {
@@ -60,6 +75,12 @@ pub struct ToolMeta {
     pub tool_version: String,
     /// Wall-clock execution time in milliseconds.
     pub elapsed_ms: u64,
+    /// Pagination info for list/search results.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pagination: Option<PaginationInfo>,
+    /// Number of automatic retries performed before this response.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_count: Option<u32>,
     /// Workflow-specific fields (mode, approval_mode).
     /// Flattened so they appear as top-level keys in JSON.
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
@@ -87,6 +108,7 @@ impl ToolResponse {
                 code,
                 message: message.into(),
                 rate_limit_reset: None,
+                retry_after_ms: None,
                 policy_decision: None,
             }),
             meta: None,
@@ -134,6 +156,14 @@ impl ToolResponse {
         self
     }
 
+    /// Attach `retry_after_ms` to the error payload (builder pattern).
+    pub fn with_retry_after_ms(mut self, ms: u64) -> Self {
+        if let Some(ref mut err) = self.error {
+            err.retry_after_ms = Some(ms);
+        }
+        self
+    }
+
     /// Attach `policy_decision` to the error payload (builder pattern).
     pub fn with_policy_decision(mut self, decision: impl Into<String>) -> Self {
         if let Some(ref mut err) = self.error {
@@ -161,8 +191,22 @@ impl ToolMeta {
         Self {
             tool_version: "1.0".to_string(),
             elapsed_ms,
+            pagination: None,
+            retry_count: None,
             workflow: None,
         }
+    }
+
+    /// Attach pagination info to metadata (builder pattern).
+    pub fn with_pagination(mut self, pagination: PaginationInfo) -> Self {
+        self.pagination = Some(pagination);
+        self
+    }
+
+    /// Attach retry count to metadata (builder pattern).
+    pub fn with_retry_count(mut self, count: u32) -> Self {
+        self.retry_count = Some(count);
+        self
     }
 
     /// Attach workflow context (mode + approval_mode) to metadata (builder pattern).
@@ -363,7 +407,51 @@ mod tests {
     fn builders_no_op_on_success() {
         let resp = ToolResponse::success(42)
             .with_rate_limit_reset("never")
-            .with_policy_decision("none");
+            .with_policy_decision("none")
+            .with_retry_after_ms(5000);
         assert!(resp.error.is_none());
+    }
+
+    #[test]
+    fn retry_after_ms_serialization() {
+        let resp =
+            ToolResponse::error(ErrorCode::XRateLimited, "slow down").with_retry_after_ms(15000);
+        let json = resp.to_json();
+        let parsed: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["error"]["retry_after_ms"], 15000);
+    }
+
+    #[test]
+    fn pagination_info_serialization() {
+        let pagination = PaginationInfo {
+            next_token: Some("abc123".to_string()),
+            result_count: 10,
+            has_more: true,
+        };
+        let meta = ToolMeta::new(50).with_pagination(pagination);
+        let resp = ToolResponse::success(serde_json::json!({})).with_meta(meta);
+        let json = resp.to_json();
+        let parsed: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["meta"]["pagination"]["next_token"], "abc123");
+        assert_eq!(parsed["meta"]["pagination"]["result_count"], 10);
+        assert_eq!(parsed["meta"]["pagination"]["has_more"], true);
+    }
+
+    #[test]
+    fn retry_count_in_meta() {
+        let meta = ToolMeta::new(100).with_retry_count(2);
+        let resp = ToolResponse::success(serde_json::json!({})).with_meta(meta);
+        let json = resp.to_json();
+        let parsed: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["meta"]["retry_count"], 2);
+    }
+
+    #[test]
+    fn pagination_absent_when_none() {
+        let meta = ToolMeta::new(10);
+        let resp = ToolResponse::success(1).with_meta(meta);
+        let json = resp.to_json();
+        let parsed: Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed["meta"].get("pagination").is_none());
     }
 }

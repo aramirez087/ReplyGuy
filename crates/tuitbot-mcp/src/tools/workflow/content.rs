@@ -10,7 +10,7 @@ use tuitbot_core::LlmError;
 
 use crate::state::AppState;
 
-use super::response::{ErrorCode, ToolMeta, ToolResponse};
+use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
 
 /// A thin LlmProvider that delegates to the provider inside shared AppState.
 ///

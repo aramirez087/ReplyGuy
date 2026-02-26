@@ -58,7 +58,7 @@ mod tests {
     async fn contract_get_rate_limits() {
         let pool = storage::init_test_db().await.unwrap();
         let config = test_config();
-        let json = crate::tools::rate_limits::get_rate_limits(&pool, &config).await;
+        let json = crate::tools::workflow::rate_limits::get_rate_limits(&pool, &config).await;
         assert_success(&json, "get_rate_limits");
         assert_has_meta(&json, "get_rate_limits");
     }
@@ -69,7 +69,7 @@ mod tests {
     async fn contract_get_action_log() {
         let pool = storage::init_test_db().await.unwrap();
         let config = test_config();
-        let json = crate::tools::actions::get_action_log(&pool, 24, None, &config).await;
+        let json = crate::tools::workflow::actions::get_action_log(&pool, 24, None, &config).await;
         assert_success(&json, "get_action_log");
         assert_has_meta(&json, "get_action_log");
     }
@@ -78,7 +78,7 @@ mod tests {
     async fn contract_get_action_counts() {
         let pool = storage::init_test_db().await.unwrap();
         let config = test_config();
-        let json = crate::tools::actions::get_action_counts(&pool, 24, &config).await;
+        let json = crate::tools::workflow::actions::get_action_counts(&pool, 24, &config).await;
         assert_success(&json, "get_action_counts");
         assert_has_meta(&json, "get_action_counts");
     }
@@ -89,7 +89,7 @@ mod tests {
     async fn contract_get_recent_replies() {
         let pool = storage::init_test_db().await.unwrap();
         let config = test_config();
-        let json = crate::tools::replies::get_recent_replies(&pool, 24, &config).await;
+        let json = crate::tools::workflow::replies::get_recent_replies(&pool, 24, &config).await;
         assert_success(&json, "get_recent_replies");
         assert_has_meta(&json, "get_recent_replies");
     }
@@ -98,7 +98,7 @@ mod tests {
     async fn contract_get_reply_count_today() {
         let pool = storage::init_test_db().await.unwrap();
         let config = test_config();
-        let json = crate::tools::replies::get_reply_count_today(&pool, &config).await;
+        let json = crate::tools::workflow::replies::get_reply_count_today(&pool, &config).await;
         assert_success(&json, "get_reply_count_today");
         assert_has_meta(&json, "get_reply_count_today");
     }
@@ -109,7 +109,7 @@ mod tests {
     async fn contract_list_target_accounts() {
         let pool = storage::init_test_db().await.unwrap();
         let config = test_config();
-        let json = crate::tools::targets::list_target_accounts(&pool, &config).await;
+        let json = crate::tools::workflow::targets::list_target_accounts(&pool, &config).await;
         assert_success(&json, "list_target_accounts");
         assert_has_meta(&json, "list_target_accounts");
     }
@@ -120,7 +120,8 @@ mod tests {
     async fn contract_list_unreplied_tweets() {
         let pool = storage::init_test_db().await.unwrap();
         let config = test_config();
-        let json = crate::tools::discovery::list_unreplied_tweets(&pool, 0.0, &config).await;
+        let json =
+            crate::tools::workflow::discovery::list_unreplied_tweets(&pool, 0.0, &config).await;
         assert_success(&json, "list_unreplied_tweets");
         assert_has_meta(&json, "list_unreplied_tweets");
     }
@@ -129,9 +130,10 @@ mod tests {
     async fn contract_list_unreplied_tweets_with_limit() {
         let pool = storage::init_test_db().await.unwrap();
         let config = test_config();
-        let json =
-            crate::tools::discovery::list_unreplied_tweets_with_limit(&pool, 0.0, 10, &config)
-                .await;
+        let json = crate::tools::workflow::discovery::list_unreplied_tweets_with_limit(
+            &pool, 0.0, 10, &config,
+        )
+        .await;
         assert_success(&json, "list_unreplied_tweets_with_limit");
         assert_has_meta(&json, "list_unreplied_tweets_with_limit");
     }
@@ -179,7 +181,7 @@ mod tests {
     async fn contract_get_follower_trend() {
         let pool = storage::init_test_db().await.unwrap();
         let config = test_config();
-        let json = crate::tools::analytics::get_follower_trend(&pool, 7, &config).await;
+        let json = crate::tools::workflow::analytics::get_follower_trend(&pool, 7, &config).await;
         assert_success(&json, "get_follower_trend");
         assert_has_meta(&json, "get_follower_trend");
     }
@@ -188,7 +190,7 @@ mod tests {
     async fn contract_get_top_topics() {
         let pool = storage::init_test_db().await.unwrap();
         let config = test_config();
-        let json = crate::tools::analytics::get_top_topics(&pool, 10, &config).await;
+        let json = crate::tools::workflow::analytics::get_top_topics(&pool, 10, &config).await;
         assert_success(&json, "get_top_topics");
         assert_has_meta(&json, "get_top_topics");
     }
@@ -199,7 +201,7 @@ mod tests {
     async fn contract_list_pending() {
         let pool = storage::init_test_db().await.unwrap();
         let config = test_config();
-        let json = crate::tools::approval::list_pending(&pool, &config).await;
+        let json = crate::tools::workflow::approval::list_pending(&pool, &config).await;
         assert_success(&json, "list_pending");
         assert_has_meta(&json, "list_pending");
     }
@@ -208,7 +210,7 @@ mod tests {
     async fn contract_get_pending_count() {
         let pool = storage::init_test_db().await.unwrap();
         let config = test_config();
-        let json = crate::tools::approval::get_pending_count(&pool, &config).await;
+        let json = crate::tools::workflow::approval::get_pending_count(&pool, &config).await;
         assert_success(&json, "get_pending_count");
         assert_has_meta(&json, "get_pending_count");
     }
@@ -217,7 +219,7 @@ mod tests {
     async fn contract_approve_all_empty() {
         let pool = storage::init_test_db().await.unwrap();
         let config = test_config();
-        let json = crate::tools::approval::approve_all(&pool, &config).await;
+        let json = crate::tools::workflow::approval::approve_all(&pool, &config).await;
         assert_success(&json, "approve_all");
         assert_has_meta(&json, "approve_all");
     }
@@ -411,7 +413,7 @@ mod tests {
     #[tokio::test]
     async fn contract_get_mcp_tool_metrics() {
         let pool = storage::init_test_db().await.unwrap();
-        let json = crate::tools::telemetry::get_mcp_tool_metrics(&pool, 24).await;
+        let json = crate::tools::workflow::telemetry::get_mcp_tool_metrics(&pool, 24).await;
         assert_success(&json, "get_mcp_tool_metrics");
         assert_has_meta(&json, "get_mcp_tool_metrics");
     }
@@ -419,7 +421,7 @@ mod tests {
     #[tokio::test]
     async fn contract_get_mcp_error_breakdown() {
         let pool = storage::init_test_db().await.unwrap();
-        let json = crate::tools::telemetry::get_mcp_error_breakdown(&pool, 24).await;
+        let json = crate::tools::workflow::telemetry::get_mcp_error_breakdown(&pool, 24).await;
         assert_success(&json, "get_mcp_error_breakdown");
         assert_has_meta(&json, "get_mcp_error_breakdown");
     }
@@ -429,7 +431,7 @@ mod tests {
     #[tokio::test]
     async fn contract_topic_performance_snapshot() {
         let pool = storage::init_test_db().await.unwrap();
-        let json = crate::tools::context::topic_performance_snapshot(&pool, 30).await;
+        let json = crate::tools::workflow::context::topic_performance_snapshot(&pool, 30).await;
         assert_success(&json, "topic_performance_snapshot");
         assert_has_meta(&json, "topic_performance_snapshot");
     }

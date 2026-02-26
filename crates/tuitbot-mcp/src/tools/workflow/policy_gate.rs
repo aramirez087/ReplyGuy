@@ -11,7 +11,7 @@ use tuitbot_core::storage::rate_limits;
 
 use crate::state::SharedState;
 
-use super::response::{ErrorCode, ToolMeta, ToolResponse};
+use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
 
 /// Result of a policy gate check.
 pub enum GateResult {

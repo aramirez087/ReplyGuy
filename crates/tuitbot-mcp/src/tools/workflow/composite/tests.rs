@@ -272,6 +272,7 @@ async fn make_test_state(
         llm_provider,
         x_client,
         authenticated_user_id: Some("u1".to_string()),
+        idempotency: Arc::new(crate::tools::idempotency::IdempotencyStore::new()),
     })
 }
 
@@ -330,7 +331,7 @@ async fn seed_discovered_tweet(state: &SharedState, id: &str, text: &str, author
 
 mod find_opportunities {
     use super::*;
-    use crate::tools::composite::find_opportunities;
+    use crate::tools::workflow::composite::find_opportunities;
 
     #[tokio::test]
     async fn happy_path_search_score_rank() {
@@ -399,7 +400,7 @@ mod find_opportunities {
 
 mod draft_replies {
     use super::*;
-    use crate::tools::composite::draft_replies;
+    use crate::tools::workflow::composite::draft_replies;
 
     #[tokio::test]
     async fn happy_path_generate_drafts() {
@@ -492,7 +493,7 @@ mod draft_replies {
 
 mod propose_queue {
     use super::*;
-    use crate::tools::composite::propose_queue;
+    use crate::tools::workflow::composite::propose_queue;
 
     #[tokio::test]
     async fn queues_in_approval_mode() {
@@ -574,7 +575,7 @@ mod propose_queue {
 
 mod thread_plan {
     use super::*;
-    use crate::tools::composite::thread_plan;
+    use crate::tools::workflow::composite::thread_plan;
 
     /// Build a valid 5-tweet thread mock output.
     fn valid_thread_text() -> &'static str {

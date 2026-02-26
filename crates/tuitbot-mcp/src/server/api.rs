@@ -11,6 +11,7 @@ use rmcp::model::*;
 use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 
 use crate::kernel;
+use crate::provider::retry::{RetryPolicy, RetryingProvider};
 use crate::provider::x_api::XApiProvider;
 use crate::requests::*;
 use crate::state::SharedApiState;
@@ -44,7 +45,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<TweetIdRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::read::get_tweet(&provider, &req.tweet_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -55,7 +59,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<UsernameRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::read::get_user_by_username(&provider, &req.username).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -67,7 +74,10 @@ impl ApiMcpServer {
         Parameters(req): Parameters<SearchTweetsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(10).clamp(10, 100);
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::read::search_tweets(
             &provider,
             &req.query,
@@ -85,7 +95,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<GetUserMentionsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::read::get_user_mentions(
             &provider,
             &self.state.authenticated_user_id,
@@ -103,7 +116,10 @@ impl ApiMcpServer {
         Parameters(req): Parameters<GetUserTweetsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(10).clamp(5, 100);
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::read::get_user_tweets(
             &provider,
             &req.user_id,
@@ -121,7 +137,10 @@ impl ApiMcpServer {
         Parameters(req): Parameters<GetHomeTimelineRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(20).clamp(1, 100);
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::read::get_home_timeline(
             &provider,
             &self.state.authenticated_user_id,
@@ -135,7 +154,10 @@ impl ApiMcpServer {
     /// Get the authenticated user's profile (username, name, metrics).
     #[tool]
     async fn x_get_me(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::utils::get_me(&provider).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -147,7 +169,10 @@ impl ApiMcpServer {
         Parameters(req): Parameters<GetFollowersRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(100).clamp(1, 1000);
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::read::get_followers(
             &provider,
             &req.user_id,
@@ -165,7 +190,10 @@ impl ApiMcpServer {
         Parameters(req): Parameters<GetFollowingRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(100).clamp(1, 1000);
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::read::get_following(
             &provider,
             &req.user_id,
@@ -182,7 +210,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<GetUserByIdRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::read::get_user_by_id(&provider, &req.user_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -194,7 +225,10 @@ impl ApiMcpServer {
         Parameters(req): Parameters<GetLikedTweetsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(10).clamp(1, 100);
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::read::get_liked_tweets(
             &provider,
             &req.user_id,
@@ -212,7 +246,10 @@ impl ApiMcpServer {
         Parameters(req): Parameters<GetBookmarksRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(10).clamp(1, 100);
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::read::get_bookmarks(
             &provider,
             &self.state.authenticated_user_id,
@@ -230,7 +267,10 @@ impl ApiMcpServer {
         Parameters(req): Parameters<GetUsersByIdsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let ids_refs: Vec<&str> = req.user_ids.iter().map(|s| s.as_str()).collect();
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::read::get_users_by_ids(&provider, &ids_refs).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -242,7 +282,10 @@ impl ApiMcpServer {
         Parameters(req): Parameters<GetTweetLikingUsersRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(100).clamp(1, 100);
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::read::get_tweet_liking_users(
             &provider,
             &req.tweet_id,
@@ -261,6 +304,14 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<PostTweetTextRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = serde_json::json!({"text": &req.text}).to_string();
+        if let Some(err) = self
+            .state
+            .idempotency
+            .check_and_record("post_tweet", &params)
+        {
+            return Ok(CallToolResult::success(vec![Content::text(err)]));
+        }
         let result = kernel::write::post_tweet(
             self.state.x_client.as_ref(),
             &req.text,
@@ -276,6 +327,15 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<ReplyToTweetRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = serde_json::json!({"text": &req.text, "in_reply_to_id": &req.in_reply_to_id})
+            .to_string();
+        if let Some(err) = self
+            .state
+            .idempotency
+            .check_and_record("reply_to_tweet", &params)
+        {
+            return Ok(CallToolResult::success(vec![Content::text(err)]));
+        }
         let result = kernel::write::reply_to_tweet(
             self.state.x_client.as_ref(),
             &req.text,
@@ -292,6 +352,16 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<QuoteTweetRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params =
+            serde_json::json!({"text": &req.text, "quoted_tweet_id": &req.quoted_tweet_id})
+                .to_string();
+        if let Some(err) = self
+            .state
+            .idempotency
+            .check_and_record("quote_tweet", &params)
+        {
+            return Ok(CallToolResult::success(vec![Content::text(err)]));
+        }
         let result = kernel::write::quote_tweet(
             self.state.x_client.as_ref(),
             &req.text,
@@ -317,6 +387,16 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<PostThreadMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let first = req.tweets.first().map(|s| s.as_str()).unwrap_or("");
+        let params =
+            serde_json::json!({"tweet_count": req.tweets.len(), "first_tweet": first}).to_string();
+        if let Some(err) = self
+            .state
+            .idempotency
+            .check_and_record("post_thread", &params)
+        {
+            return Ok(CallToolResult::success(vec![Content::text(err)]));
+        }
         let result = kernel::write::post_thread(
             self.state.x_client.as_ref(),
             &req.tweets,
@@ -334,6 +414,14 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<LikeTweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = serde_json::json!({"tweet_id": &req.tweet_id}).to_string();
+        if let Some(err) = self
+            .state
+            .idempotency
+            .check_and_record("like_tweet", &params)
+        {
+            return Ok(CallToolResult::success(vec![Content::text(err)]));
+        }
         let result = kernel::engage::like_tweet(
             self.state.x_client.as_ref(),
             &self.state.authenticated_user_id,
@@ -349,6 +437,14 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<FollowUserMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = serde_json::json!({"target_user_id": &req.target_user_id}).to_string();
+        if let Some(err) = self
+            .state
+            .idempotency
+            .check_and_record("follow_user", &params)
+        {
+            return Ok(CallToolResult::success(vec![Content::text(err)]));
+        }
         let result = kernel::engage::follow_user(
             self.state.x_client.as_ref(),
             &self.state.authenticated_user_id,
@@ -379,6 +475,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<RetweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = serde_json::json!({"tweet_id": &req.tweet_id}).to_string();
+        if let Some(err) = self.state.idempotency.check_and_record("retweet", &params) {
+            return Ok(CallToolResult::success(vec![Content::text(err)]));
+        }
         let result = kernel::engage::retweet(
             self.state.x_client.as_ref(),
             &self.state.authenticated_user_id,
@@ -424,6 +524,14 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<BookmarkTweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = serde_json::json!({"tweet_id": &req.tweet_id}).to_string();
+        if let Some(err) = self
+            .state
+            .idempotency
+            .check_and_record("bookmark_tweet", &params)
+        {
+            return Ok(CallToolResult::success(vec![Content::text(err)]));
+        }
         let result = kernel::engage::bookmark_tweet(
             self.state.x_client.as_ref(),
             &self.state.authenticated_user_id,
@@ -519,7 +627,10 @@ impl ApiMcpServer {
     /// Check API profile health by verifying X client connectivity via get_me.
     #[tool]
     async fn health_check(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let provider = XApiProvider::new(self.state.x_client.as_ref());
+        let provider = RetryingProvider::new(
+            XApiProvider::new(self.state.x_client.as_ref()),
+            RetryPolicy::default(),
+        );
         let result = kernel::utils::get_me(&provider).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }

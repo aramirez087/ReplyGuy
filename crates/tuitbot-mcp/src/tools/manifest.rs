@@ -25,6 +25,8 @@ pub struct ToolEntry {
     pub name: &'static str,
     /// Functional category.
     pub category: ToolCategory,
+    /// Module lane (shared vs workflow).
+    pub lane: Lane,
     /// Whether this tool performs a mutation (write/engage).
     pub mutation: bool,
     /// Whether the tool requires an authenticated X API client.
@@ -69,6 +71,17 @@ pub enum Profile {
     Api,
 }
 
+/// Module lane: whether a tool lives in the shared `tools/` root or
+/// inside `tools/workflow/`.
+#[derive(Debug, Serialize, Copy, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum Lane {
+    /// Shared tools available to all profiles (config, scoring, response).
+    Shared,
+    /// Workflow-only tools behind `tools/workflow/`.
+    Workflow,
+}
+
 /// Build the complete tool manifest from the source-of-truth lookup table.
 pub fn generate_manifest() -> ToolManifest {
     ToolManifest {
@@ -84,6 +97,7 @@ pub fn generate_manifest() -> ToolManifest {
 fn tool(
     name: &'static str,
     category: ToolCategory,
+    lane: Lane,
     mutation: bool,
     requires_x_client: bool,
     requires_llm: bool,
@@ -94,6 +108,7 @@ fn tool(
     ToolEntry {
         name,
         category,
+        lane,
         mutation,
         requires_x_client,
         requires_llm,
@@ -127,7 +142,8 @@ const X_READ_USER_ERR: &[ErrorCode] = &[
     ErrorCode::XApiError,
 ];
 
-/// X API write errors (includes policy).
+/// X API write errors (includes policy codes — policy codes only apply in
+/// the workflow profile; the API profile skips policy gating).
 const X_WRITE_ERR: &[ErrorCode] = &[
     ErrorCode::XNotConfigured,
     ErrorCode::XRateLimited,
@@ -143,7 +159,7 @@ const X_WRITE_ERR: &[ErrorCode] = &[
     ErrorCode::PolicyError,
 ];
 
-/// X API engage errors.
+/// X API engage errors (policy codes only apply in the workflow profile).
 const X_ENGAGE_ERR: &[ErrorCode] = &[
     ErrorCode::XNotConfigured,
     ErrorCode::XRateLimited,
@@ -170,6 +186,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_stats",
             ToolCategory::Analytics,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -180,6 +197,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_follower_trend",
             ToolCategory::Analytics,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -191,6 +209,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_action_log",
             ToolCategory::Analytics,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -201,6 +220,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_action_counts",
             ToolCategory::Analytics,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -212,6 +232,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_rate_limits",
             ToolCategory::Policy,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -223,6 +244,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_recent_replies",
             ToolCategory::Analytics,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -233,6 +255,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_reply_count_today",
             ToolCategory::Analytics,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -244,6 +267,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "list_target_accounts",
             ToolCategory::Discovery,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -255,6 +279,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "list_unreplied_tweets",
             ToolCategory::Discovery,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -262,21 +287,23 @@ fn all_tools() -> Vec<ToolEntry> {
             WF,
             DB_ERR,
         ),
-        // ── Scoring ──────────────────────────────────────────────────
+        // ── Scoring (pure function on &Config — no DB needed) ────────
         tool(
             "score_tweet",
             ToolCategory::Scoring,
+            Lane::Shared,
             false,
             false,
             false,
-            true,
+            false,
             BOTH,
-            &[ErrorCode::DbError, ErrorCode::InvalidInput],
+            &[ErrorCode::InvalidInput],
         ),
         // ── Approval Queue ───────────────────────────────────────────
         tool(
             "list_pending_approvals",
             ToolCategory::Approval,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -287,6 +314,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_pending_count",
             ToolCategory::Approval,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -297,6 +325,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "approve_item",
             ToolCategory::Approval,
+            Lane::Workflow,
             true,
             true,
             false,
@@ -312,6 +341,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "reject_item",
             ToolCategory::Approval,
+            Lane::Workflow,
             true,
             false,
             false,
@@ -322,6 +352,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "approve_all",
             ToolCategory::Approval,
+            Lane::Workflow,
             true,
             true,
             false,
@@ -337,6 +368,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "generate_reply",
             ToolCategory::Content,
+            Lane::Workflow,
             false,
             false,
             true,
@@ -347,6 +379,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "generate_tweet",
             ToolCategory::Content,
+            Lane::Workflow,
             false,
             false,
             true,
@@ -357,6 +390,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "generate_thread",
             ToolCategory::Content,
+            Lane::Workflow,
             false,
             false,
             true,
@@ -368,6 +402,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_config",
             ToolCategory::Config,
+            Lane::Shared,
             false,
             false,
             false,
@@ -378,6 +413,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "validate_config",
             ToolCategory::Config,
+            Lane::Shared,
             false,
             false,
             false,
@@ -389,6 +425,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_capabilities",
             ToolCategory::Meta,
+            Lane::Shared,
             false,
             false,
             false,
@@ -399,6 +436,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "health_check",
             ToolCategory::Health,
+            Lane::Shared,
             false,
             false,
             false,
@@ -410,6 +448,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_mode",
             ToolCategory::Meta,
+            Lane::Shared,
             false,
             false,
             false,
@@ -420,6 +459,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_policy_status",
             ToolCategory::Policy,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -430,6 +470,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "compose_tweet",
             ToolCategory::Write,
+            Lane::Workflow,
             true,
             true,
             false,
@@ -452,6 +493,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_discovery_feed",
             ToolCategory::Discovery,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -462,6 +504,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "suggest_topics",
             ToolCategory::Content,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -473,6 +516,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_tweet_by_id",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -483,6 +527,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_get_user_by_username",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -493,6 +538,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_search_tweets",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -503,6 +549,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_get_user_mentions",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -513,6 +560,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_get_user_tweets",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -523,6 +571,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_get_home_timeline",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -533,6 +582,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_get_followers",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -543,6 +593,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_get_following",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -553,6 +604,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_get_user_by_id",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -563,6 +615,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_get_liked_tweets",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -573,6 +626,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_get_bookmarks",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -583,6 +637,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_get_users_by_ids",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -593,6 +648,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_get_tweet_liking_users",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -603,6 +659,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_x_usage",
             ToolCategory::Analytics,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -614,6 +671,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_get_me",
             ToolCategory::Read,
+            Lane::Shared,
             false,
             true,
             false,
@@ -625,6 +683,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_post_tweet",
             ToolCategory::Write,
+            Lane::Shared,
             true,
             true,
             false,
@@ -635,6 +694,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_reply_to_tweet",
             ToolCategory::Write,
+            Lane::Shared,
             true,
             true,
             false,
@@ -645,6 +705,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_quote_tweet",
             ToolCategory::Write,
+            Lane::Shared,
             true,
             true,
             false,
@@ -655,6 +716,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_delete_tweet",
             ToolCategory::Write,
+            Lane::Shared,
             true,
             true,
             false,
@@ -665,6 +727,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_post_thread",
             ToolCategory::Write,
+            Lane::Shared,
             true,
             true,
             false,
@@ -691,6 +754,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_like_tweet",
             ToolCategory::Engage,
+            Lane::Shared,
             true,
             true,
             false,
@@ -701,6 +765,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_unlike_tweet",
             ToolCategory::Engage,
+            Lane::Shared,
             true,
             true,
             false,
@@ -711,6 +776,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_follow_user",
             ToolCategory::Engage,
+            Lane::Shared,
             true,
             true,
             false,
@@ -721,6 +787,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_unfollow_user",
             ToolCategory::Engage,
+            Lane::Shared,
             true,
             true,
             false,
@@ -731,6 +798,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_retweet",
             ToolCategory::Engage,
+            Lane::Shared,
             true,
             true,
             false,
@@ -741,6 +809,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_unretweet",
             ToolCategory::Engage,
+            Lane::Shared,
             true,
             true,
             false,
@@ -751,6 +820,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_bookmark_tweet",
             ToolCategory::Engage,
+            Lane::Shared,
             true,
             true,
             false,
@@ -761,6 +831,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_unbookmark_tweet",
             ToolCategory::Engage,
+            Lane::Shared,
             true,
             true,
             false,
@@ -772,6 +843,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "x_upload_media",
             ToolCategory::Media,
+            Lane::Shared,
             true,
             true,
             false,
@@ -789,6 +861,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_author_context",
             ToolCategory::Context,
+            Lane::Workflow,
             false,
             true,
             false,
@@ -803,6 +876,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "recommend_engagement_action",
             ToolCategory::Context,
+            Lane::Workflow,
             false,
             true,
             false,
@@ -817,6 +891,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "topic_performance_snapshot",
             ToolCategory::Context,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -828,6 +903,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_mcp_tool_metrics",
             ToolCategory::Telemetry,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -838,6 +914,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "get_mcp_error_breakdown",
             ToolCategory::Telemetry,
+            Lane::Workflow,
             false,
             false,
             false,
@@ -849,6 +926,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "find_reply_opportunities",
             ToolCategory::Composite,
+            Lane::Workflow,
             false,
             true,
             false,
@@ -864,6 +942,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "draft_replies_for_candidates",
             ToolCategory::Composite,
+            Lane::Workflow,
             false,
             false,
             true,
@@ -879,6 +958,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "propose_and_queue_replies",
             ToolCategory::Composite,
+            Lane::Workflow,
             true,
             true,
             false,
@@ -899,6 +979,7 @@ fn all_tools() -> Vec<ToolEntry> {
         tool(
             "generate_thread_plan",
             ToolCategory::Composite,
+            Lane::Workflow,
             false,
             false,
             true,

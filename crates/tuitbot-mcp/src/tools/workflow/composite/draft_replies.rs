@@ -9,8 +9,8 @@ use tuitbot_core::safety::{contains_banned_phrase, DedupChecker};
 use tuitbot_core::storage;
 
 use crate::state::SharedState;
-use crate::tools::content::ArcProvider;
 use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
+use crate::tools::workflow::content::ArcProvider;
 
 use super::DraftResult;
 
@@ -135,7 +135,7 @@ pub async fn execute(
     }
 
     let elapsed = start.elapsed().as_millis() as u64;
-    crate::tools::telemetry::record(
+    crate::tools::workflow::telemetry::record(
         &state.pool,
         "draft_replies_for_candidates",
         "composite",

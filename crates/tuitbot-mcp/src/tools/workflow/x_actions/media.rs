@@ -8,8 +8,8 @@ use tuitbot_core::x_api::types::{ImageFormat, MediaType};
 
 use crate::state::SharedState;
 
-use super::super::response::{ErrorCode, ToolMeta, ToolResponse};
 use super::not_configured_response;
+use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
 
 /// Upload a media file for attachment to tweets.
 pub async fn upload_media(state: &SharedState, file_path: &str) -> String {

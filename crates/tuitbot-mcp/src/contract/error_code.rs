@@ -135,6 +135,13 @@ impl ErrorCode {
         )
     }
 
+    /// Whether this error is caused by a transient condition that may resolve
+    /// on its own (network hiccups, server errors). Subset of [`is_retryable`]
+    /// — excludes `XRateLimited` (agent should wait for `retry_after_ms`).
+    pub fn is_transient(self) -> bool {
+        matches!(self, Self::XNetworkError | Self::XApiError)
+    }
+
     /// The snake_case string used on the wire (matches serde rename).
     pub fn as_str(self) -> &'static str {
         match self {
@@ -233,5 +240,23 @@ mod tests {
         for &code in ErrorCode::ALL {
             assert_eq!(code.as_str(), &code.to_string());
         }
+    }
+
+    #[test]
+    fn is_transient_subset_of_retryable() {
+        for &code in ErrorCode::ALL {
+            if code.is_transient() {
+                assert!(
+                    code.is_retryable(),
+                    "{code:?}: transient must also be retryable"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rate_limited_retryable_not_transient() {
+        assert!(ErrorCode::XRateLimited.is_retryable());
+        assert!(!ErrorCode::XRateLimited.is_transient());
     }
 }

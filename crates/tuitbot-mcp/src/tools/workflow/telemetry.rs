@@ -8,7 +8,7 @@ use std::time::Instant;
 use tuitbot_core::storage;
 use tuitbot_core::storage::DbPool;
 
-use super::response::{ErrorCode, ToolMeta, ToolResponse};
+use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
 
 /// Get time-windowed metrics aggregated per tool.
 pub async fn get_mcp_tool_metrics(pool: &DbPool, since_hours: u32) -> String {

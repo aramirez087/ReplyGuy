@@ -7,8 +7,8 @@ use tuitbot_core::content::frameworks::ThreadStructure;
 use tuitbot_core::content::ContentGenerator;
 
 use crate::state::SharedState;
-use crate::tools::content::ArcProvider;
 use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
+use crate::tools::workflow::content::ArcProvider;
 
 /// Parse a structure string into a `ThreadStructure`.
 fn parse_structure(s: &str) -> Option<ThreadStructure> {
@@ -100,7 +100,7 @@ pub async fn execute(
     let structure_used = structure_str.unwrap_or("auto_selected");
 
     let elapsed = start.elapsed().as_millis() as u64;
-    crate::tools::telemetry::record(
+    crate::tools::workflow::telemetry::record(
         &state.pool,
         "generate_thread_plan",
         "composite",

@@ -17,6 +17,8 @@ use tuitbot_core::llm::LlmProvider;
 use tuitbot_core::storage::DbPool;
 use tuitbot_core::x_api::XApiClient;
 
+use crate::tools::idempotency::IdempotencyStore;
+
 // ── Runtime profile ─────────────────────────────────────────────────
 
 /// MCP server runtime profile.
@@ -66,6 +68,8 @@ pub struct AppState {
     pub x_client: Option<Box<dyn XApiClient>>,
     /// Authenticated user ID from X API (cached from get_me on startup).
     pub authenticated_user_id: Option<String>,
+    /// Idempotency guard for mutation dedup.
+    pub idempotency: Arc<IdempotencyStore>,
 }
 
 /// Thread-safe reference to shared workflow state.
@@ -84,6 +88,8 @@ pub struct ApiState {
     pub x_client: Box<dyn XApiClient>,
     /// Authenticated user ID from X API (from get_me on startup).
     pub authenticated_user_id: String,
+    /// Idempotency guard for mutation dedup.
+    pub idempotency: Arc<IdempotencyStore>,
 }
 
 /// Thread-safe reference to shared API state.

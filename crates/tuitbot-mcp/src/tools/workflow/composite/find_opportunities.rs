@@ -186,7 +186,7 @@ pub async fn execute(
 
     let total = candidates.len();
     let elapsed = start.elapsed().as_millis() as u64;
-    crate::tools::telemetry::record(
+    crate::tools::workflow::telemetry::record(
         &state.pool,
         "find_reply_opportunities",
         "composite",

@@ -17,7 +17,7 @@ use crate::contract::error::provider_error_to_response;
 use crate::provider::x_api::map_x_error;
 use tuitbot_core::error::XApiError;
 
-use super::response::{ToolMeta, ToolResponse};
+use crate::tools::response::{ToolMeta, ToolResponse};
 
 // Re-export all public tool functions.
 pub use engage::{
@@ -49,7 +49,7 @@ fn error_response(e: &XApiError, start: Instant) -> String {
 fn no_user_id_response(start: Instant) -> String {
     let elapsed = start.elapsed().as_millis() as u64;
     ToolResponse::error(
-        super::response::ErrorCode::XNotConfigured,
+        crate::tools::response::ErrorCode::XNotConfigured,
         "Authenticated user ID not available. X client may not be fully initialized.",
     )
     .with_meta(ToolMeta::new(elapsed))

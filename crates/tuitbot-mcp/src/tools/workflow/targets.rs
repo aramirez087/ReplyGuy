@@ -8,7 +8,7 @@ use tuitbot_core::config::Config;
 use tuitbot_core::storage;
 use tuitbot_core::storage::DbPool;
 
-use super::response::{ToolMeta, ToolResponse};
+use crate::tools::response::{ToolMeta, ToolResponse};
 
 #[derive(Serialize)]
 struct TargetAccountOut {

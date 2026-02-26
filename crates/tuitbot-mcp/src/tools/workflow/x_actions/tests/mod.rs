@@ -15,6 +15,7 @@ use tuitbot_core::x_api::types::*;
 use tuitbot_core::x_api::XApiClient;
 
 use crate::state::{AppState, SharedState};
+use crate::tools::idempotency::IdempotencyStore;
 
 use super::*;
 
@@ -428,6 +429,7 @@ async fn make_state(x_client: Option<Box<dyn XApiClient>>, user_id: Option<Strin
         llm_provider: None,
         x_client,
         authenticated_user_id: user_id,
+        idempotency: Arc::new(IdempotencyStore::new()),
     })
 }
 
@@ -449,6 +451,7 @@ async fn make_state_with_config(
         llm_provider: None,
         x_client,
         authenticated_user_id: user_id,
+        idempotency: Arc::new(IdempotencyStore::new()),
     })
 }
 

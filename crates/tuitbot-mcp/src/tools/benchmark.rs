@@ -104,7 +104,8 @@ async fn generate_baseline_benchmark() {
         for _ in 0..ITERATIONS {
             let start = Instant::now();
             let result =
-                super::capabilities::get_capabilities(&pool, &config, true, false, None).await;
+                super::workflow::capabilities::get_capabilities(&pool, &config, true, false, None)
+                    .await;
             times.push(start.elapsed().as_secs_f64() * 1000.0);
             validate_envelope(&result, "get_capabilities");
         }
@@ -119,7 +120,7 @@ async fn generate_baseline_benchmark() {
         let mut times = Vec::new();
         for _ in 0..ITERATIONS {
             let start = Instant::now();
-            let result = super::health::health_check(&pool, None, &config).await;
+            let result = super::workflow::health::health_check(&pool, None, &config).await;
             times.push(start.elapsed().as_secs_f64() * 1000.0);
             validate_envelope(&result, "health_check");
         }
@@ -134,7 +135,7 @@ async fn generate_baseline_benchmark() {
         let mut times = Vec::new();
         for _ in 0..ITERATIONS {
             let start = Instant::now();
-            let result = super::analytics::get_stats(&pool, 7, &config).await;
+            let result = super::workflow::analytics::get_stats(&pool, 7, &config).await;
             times.push(start.elapsed().as_secs_f64() * 1000.0);
             validate_envelope(&result, "get_stats");
         }
@@ -149,7 +150,7 @@ async fn generate_baseline_benchmark() {
         let mut times = Vec::new();
         for _ in 0..ITERATIONS {
             let start = Instant::now();
-            let result = super::approval::list_pending(&pool, &config).await;
+            let result = super::workflow::approval::list_pending(&pool, &config).await;
             times.push(start.elapsed().as_secs_f64() * 1000.0);
             validate_envelope(&result, "list_pending");
         }
@@ -164,8 +165,10 @@ async fn generate_baseline_benchmark() {
         let mut times = Vec::new();
         for _ in 0..ITERATIONS {
             let start = Instant::now();
-            let result =
-                super::discovery::list_unreplied_tweets_with_limit(&pool, 0.0, 10, &config).await;
+            let result = super::workflow::discovery::list_unreplied_tweets_with_limit(
+                &pool, 0.0, 10, &config,
+            )
+            .await;
             times.push(start.elapsed().as_secs_f64() * 1000.0);
             validate_envelope(&result, "list_unreplied_tweets_with_limit");
         }

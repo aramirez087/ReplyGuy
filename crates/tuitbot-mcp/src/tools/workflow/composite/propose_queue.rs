@@ -10,9 +10,9 @@ use tuitbot_core::storage;
 
 use crate::requests::ProposeItem;
 use crate::state::SharedState;
-use crate::tools::content::ArcProvider;
-use crate::tools::policy_gate::{self, GateResult};
 use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
+use crate::tools::workflow::content::ArcProvider;
+use crate::tools::workflow::policy_gate::{self, GateResult};
 
 use super::ProposeResult;
 
@@ -189,7 +189,7 @@ pub async fn execute(state: &SharedState, items: &[ProposeItem], mention_product
     let has_error = results
         .iter()
         .any(|r| matches!(r, ProposeResult::Blocked { .. }));
-    crate::tools::telemetry::record(
+    crate::tools::workflow::telemetry::record(
         &state.pool,
         "propose_and_queue_replies",
         "composite_mutation",

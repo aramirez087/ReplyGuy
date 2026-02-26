@@ -3,6 +3,7 @@
 //! [`SocialReadProvider`] defines the read surface that kernel tools depend on.
 //! Concrete implementations live in submodules (e.g. [`x_api::XApiProvider`]).
 
+pub mod retry;
 pub mod x_api;
 
 use crate::contract::ProviderError;

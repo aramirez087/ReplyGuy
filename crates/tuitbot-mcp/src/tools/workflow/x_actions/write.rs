@@ -6,9 +6,9 @@ use serde::Serialize;
 
 use crate::state::SharedState;
 
-use super::super::response::{ErrorCode, ToolMeta, ToolResponse};
 use super::validate::check_tweet_length;
 use super::{error_response, not_configured_response};
+use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
 
 /// Post a new tweet, optionally with media.
 pub async fn post_tweet(state: &SharedState, text: &str, media_ids: Option<&[String]>) -> String {
@@ -17,6 +17,9 @@ pub async fn post_tweet(state: &SharedState, text: &str, media_ids: Option<&[Str
         return err;
     }
     let params = serde_json::json!({"text": text}).to_string();
+    if let Some(err) = state.idempotency.check_and_record("post_tweet", &params) {
+        return err;
+    }
     match super::super::policy_gate::check_policy(state, "post_tweet", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
         super::super::policy_gate::GateResult::Proceed => {}
@@ -60,6 +63,12 @@ pub async fn reply_to_tweet(
         return err;
     }
     let params = serde_json::json!({"text": text, "in_reply_to_id": in_reply_to_id}).to_string();
+    if let Some(err) = state
+        .idempotency
+        .check_and_record("reply_to_tweet", &params)
+    {
+        return err;
+    }
     match super::super::policy_gate::check_policy(state, "reply_to_tweet", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
         super::super::policy_gate::GateResult::Proceed => {}
@@ -107,6 +116,9 @@ pub async fn quote_tweet(
         return err;
     }
     let params = serde_json::json!({"text": text, "quoted_tweet_id": quoted_tweet_id}).to_string();
+    if let Some(err) = state.idempotency.check_and_record("quote_tweet", &params) {
+        return err;
+    }
     match super::super::policy_gate::check_policy(state, "quote_tweet", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
         super::super::policy_gate::GateResult::Proceed => {}
@@ -210,7 +222,11 @@ pub async fn post_thread(
     }
 
     // Single policy gate for the whole thread.
-    let params = serde_json::json!({"tweet_count": tweets.len()}).to_string();
+    let params =
+        serde_json::json!({"tweet_count": tweets.len(), "first_tweet": tweets[0]}).to_string();
+    if let Some(err) = state.idempotency.check_and_record("post_thread", &params) {
+        return err;
+    }
     match super::super::policy_gate::check_policy(state, "post_thread", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
         super::super::policy_gate::GateResult::Proceed => {}

@@ -6,11 +6,12 @@
 use std::time::Instant;
 
 use crate::kernel;
+use crate::provider::retry::{RetryPolicy, RetryingProvider};
 use crate::provider::x_api::XApiProvider;
 use crate::state::SharedState;
 
-use super::super::response::{ErrorCode, ToolMeta, ToolResponse};
 use super::{no_user_id_response, not_configured_response};
+use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
 
 /// Get a single tweet by ID — delegates to kernel.
 pub async fn get_tweet_by_id(state: &SharedState, tweet_id: &str) -> String {
@@ -18,7 +19,7 @@ pub async fn get_tweet_by_id(state: &SharedState, tweet_id: &str) -> String {
         Some(c) => c.as_ref(),
         None => return not_configured_response(Instant::now()),
     };
-    let provider = XApiProvider::new(client);
+    let provider = RetryingProvider::new(XApiProvider::new(client), RetryPolicy::default());
     kernel::read::get_tweet(&provider, tweet_id).await
 }
 
@@ -28,7 +29,7 @@ pub async fn get_user_by_username(state: &SharedState, username: &str) -> String
         Some(c) => c.as_ref(),
         None => return not_configured_response(Instant::now()),
     };
-    let provider = XApiProvider::new(client);
+    let provider = RetryingProvider::new(XApiProvider::new(client), RetryPolicy::default());
     kernel::read::get_user_by_username(&provider, username).await
 }
 
@@ -44,7 +45,7 @@ pub async fn search_tweets(
         Some(c) => c.as_ref(),
         None => return not_configured_response(Instant::now()),
     };
-    let provider = XApiProvider::new(client);
+    let provider = RetryingProvider::new(XApiProvider::new(client), RetryPolicy::default());
     kernel::read::search_tweets(&provider, query, max_results, since_id, pagination_token).await
 }
 
@@ -62,7 +63,7 @@ pub async fn get_user_mentions(
         Some(id) => id,
         None => return no_user_id_response(Instant::now()),
     };
-    let provider = XApiProvider::new(client);
+    let provider = RetryingProvider::new(XApiProvider::new(client), RetryPolicy::default());
     kernel::read::get_user_mentions(&provider, user_id, since_id, pagination_token).await
 }
 
@@ -77,7 +78,7 @@ pub async fn get_user_tweets(
         Some(c) => c.as_ref(),
         None => return not_configured_response(Instant::now()),
     };
-    let provider = XApiProvider::new(client);
+    let provider = RetryingProvider::new(XApiProvider::new(client), RetryPolicy::default());
     kernel::read::get_user_tweets(&provider, user_id, max_results, pagination_token).await
 }
 
@@ -95,7 +96,7 @@ pub async fn get_home_timeline(
         Some(id) => id,
         None => return no_user_id_response(Instant::now()),
     };
-    let provider = XApiProvider::new(client);
+    let provider = RetryingProvider::new(XApiProvider::new(client), RetryPolicy::default());
     kernel::read::get_home_timeline(&provider, user_id, max_results, pagination_token).await
 }
 
@@ -110,7 +111,7 @@ pub async fn get_followers(
         Some(c) => c.as_ref(),
         None => return not_configured_response(Instant::now()),
     };
-    let provider = XApiProvider::new(client);
+    let provider = RetryingProvider::new(XApiProvider::new(client), RetryPolicy::default());
     kernel::read::get_followers(&provider, user_id, max_results, pagination_token).await
 }
 
@@ -125,7 +126,7 @@ pub async fn get_following(
         Some(c) => c.as_ref(),
         None => return not_configured_response(Instant::now()),
     };
-    let provider = XApiProvider::new(client);
+    let provider = RetryingProvider::new(XApiProvider::new(client), RetryPolicy::default());
     kernel::read::get_following(&provider, user_id, max_results, pagination_token).await
 }
 
@@ -135,7 +136,7 @@ pub async fn get_user_by_id(state: &SharedState, user_id: &str) -> String {
         Some(c) => c.as_ref(),
         None => return not_configured_response(Instant::now()),
     };
-    let provider = XApiProvider::new(client);
+    let provider = RetryingProvider::new(XApiProvider::new(client), RetryPolicy::default());
     kernel::read::get_user_by_id(&provider, user_id).await
 }
 
@@ -150,7 +151,7 @@ pub async fn get_liked_tweets(
         Some(c) => c.as_ref(),
         None => return not_configured_response(Instant::now()),
     };
-    let provider = XApiProvider::new(client);
+    let provider = RetryingProvider::new(XApiProvider::new(client), RetryPolicy::default());
     kernel::read::get_liked_tweets(&provider, user_id, max_results, pagination_token).await
 }
 
@@ -168,7 +169,7 @@ pub async fn get_bookmarks(
         Some(id) => id,
         None => return no_user_id_response(Instant::now()),
     };
-    let provider = XApiProvider::new(client);
+    let provider = RetryingProvider::new(XApiProvider::new(client), RetryPolicy::default());
     kernel::read::get_bookmarks(&provider, user_id, max_results, pagination_token).await
 }
 
@@ -178,7 +179,7 @@ pub async fn get_users_by_ids(state: &SharedState, user_ids: &[&str]) -> String 
         Some(c) => c.as_ref(),
         None => return not_configured_response(Instant::now()),
     };
-    let provider = XApiProvider::new(client);
+    let provider = RetryingProvider::new(XApiProvider::new(client), RetryPolicy::default());
     kernel::read::get_users_by_ids(&provider, user_ids).await
 }
 
@@ -193,7 +194,7 @@ pub async fn get_tweet_liking_users(
         Some(c) => c.as_ref(),
         None => return not_configured_response(Instant::now()),
     };
-    let provider = XApiProvider::new(client);
+    let provider = RetryingProvider::new(XApiProvider::new(client), RetryPolicy::default());
     kernel::read::get_tweet_liking_users(&provider, tweet_id, max_results, pagination_token).await
 }
 

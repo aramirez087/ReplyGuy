@@ -179,6 +179,10 @@ pub(crate) fn map_x_error(e: &XApiError) -> ProviderError {
         XApiError::Network { source } => ProviderError::Network {
             message: source.to_string(),
         },
+        XApiError::ApiError { status, message } if *status >= 500 => ProviderError::ServerError {
+            status: *status,
+            message: message.clone(),
+        },
         other => ProviderError::Other {
             message: other.to_string(),
         },

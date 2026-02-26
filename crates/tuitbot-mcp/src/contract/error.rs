@@ -28,6 +28,8 @@ pub enum ProviderError {
     Network { message: String },
     /// The provider is not configured or initialized.
     NotConfigured { message: String },
+    /// Upstream server error (HTTP 5xx). Transient — may succeed on retry.
+    ServerError { status: u16, message: String },
     /// Catch-all for other provider errors.
     Other { message: String },
 }
@@ -44,6 +46,9 @@ impl fmt::Display for ProviderError {
             Self::AccountRestricted { message } => write!(f, "account restricted: {message}"),
             Self::Network { message } => write!(f, "network error: {message}"),
             Self::NotConfigured { message } => write!(f, "not configured: {message}"),
+            Self::ServerError { status, message } => {
+                write!(f, "server error ({status}): {message}")
+            }
             Self::Other { message } => write!(f, "provider error: {message}"),
         }
     }
@@ -61,6 +66,7 @@ impl ProviderError {
             Self::AccountRestricted { .. } => ErrorCode::XAccountRestricted,
             Self::Network { .. } => ErrorCode::XNetworkError,
             Self::NotConfigured { .. } => ErrorCode::XNotConfigured,
+            Self::ServerError { .. } => ErrorCode::XApiError,
             Self::Other { .. } => ErrorCode::XApiError,
         }
     }
@@ -84,6 +90,9 @@ impl ProviderError {
             }
             Self::Network { message } => format!("X API network error: {message}"),
             Self::NotConfigured { message } => message.clone(),
+            Self::ServerError { status, message } => {
+                format!("X API server error ({status}): {message}")
+            }
             Self::Other { message } => message.clone(),
         }
     }
@@ -94,9 +103,15 @@ pub fn provider_error_to_response(e: &ProviderError, start: Instant) -> String {
     let code = e.error_code();
     let message = e.error_message();
     let elapsed = start.elapsed().as_millis() as u64;
-    ToolResponse::error(code, message)
-        .with_meta(ToolMeta::new(elapsed))
-        .to_json()
+    let mut resp = ToolResponse::error(code, message).with_meta(ToolMeta::new(elapsed));
+    // Populate retry_after_ms for rate-limited errors.
+    if let ProviderError::RateLimited {
+        retry_after: Some(secs),
+    } = e
+    {
+        resp = resp.with_retry_after_ms(secs * 1000);
+    }
+    resp.to_json()
 }
 
 #[cfg(test)]
@@ -160,6 +175,10 @@ mod tests {
             ProviderError::NotConfigured {
                 message: "nc".into(),
             },
+            ProviderError::ServerError {
+                status: 503,
+                message: "unavailable".into(),
+            },
             ProviderError::Other {
                 message: "o".into(),
             },
@@ -169,5 +188,27 @@ mod tests {
             let msg = err.error_message();
             assert!(!msg.is_empty(), "empty message for {code:?}");
         }
+    }
+
+    #[test]
+    fn server_error_maps_correctly() {
+        let err = ProviderError::ServerError {
+            status: 502,
+            message: "bad gateway".into(),
+        };
+        assert_eq!(err.error_code(), ErrorCode::XApiError);
+        assert!(err.error_code().is_retryable());
+        assert!(err.error_message().contains("502"));
+    }
+
+    #[test]
+    fn rate_limited_response_has_retry_after_ms() {
+        let err = ProviderError::RateLimited {
+            retry_after: Some(30),
+        };
+        let json = provider_error_to_response(&err, Instant::now());
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["error"]["retry_after_ms"], 30000);
+        assert!(parsed["error"]["retryable"].as_bool().unwrap());
     }
 }

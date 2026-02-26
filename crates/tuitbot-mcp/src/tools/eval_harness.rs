@@ -307,6 +307,7 @@ mod tests {
             llm_provider,
             x_client,
             authenticated_user_id: Some("u1".to_string()),
+            idempotency: Arc::new(crate::tools::idempotency::IdempotencyStore::new()),
         })
     }
 
@@ -392,7 +393,8 @@ mod tests {
         let start = std::time::Instant::now();
         let ids = vec!["t1".to_string()];
         let result =
-            crate::tools::composite::draft_replies::execute(&state, &ids, None, false).await;
+            crate::tools::workflow::composite::draft_replies::execute(&state, &ids, None, false)
+                .await;
         let elapsed = start.elapsed().as_millis() as u64;
         let valid = validate_schema(&result);
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap_or_default();
@@ -421,7 +423,8 @@ mod tests {
             candidate_id: "t1".to_string(),
             pre_drafted_text: Some("Great point about Rust async!".to_string()),
         }];
-        let result = crate::tools::composite::propose_queue::execute(&state2, &items, false).await;
+        let result =
+            crate::tools::workflow::composite::propose_queue::execute(&state2, &items, false).await;
         let elapsed2 = start.elapsed().as_millis() as u64;
         let valid2 = validate_schema(&result);
         let parsed2: serde_json::Value = serde_json::from_str(&result).unwrap_or_default();
@@ -478,7 +481,7 @@ mod tests {
 
         // Step 1: find_reply_opportunities
         let start = std::time::Instant::now();
-        let result = crate::tools::composite::find_opportunities::execute(
+        let result = crate::tools::workflow::composite::find_opportunities::execute(
             &state,
             Some("rust async"),
             None,
@@ -509,9 +512,13 @@ mod tests {
 
         // Step 2: draft_replies_for_candidates
         let start = std::time::Instant::now();
-        let result =
-            crate::tools::composite::draft_replies::execute(&state, &candidate_ids, None, false)
-                .await;
+        let result = crate::tools::workflow::composite::draft_replies::execute(
+            &state,
+            &candidate_ids,
+            None,
+            false,
+        )
+        .await;
         let elapsed = start.elapsed().as_millis() as u64;
         let valid = validate_schema(&result);
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap_or_default();
@@ -553,9 +560,11 @@ mod tests {
                     .unwrap_or_else(|| "t1".to_string()),
                 pre_drafted_text: Some("Great insight!".to_string()),
             }];
-            crate::tools::composite::propose_queue::execute(&state, &fallback, false).await
+            crate::tools::workflow::composite::propose_queue::execute(&state, &fallback, false)
+                .await
         } else {
-            crate::tools::composite::propose_queue::execute(&state, &draft_items, false).await
+            crate::tools::workflow::composite::propose_queue::execute(&state, &draft_items, false)
+                .await
         };
         let elapsed = start.elapsed().as_millis() as u64;
         let valid = validate_schema(&result);
@@ -609,7 +618,8 @@ mod tests {
             candidate_id: "t1".to_string(),
             pre_drafted_text: Some("This reply should be blocked".to_string()),
         }];
-        let result = crate::tools::composite::propose_queue::execute(&state, &items, false).await;
+        let result =
+            crate::tools::workflow::composite::propose_queue::execute(&state, &items, false).await;
         let elapsed = start.elapsed().as_millis() as u64;
         let valid = validate_schema(&result);
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap_or_default();
@@ -630,7 +640,7 @@ mod tests {
         // Step 2: Verify telemetry captured the denial
         let start = std::time::Instant::now();
         let metrics_result =
-            crate::tools::telemetry::get_mcp_error_breakdown(&state.pool, 24).await;
+            crate::tools::workflow::telemetry::get_mcp_error_breakdown(&state.pool, 24).await;
         let elapsed = start.elapsed().as_millis() as u64;
         let valid = validate_schema(&metrics_result);
         let parsed: serde_json::Value = serde_json::from_str(&metrics_result).unwrap_or_default();

@@ -9,7 +9,7 @@ use tuitbot_core::storage;
 use tuitbot_core::storage::approval_queue::ReviewAction;
 use tuitbot_core::storage::DbPool;
 
-use super::response::{ToolMeta, ToolResponse};
+use crate::tools::response::{ToolMeta, ToolResponse};
 
 #[derive(Serialize)]
 struct ApprovalItemOut {

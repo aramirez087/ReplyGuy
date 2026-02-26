@@ -5,10 +5,29 @@
 
 use std::time::Instant;
 
-use crate::contract::envelope::{ToolMeta, ToolResponse};
+use crate::contract::envelope::{PaginationInfo, ToolMeta, ToolResponse};
 use crate::contract::error::provider_error_to_response;
 use crate::contract::error_code::ErrorCode;
 use crate::provider::SocialReadProvider;
+use tuitbot_core::x_api::types::{SearchMeta, UsersMeta};
+
+/// Build [`PaginationInfo`] from [`SearchMeta`].
+fn pagination_from_search(meta: &SearchMeta) -> PaginationInfo {
+    PaginationInfo {
+        has_more: meta.next_token.is_some(),
+        next_token: meta.next_token.clone(),
+        result_count: meta.result_count,
+    }
+}
+
+/// Build [`PaginationInfo`] from [`UsersMeta`].
+fn pagination_from_users(meta: &UsersMeta) -> PaginationInfo {
+    PaginationInfo {
+        has_more: meta.next_token.is_some(),
+        next_token: meta.next_token.clone(),
+        result_count: meta.result_count,
+    }
+}
 
 /// Get a single tweet by ID via the provider.
 pub async fn get_tweet(provider: &dyn SocialReadProvider, tweet_id: &str) -> String {
@@ -53,8 +72,9 @@ pub async fn search_tweets(
     {
         Ok(resp) => {
             let elapsed = start.elapsed().as_millis() as u64;
+            let pagination = pagination_from_search(&resp.meta);
             ToolResponse::success(&resp)
-                .with_meta(ToolMeta::new(elapsed))
+                .with_meta(ToolMeta::new(elapsed).with_pagination(pagination))
                 .to_json()
         }
         Err(e) => provider_error_to_response(&e, start),
@@ -75,8 +95,9 @@ pub async fn get_user_mentions(
     {
         Ok(resp) => {
             let elapsed = start.elapsed().as_millis() as u64;
+            let pagination = pagination_from_search(&resp.meta);
             ToolResponse::success(&resp)
-                .with_meta(ToolMeta::new(elapsed))
+                .with_meta(ToolMeta::new(elapsed).with_pagination(pagination))
                 .to_json()
         }
         Err(e) => provider_error_to_response(&e, start),
@@ -97,8 +118,9 @@ pub async fn get_user_tweets(
     {
         Ok(resp) => {
             let elapsed = start.elapsed().as_millis() as u64;
+            let pagination = pagination_from_search(&resp.meta);
             ToolResponse::success(&resp)
-                .with_meta(ToolMeta::new(elapsed))
+                .with_meta(ToolMeta::new(elapsed).with_pagination(pagination))
                 .to_json()
         }
         Err(e) => provider_error_to_response(&e, start),
@@ -119,8 +141,9 @@ pub async fn get_home_timeline(
     {
         Ok(resp) => {
             let elapsed = start.elapsed().as_millis() as u64;
+            let pagination = pagination_from_search(&resp.meta);
             ToolResponse::success(&resp)
-                .with_meta(ToolMeta::new(elapsed))
+                .with_meta(ToolMeta::new(elapsed).with_pagination(pagination))
                 .to_json()
         }
         Err(e) => provider_error_to_response(&e, start),
@@ -141,8 +164,9 @@ pub async fn get_followers(
     {
         Ok(resp) => {
             let elapsed = start.elapsed().as_millis() as u64;
+            let pagination = pagination_from_users(&resp.meta);
             ToolResponse::success(&resp)
-                .with_meta(ToolMeta::new(elapsed))
+                .with_meta(ToolMeta::new(elapsed).with_pagination(pagination))
                 .to_json()
         }
         Err(e) => provider_error_to_response(&e, start),
@@ -163,8 +187,9 @@ pub async fn get_following(
     {
         Ok(resp) => {
             let elapsed = start.elapsed().as_millis() as u64;
+            let pagination = pagination_from_users(&resp.meta);
             ToolResponse::success(&resp)
-                .with_meta(ToolMeta::new(elapsed))
+                .with_meta(ToolMeta::new(elapsed).with_pagination(pagination))
                 .to_json()
         }
         Err(e) => provider_error_to_response(&e, start),
@@ -199,8 +224,9 @@ pub async fn get_liked_tweets(
     {
         Ok(resp) => {
             let elapsed = start.elapsed().as_millis() as u64;
+            let pagination = pagination_from_search(&resp.meta);
             ToolResponse::success(&resp)
-                .with_meta(ToolMeta::new(elapsed))
+                .with_meta(ToolMeta::new(elapsed).with_pagination(pagination))
                 .to_json()
         }
         Err(e) => provider_error_to_response(&e, start),
@@ -221,8 +247,9 @@ pub async fn get_bookmarks(
     {
         Ok(resp) => {
             let elapsed = start.elapsed().as_millis() as u64;
+            let pagination = pagination_from_search(&resp.meta);
             ToolResponse::success(&resp)
-                .with_meta(ToolMeta::new(elapsed))
+                .with_meta(ToolMeta::new(elapsed).with_pagination(pagination))
                 .to_json()
         }
         Err(e) => provider_error_to_response(&e, start),
@@ -244,8 +271,9 @@ pub async fn get_users_by_ids(provider: &dyn SocialReadProvider, user_ids: &[&st
     match provider.get_users_by_ids(user_ids).await {
         Ok(resp) => {
             let elapsed = start.elapsed().as_millis() as u64;
+            let pagination = pagination_from_users(&resp.meta);
             ToolResponse::success(&resp)
-                .with_meta(ToolMeta::new(elapsed))
+                .with_meta(ToolMeta::new(elapsed).with_pagination(pagination))
                 .to_json()
         }
         Err(e) => provider_error_to_response(&e, start),
@@ -266,8 +294,9 @@ pub async fn get_tweet_liking_users(
     {
         Ok(resp) => {
             let elapsed = start.elapsed().as_millis() as u64;
+            let pagination = pagination_from_users(&resp.meta);
             ToolResponse::success(&resp)
-                .with_meta(ToolMeta::new(elapsed))
+                .with_meta(ToolMeta::new(elapsed).with_pagination(pagination))
                 .to_json()
         }
         Err(e) => provider_error_to_response(&e, start),

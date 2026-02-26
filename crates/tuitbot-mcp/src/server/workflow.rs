@@ -12,6 +12,7 @@ use crate::requests::*;
 use crate::state::SharedState;
 use crate::tools;
 use crate::tools::response::{ToolMeta, ToolResponse};
+use crate::tools::workflow;
 
 /// Tuitbot MCP server.
 #[derive(Clone)]
@@ -41,7 +42,8 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetStatsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let days = req.days.unwrap_or(7);
-        let result = tools::analytics::get_stats(&self.state.pool, days, &self.state.config).await;
+        let result =
+            workflow::analytics::get_stats(&self.state.pool, days, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -53,7 +55,8 @@ impl TuitbotMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let limit = req.limit.unwrap_or(7);
         let result =
-            tools::analytics::get_follower_trend(&self.state.pool, limit, &self.state.config).await;
+            workflow::analytics::get_follower_trend(&self.state.pool, limit, &self.state.config)
+                .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -66,7 +69,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetActionLogRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let hours = req.since_hours.unwrap_or(24);
-        let result = tools::actions::get_action_log(
+        let result = workflow::actions::get_action_log(
             &self.state.pool,
             hours,
             req.action_type.as_deref(),
@@ -84,7 +87,7 @@ impl TuitbotMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let hours = req.since_hours.unwrap_or(24);
         let result =
-            tools::actions::get_action_counts(&self.state.pool, hours, &self.state.config).await;
+            workflow::actions::get_action_counts(&self.state.pool, hours, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -94,7 +97,7 @@ impl TuitbotMcpServer {
     #[tool]
     async fn get_rate_limits(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let result =
-            tools::rate_limits::get_rate_limits(&self.state.pool, &self.state.config).await;
+            workflow::rate_limits::get_rate_limits(&self.state.pool, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -108,7 +111,8 @@ impl TuitbotMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let hours = req.since_hours.unwrap_or(24);
         let result =
-            tools::replies::get_recent_replies(&self.state.pool, hours, &self.state.config).await;
+            workflow::replies::get_recent_replies(&self.state.pool, hours, &self.state.config)
+                .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -116,7 +120,7 @@ impl TuitbotMcpServer {
     #[tool]
     async fn get_reply_count_today(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let result =
-            tools::replies::get_reply_count_today(&self.state.pool, &self.state.config).await;
+            workflow::replies::get_reply_count_today(&self.state.pool, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -126,7 +130,7 @@ impl TuitbotMcpServer {
     #[tool]
     async fn list_target_accounts(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let result =
-            tools::targets::list_target_accounts(&self.state.pool, &self.state.config).await;
+            workflow::targets::list_target_accounts(&self.state.pool, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -139,7 +143,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<ListUnrepliedTweetsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let threshold = req.threshold.unwrap_or(0.0);
-        let result = tools::discovery::list_unreplied_tweets(
+        let result = workflow::discovery::list_unreplied_tweets(
             &self.state.pool,
             threshold,
             &self.state.config,
@@ -174,14 +178,15 @@ impl TuitbotMcpServer {
     /// List all pending approval queue items (posts waiting for human review).
     #[tool]
     async fn list_pending_approvals(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::approval::list_pending(&self.state.pool, &self.state.config).await;
+        let result = workflow::approval::list_pending(&self.state.pool, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
     /// Get count of pending approval items.
     #[tool]
     async fn get_pending_count(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::approval::get_pending_count(&self.state.pool, &self.state.config).await;
+        let result =
+            workflow::approval::get_pending_count(&self.state.pool, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -192,7 +197,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<ApprovalIdRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result =
-            tools::approval::approve_item(&self.state.pool, req.id, &self.state.config).await;
+            workflow::approval::approve_item(&self.state.pool, req.id, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -203,14 +208,14 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<ApprovalIdRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result =
-            tools::approval::reject_item(&self.state.pool, req.id, &self.state.config).await;
+            workflow::approval::reject_item(&self.state.pool, req.id, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
     /// Approve all pending items in the approval queue.
     #[tool]
     async fn approve_all(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::approval::approve_all(&self.state.pool, &self.state.config).await;
+        let result = workflow::approval::approve_all(&self.state.pool, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -228,7 +233,7 @@ impl TuitbotMcpServer {
             )]));
         }
         let mention = req.mention_product.unwrap_or(false);
-        let result = tools::content::generate_reply(
+        let result = workflow::content::generate_reply(
             &self.state,
             &self.state.config.business,
             &req.tweet_text,
@@ -260,7 +265,7 @@ impl TuitbotMcpServer {
                 .cloned()
                 .unwrap_or_else(|| "general industry trends".to_string())
         });
-        let result = tools::content::generate_tweet(
+        let result = workflow::content::generate_tweet(
             &self.state,
             &self.state.config.business,
             &topic,
@@ -290,7 +295,7 @@ impl TuitbotMcpServer {
                 .cloned()
                 .unwrap_or_else(|| "general industry trends".to_string())
         });
-        let result = tools::content::generate_thread(
+        let result = workflow::content::generate_thread(
             &self.state,
             &self.state.config.business,
             &topic,
@@ -308,7 +313,7 @@ impl TuitbotMcpServer {
     async fn get_capabilities(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let llm_available = self.state.llm_provider.is_some();
         let x_available = self.state.x_client.is_some();
-        let result = tools::capabilities::get_capabilities(
+        let result = workflow::capabilities::get_capabilities(
             &self.state.pool,
             &self.state.config,
             llm_available,
@@ -340,7 +345,7 @@ impl TuitbotMcpServer {
     async fn health_check(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let provider = self.state.llm_provider.as_deref();
         let result =
-            tools::health::health_check(&self.state.pool, provider, &self.state.config).await;
+            workflow::health::health_check(&self.state.pool, provider, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -366,7 +371,7 @@ impl TuitbotMcpServer {
     /// Get the current MCP mutation policy status: enforcement settings, blocked tools, rate limit usage, and operating mode.
     #[tool]
     async fn get_policy_status(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::policy_gate::get_policy_status(&self.state).await;
+        let result = workflow::policy_gate::get_policy_status(&self.state).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -383,11 +388,13 @@ impl TuitbotMcpServer {
             "scheduled_for": req.scheduled_for,
         })
         .to_string();
-        match tools::policy_gate::check_policy(&self.state, "compose_tweet", &params, start).await {
-            tools::policy_gate::GateResult::EarlyReturn(r) => {
+        match workflow::policy_gate::check_policy(&self.state, "compose_tweet", &params, start)
+            .await
+        {
+            workflow::policy_gate::GateResult::EarlyReturn(r) => {
                 return Ok(CallToolResult::success(vec![Content::text(r)]));
             }
-            tools::policy_gate::GateResult::Proceed => {}
+            workflow::policy_gate::GateResult::Proceed => {}
         }
         let content_type = req.content_type.as_deref().unwrap_or("tweet");
         let config = &self.state.config;
@@ -474,7 +481,7 @@ impl TuitbotMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let threshold = req.min_score.unwrap_or(50.0);
         let limit = req.limit.unwrap_or(10);
-        let result = tools::discovery::list_unreplied_tweets_with_limit(
+        let result = workflow::discovery::list_unreplied_tweets_with_limit(
             &self.state.pool,
             threshold,
             limit,
@@ -488,7 +495,7 @@ impl TuitbotMcpServer {
     #[tool]
     async fn suggest_topics(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let result =
-            tools::analytics::get_top_topics(&self.state.pool, 10, &self.state.config).await;
+            workflow::analytics::get_top_topics(&self.state.pool, 10, &self.state.config).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -500,7 +507,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<TweetIdRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::get_tweet_by_id(&self.state, &req.tweet_id).await;
+        let result = workflow::x_actions::get_tweet_by_id(&self.state, &req.tweet_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -510,7 +517,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<UsernameRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::get_user_by_username(&self.state, &req.username).await;
+        let result = workflow::x_actions::get_user_by_username(&self.state, &req.username).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -521,7 +528,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<SearchTweetsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(10).clamp(10, 100);
-        let result = tools::x_actions::search_tweets(
+        let result = workflow::x_actions::search_tweets(
             &self.state,
             &req.query,
             max,
@@ -538,7 +545,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<GetUserMentionsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::get_user_mentions(
+        let result = workflow::x_actions::get_user_mentions(
             &self.state,
             req.since_id.as_deref(),
             req.pagination_token.as_deref(),
@@ -554,7 +561,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetUserTweetsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(10).clamp(5, 100);
-        let result = tools::x_actions::get_user_tweets(
+        let result = workflow::x_actions::get_user_tweets(
             &self.state,
             &req.user_id,
             max,
@@ -571,7 +578,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<PostTweetTextRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result =
-            tools::x_actions::post_tweet(&self.state, &req.text, req.media_ids.as_deref()).await;
+            workflow::x_actions::post_tweet(&self.state, &req.text, req.media_ids.as_deref()).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -581,7 +588,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<ReplyToTweetRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::reply_to_tweet(
+        let result = workflow::x_actions::reply_to_tweet(
             &self.state,
             &req.text,
             &req.in_reply_to_id,
@@ -597,7 +604,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<QuoteTweetRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::quote_tweet(
+        let result = workflow::x_actions::quote_tweet(
             &self.state,
             &req.text,
             &req.quoted_tweet_id,
@@ -613,7 +620,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<LikeTweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::like_tweet(&self.state, &req.tweet_id).await;
+        let result = workflow::x_actions::like_tweet(&self.state, &req.tweet_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -623,7 +630,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<FollowUserMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::follow_user(&self.state, &req.target_user_id).await;
+        let result = workflow::x_actions::follow_user(&self.state, &req.target_user_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -633,7 +640,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<UnfollowUserMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::unfollow_user(&self.state, &req.target_user_id).await;
+        let result = workflow::x_actions::unfollow_user(&self.state, &req.target_user_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -643,7 +650,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<RetweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::retweet(&self.state, &req.tweet_id).await;
+        let result = workflow::x_actions::retweet(&self.state, &req.tweet_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -653,7 +660,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<UnretweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::unretweet(&self.state, &req.tweet_id).await;
+        let result = workflow::x_actions::unretweet(&self.state, &req.tweet_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -663,7 +670,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<DeleteTweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::delete_tweet(&self.state, &req.tweet_id).await;
+        let result = workflow::x_actions::delete_tweet(&self.state, &req.tweet_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -674,7 +681,8 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<PostThreadMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result =
-            tools::x_actions::post_thread(&self.state, &req.tweets, req.media_ids.as_deref()).await;
+            workflow::x_actions::post_thread(&self.state, &req.tweets, req.media_ids.as_deref())
+                .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -684,7 +692,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<UploadMediaMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::upload_media(&self.state, &req.file_path).await;
+        let result = workflow::x_actions::upload_media(&self.state, &req.file_path).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -695,9 +703,12 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetHomeTimelineRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(20).clamp(1, 100);
-        let result =
-            tools::x_actions::get_home_timeline(&self.state, max, req.pagination_token.as_deref())
-                .await;
+        let result = workflow::x_actions::get_home_timeline(
+            &self.state,
+            max,
+            req.pagination_token.as_deref(),
+        )
+        .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -708,7 +719,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetFollowersRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(100).clamp(1, 1000);
-        let result = tools::x_actions::get_followers(
+        let result = workflow::x_actions::get_followers(
             &self.state,
             &req.user_id,
             max,
@@ -725,7 +736,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetFollowingRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(100).clamp(1, 1000);
-        let result = tools::x_actions::get_following(
+        let result = workflow::x_actions::get_following(
             &self.state,
             &req.user_id,
             max,
@@ -741,7 +752,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<GetUserByIdRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::get_user_by_id(&self.state, &req.user_id).await;
+        let result = workflow::x_actions::get_user_by_id(&self.state, &req.user_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -752,7 +763,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetLikedTweetsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(10).clamp(1, 100);
-        let result = tools::x_actions::get_liked_tweets(
+        let result = workflow::x_actions::get_liked_tweets(
             &self.state,
             &req.user_id,
             max,
@@ -770,7 +781,7 @@ impl TuitbotMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(10).clamp(1, 100);
         let result =
-            tools::x_actions::get_bookmarks(&self.state, max, req.pagination_token.as_deref())
+            workflow::x_actions::get_bookmarks(&self.state, max, req.pagination_token.as_deref())
                 .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -782,7 +793,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetUsersByIdsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let ids_refs: Vec<&str> = req.user_ids.iter().map(|s| s.as_str()).collect();
-        let result = tools::x_actions::get_users_by_ids(&self.state, &ids_refs).await;
+        let result = workflow::x_actions::get_users_by_ids(&self.state, &ids_refs).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -793,7 +804,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetTweetLikingUsersRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let max = req.max_results.unwrap_or(100).clamp(1, 100);
-        let result = tools::x_actions::get_tweet_liking_users(
+        let result = workflow::x_actions::get_tweet_liking_users(
             &self.state,
             &req.tweet_id,
             max,
@@ -809,7 +820,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<UnlikeTweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::unlike_tweet(&self.state, &req.tweet_id).await;
+        let result = workflow::x_actions::unlike_tweet(&self.state, &req.tweet_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -819,7 +830,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<BookmarkTweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::bookmark_tweet(&self.state, &req.tweet_id).await;
+        let result = workflow::x_actions::bookmark_tweet(&self.state, &req.tweet_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -829,7 +840,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<UnbookmarkTweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::x_actions::unbookmark_tweet(&self.state, &req.tweet_id).await;
+        let result = workflow::x_actions::unbookmark_tweet(&self.state, &req.tweet_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -840,7 +851,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetXUsageRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let days = req.days.unwrap_or(7);
-        let result = tools::x_actions::get_x_usage(&self.state, days).await;
+        let result = workflow::x_actions::get_x_usage(&self.state, days).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -852,7 +863,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<GetAuthorContextRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::context::get_author_context(&self.state, &req.identifier).await;
+        let result = workflow::context::get_author_context(&self.state, &req.identifier).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -862,7 +873,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<RecommendEngagementRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::context::recommend_engagement(
+        let result = workflow::context::recommend_engagement(
             &self.state,
             &req.author_username,
             &req.tweet_text,
@@ -879,7 +890,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<TopicPerformanceSnapshotRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let days = req.lookback_days.unwrap_or(30);
-        let result = tools::context::topic_performance_snapshot(&self.state.pool, days).await;
+        let result = workflow::context::topic_performance_snapshot(&self.state.pool, days).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -892,7 +903,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetMcpToolMetricsRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let hours = req.since_hours.unwrap_or(24);
-        let result = tools::telemetry::get_mcp_tool_metrics(&self.state.pool, hours).await;
+        let result = workflow::telemetry::get_mcp_tool_metrics(&self.state.pool, hours).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -903,7 +914,7 @@ impl TuitbotMcpServer {
         Parameters(req): Parameters<GetMcpErrorBreakdownRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let hours = req.since_hours.unwrap_or(24);
-        let result = tools::telemetry::get_mcp_error_breakdown(&self.state.pool, hours).await;
+        let result = workflow::telemetry::get_mcp_error_breakdown(&self.state.pool, hours).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -915,7 +926,7 @@ impl TuitbotMcpServer {
         &self,
         Parameters(req): Parameters<FindReplyOpportunitiesRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::composite::find_opportunities::execute(
+        let result = workflow::composite::find_opportunities::execute(
             &self.state,
             req.query.as_deref(),
             req.min_score,
@@ -938,7 +949,7 @@ impl TuitbotMcpServer {
             )]));
         }
         let mention = req.mention_product.unwrap_or(false);
-        let result = tools::composite::draft_replies::execute(
+        let result = workflow::composite::draft_replies::execute(
             &self.state,
             &req.candidate_ids,
             req.archetype.as_deref(),
@@ -956,7 +967,7 @@ impl TuitbotMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let mention = req.mention_product.unwrap_or(false);
         let result =
-            tools::composite::propose_queue::execute(&self.state, &req.items, mention).await;
+            workflow::composite::propose_queue::execute(&self.state, &req.items, mention).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -971,7 +982,7 @@ impl TuitbotMcpServer {
                 ToolResponse::llm_not_configured().to_json(),
             )]));
         }
-        let result = tools::composite::thread_plan::execute(
+        let result = workflow::composite::thread_plan::execute(
             &self.state,
             &req.topic,
             req.objective.as_deref(),

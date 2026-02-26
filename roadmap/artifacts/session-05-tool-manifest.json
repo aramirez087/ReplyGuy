@@ -4,6 +4,7 @@
     {
       "name": "get_stats",
       "category": "analytics",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -18,6 +19,7 @@
     {
       "name": "get_follower_trend",
       "category": "analytics",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -32,6 +34,7 @@
     {
       "name": "get_action_log",
       "category": "analytics",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -46,6 +49,7 @@
     {
       "name": "get_action_counts",
       "category": "analytics",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -60,6 +64,7 @@
     {
       "name": "get_rate_limits",
       "category": "policy",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -74,6 +79,7 @@
     {
       "name": "get_recent_replies",
       "category": "analytics",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -88,6 +94,7 @@
     {
       "name": "get_reply_count_today",
       "category": "analytics",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -102,6 +109,7 @@
     {
       "name": "list_target_accounts",
       "category": "discovery",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -116,6 +124,7 @@
     {
       "name": "list_unreplied_tweets",
       "category": "discovery",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -130,22 +139,23 @@
     {
       "name": "score_tweet",
       "category": "scoring",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
-      "requires_db": true,
+      "requires_db": false,
       "profiles": [
         "workflow",
         "api"
       ],
       "possible_error_codes": [
-        "db_error",
         "invalid_input"
       ]
     },
     {
       "name": "list_pending_approvals",
       "category": "approval",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -160,6 +170,7 @@
     {
       "name": "get_pending_count",
       "category": "approval",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -174,6 +185,7 @@
     {
       "name": "approve_item",
       "category": "approval",
+      "lane": "workflow",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -191,6 +203,7 @@
     {
       "name": "reject_item",
       "category": "approval",
+      "lane": "workflow",
       "mutation": true,
       "requires_x_client": false,
       "requires_llm": false,
@@ -206,6 +219,7 @@
     {
       "name": "approve_all",
       "category": "approval",
+      "lane": "workflow",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -222,6 +236,7 @@
     {
       "name": "generate_reply",
       "category": "content",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": true,
@@ -237,6 +252,7 @@
     {
       "name": "generate_tweet",
       "category": "content",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": true,
@@ -252,6 +268,7 @@
     {
       "name": "generate_thread",
       "category": "content",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": true,
@@ -267,6 +284,7 @@
     {
       "name": "get_config",
       "category": "config",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -280,6 +298,7 @@
     {
       "name": "validate_config",
       "category": "config",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -293,6 +312,7 @@
     {
       "name": "get_capabilities",
       "category": "meta",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -306,6 +326,7 @@
     {
       "name": "health_check",
       "category": "health",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -321,6 +342,7 @@
     {
       "name": "get_mode",
       "category": "meta",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -334,6 +356,7 @@
     {
       "name": "get_policy_status",
       "category": "policy",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -348,6 +371,7 @@
     {
       "name": "compose_tweet",
       "category": "write",
+      "lane": "workflow",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -371,6 +395,7 @@
     {
       "name": "get_discovery_feed",
       "category": "discovery",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -385,6 +410,7 @@
     {
       "name": "suggest_topics",
       "category": "content",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -399,6 +425,7 @@
     {
       "name": "get_tweet_by_id",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -419,6 +446,7 @@
     {
       "name": "x_get_user_by_username",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -439,6 +467,7 @@
     {
       "name": "x_search_tweets",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -459,6 +488,7 @@
     {
       "name": "x_get_user_mentions",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -479,6 +509,7 @@
     {
       "name": "x_get_user_tweets",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -499,6 +530,7 @@
     {
       "name": "x_get_home_timeline",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -519,6 +551,7 @@
     {
       "name": "x_get_followers",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -539,6 +572,7 @@
     {
       "name": "x_get_following",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -559,6 +593,7 @@
     {
       "name": "x_get_user_by_id",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -579,6 +614,7 @@
     {
       "name": "x_get_liked_tweets",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -599,6 +635,7 @@
     {
       "name": "x_get_bookmarks",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -619,6 +656,7 @@
     {
       "name": "x_get_users_by_ids",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -639,6 +677,7 @@
     {
       "name": "x_get_tweet_liking_users",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -659,6 +698,7 @@
     {
       "name": "get_x_usage",
       "category": "analytics",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -673,6 +713,7 @@
     {
       "name": "x_get_me",
       "category": "read",
+      "lane": "shared",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -692,6 +733,7 @@
     {
       "name": "x_post_tweet",
       "category": "write",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -718,6 +760,7 @@
     {
       "name": "x_reply_to_tweet",
       "category": "write",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -744,6 +787,7 @@
     {
       "name": "x_quote_tweet",
       "category": "write",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -770,6 +814,7 @@
     {
       "name": "x_delete_tweet",
       "category": "write",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -796,6 +841,7 @@
     {
       "name": "x_post_thread",
       "category": "write",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -824,6 +870,7 @@
     {
       "name": "x_like_tweet",
       "category": "engage",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -849,6 +896,7 @@
     {
       "name": "x_unlike_tweet",
       "category": "engage",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -874,6 +922,7 @@
     {
       "name": "x_follow_user",
       "category": "engage",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -899,6 +948,7 @@
     {
       "name": "x_unfollow_user",
       "category": "engage",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -924,6 +974,7 @@
     {
       "name": "x_retweet",
       "category": "engage",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -949,6 +1000,7 @@
     {
       "name": "x_unretweet",
       "category": "engage",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -974,6 +1026,7 @@
     {
       "name": "x_bookmark_tweet",
       "category": "engage",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -999,6 +1052,7 @@
     {
       "name": "x_unbookmark_tweet",
       "category": "engage",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -1024,6 +1078,7 @@
     {
       "name": "x_upload_media",
       "category": "media",
+      "lane": "shared",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -1043,6 +1098,7 @@
     {
       "name": "get_author_context",
       "category": "context",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -1059,6 +1115,7 @@
     {
       "name": "recommend_engagement_action",
       "category": "context",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -1075,6 +1132,7 @@
     {
       "name": "topic_performance_snapshot",
       "category": "context",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -1090,6 +1148,7 @@
     {
       "name": "get_mcp_tool_metrics",
       "category": "telemetry",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -1104,6 +1163,7 @@
     {
       "name": "get_mcp_error_breakdown",
       "category": "telemetry",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": false,
@@ -1118,6 +1178,7 @@
     {
       "name": "find_reply_opportunities",
       "category": "composite",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": true,
       "requires_llm": false,
@@ -1135,6 +1196,7 @@
     {
       "name": "draft_replies_for_candidates",
       "category": "composite",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": true,
@@ -1152,6 +1214,7 @@
     {
       "name": "propose_and_queue_replies",
       "category": "composite",
+      "lane": "workflow",
       "mutation": true,
       "requires_x_client": true,
       "requires_llm": false,
@@ -1174,6 +1237,7 @@
     {
       "name": "generate_thread_plan",
       "category": "composite",
+      "lane": "workflow",
       "mutation": false,
       "requires_x_client": false,
       "requires_llm": true,
