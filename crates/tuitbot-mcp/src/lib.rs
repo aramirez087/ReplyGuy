@@ -29,6 +29,7 @@ use tuitbot_core::x_api::{XApiClient, XApiHttpClient};
 
 use server::{ApiMcpServer, TuitbotMcpServer};
 use state::{ApiState, AppState};
+use tools::idempotency::IdempotencyStore;
 
 pub use state::Profile;
 
@@ -112,6 +113,7 @@ pub async fn run_stdio_server(config: Config) -> anyhow::Result<()> {
         llm_provider,
         x_client,
         authenticated_user_id,
+        idempotency: Arc::new(IdempotencyStore::new()),
     });
 
     let server = TuitbotMcpServer::new(state);
@@ -171,6 +173,7 @@ pub async fn run_api_server(config: Config) -> anyhow::Result<()> {
         config,
         x_client: Box::new(client),
         authenticated_user_id: user.id,
+        idempotency: Arc::new(IdempotencyStore::new()),
     });
 
     let server = ApiMcpServer::new(state);
