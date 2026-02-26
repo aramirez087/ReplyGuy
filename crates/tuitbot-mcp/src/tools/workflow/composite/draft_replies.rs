@@ -143,6 +143,7 @@ pub async fn execute(
         true,
         None,
         None,
+        None,
     )
     .await;
     ToolResponse::success(&results)

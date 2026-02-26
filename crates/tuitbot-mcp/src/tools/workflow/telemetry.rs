@@ -77,6 +77,7 @@ pub async fn get_mcp_error_breakdown(pool: &DbPool, since_hours: u32) -> String 
 ///
 /// Best-effort — failures are silently ignored to avoid disrupting
 /// the tool's primary operation.
+#[allow(clippy::too_many_arguments)]
 pub async fn record(
     pool: &DbPool,
     tool_name: &str,
@@ -85,7 +86,9 @@ pub async fn record(
     success: bool,
     error_code: Option<&str>,
     policy_decision: Option<&str>,
+    provider_backend: Option<&str>,
 ) {
+    let metadata_json = provider_backend.map(|pb| format!(r#"{{"provider_backend":"{pb}"}}"#));
     let _ = storage::mcp_telemetry::log_telemetry(
         pool,
         &storage::mcp_telemetry::TelemetryParams {
@@ -95,7 +98,7 @@ pub async fn record(
             success,
             error_code,
             policy_decision,
-            metadata: None,
+            metadata: metadata_json.as_deref(),
         },
     )
     .await;

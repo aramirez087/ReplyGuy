@@ -126,6 +126,15 @@ pub struct XApiConfig {
     /// OAuth 2.0 client secret (optional for public clients).
     #[serde(default)]
     pub client_secret: Option<String>,
+
+    /// Provider backend: `"x_api"` (default) or `"scraper"`.
+    #[serde(default)]
+    pub provider_backend: String,
+
+    /// Whether scraper backend is allowed to perform mutations.
+    /// Only meaningful when `provider_backend = "scraper"`. Default: `false`.
+    #[serde(default)]
+    pub scraper_allow_mutations: bool,
 }
 
 /// Authentication mode and callback settings.

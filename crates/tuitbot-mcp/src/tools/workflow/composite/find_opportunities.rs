@@ -194,6 +194,7 @@ pub async fn execute(
         true,
         None,
         None,
+        None,
     )
     .await;
     ToolResponse::success(serde_json::json!({

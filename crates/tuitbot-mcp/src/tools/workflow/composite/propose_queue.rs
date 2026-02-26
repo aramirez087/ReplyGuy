@@ -200,6 +200,7 @@ pub async fn execute(state: &SharedState, items: &[ProposeItem], mention_product
                 .any(|r| !matches!(r, ProposeResult::Blocked { .. })),
         None,
         Some("allow"),
+        None,
     )
     .await;
     ToolResponse::success(&results)

@@ -20,6 +20,9 @@ pub async fn post_tweet(state: &SharedState, text: &str, media_ids: Option<&[Str
     if let Some(err) = state.idempotency.check_and_record("post_tweet", &params) {
         return err;
     }
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
+        return err;
+    }
     match super::super::policy_gate::check_policy(state, "post_tweet", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
         super::super::policy_gate::GateResult::Proceed => {}
@@ -67,6 +70,9 @@ pub async fn reply_to_tweet(
         .idempotency
         .check_and_record("reply_to_tweet", &params)
     {
+        return err;
+    }
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
         return err;
     }
     match super::super::policy_gate::check_policy(state, "reply_to_tweet", &params, start).await {
@@ -119,6 +125,9 @@ pub async fn quote_tweet(
     if let Some(err) = state.idempotency.check_and_record("quote_tweet", &params) {
         return err;
     }
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
+        return err;
+    }
     match super::super::policy_gate::check_policy(state, "quote_tweet", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
         super::super::policy_gate::GateResult::Proceed => {}
@@ -152,6 +161,9 @@ pub async fn quote_tweet(
 /// Delete a tweet by ID. Always policy-gated.
 pub async fn delete_tweet(state: &SharedState, tweet_id: &str) -> String {
     let start = Instant::now();
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
+        return err;
+    }
     let params = serde_json::json!({"tweet_id": tweet_id}).to_string();
     match super::super::policy_gate::check_policy(state, "delete_tweet", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
@@ -225,6 +237,9 @@ pub async fn post_thread(
     let params =
         serde_json::json!({"tweet_count": tweets.len(), "first_tweet": tweets[0]}).to_string();
     if let Some(err) = state.idempotency.check_and_record("post_thread", &params) {
+        return err;
+    }
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
         return err;
     }
     match super::super::policy_gate::check_policy(state, "post_thread", &params, start).await {

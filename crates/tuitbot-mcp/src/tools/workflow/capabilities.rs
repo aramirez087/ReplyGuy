@@ -13,6 +13,7 @@ use tuitbot_core::config::Config;
 use tuitbot_core::storage;
 use tuitbot_core::storage::DbPool;
 
+use crate::provider::{self, capabilities::ProviderCapabilities};
 use crate::tools::response::{ToolMeta, ToolResponse};
 
 #[derive(Serialize)]
@@ -28,6 +29,7 @@ struct Capabilities {
     rate_limits: Vec<RateLimitEntry>,
     recommended_max_actions: RecommendedMax,
     direct_tools: DirectToolsMap,
+    provider: ProviderCapabilities,
 }
 
 #[derive(Serialize)]
@@ -263,6 +265,14 @@ pub async fn get_capabilities(
         tools: direct_tools_entries,
     };
 
+    let backend = provider::parse_backend(&config.x_api.provider_backend);
+    let provider_caps = match backend {
+        provider::ProviderBackend::XApi => ProviderCapabilities::x_api(),
+        provider::ProviderBackend::Scraper => {
+            ProviderCapabilities::scraper(config.x_api.scraper_allow_mutations)
+        }
+    };
+
     let out = Capabilities {
         tier: tier_str,
         tier_detected_at,
@@ -279,6 +289,7 @@ pub async fn get_capabilities(
             threads: thread_remaining,
         },
         direct_tools,
+        provider: provider_caps,
     };
 
     let elapsed = start.elapsed().as_millis() as u64;

@@ -33,6 +33,13 @@ impl ApiMcpServer {
             tool_router: Self::tool_router(),
         }
     }
+
+    /// Check if scraper mutations are blocked for the API profile.
+    fn scraper_mutations_blocked(&self) -> bool {
+        crate::provider::parse_backend(&self.state.config.x_api.provider_backend)
+            == crate::provider::ProviderBackend::Scraper
+            && !self.state.config.x_api.scraper_allow_mutations
+    }
 }
 
 #[tool_router]
@@ -304,6 +311,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<PostTweetTextRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let params = serde_json::json!({"text": &req.text}).to_string();
         if let Some(err) = self
             .state
@@ -327,6 +338,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<ReplyToTweetRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let params = serde_json::json!({"text": &req.text, "in_reply_to_id": &req.in_reply_to_id})
             .to_string();
         if let Some(err) = self
@@ -352,6 +367,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<QuoteTweetRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let params =
             serde_json::json!({"text": &req.text, "quoted_tweet_id": &req.quoted_tweet_id})
                 .to_string();
@@ -377,6 +396,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<DeleteTweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let result = kernel::write::delete_tweet(self.state.x_client.as_ref(), &req.tweet_id).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -387,6 +410,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<PostThreadMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let first = req.tweets.first().map(|s| s.as_str()).unwrap_or("");
         let params =
             serde_json::json!({"tweet_count": req.tweets.len(), "first_tweet": first}).to_string();
@@ -414,6 +441,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<LikeTweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let params = serde_json::json!({"tweet_id": &req.tweet_id}).to_string();
         if let Some(err) = self
             .state
@@ -437,6 +468,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<FollowUserMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let params = serde_json::json!({"target_user_id": &req.target_user_id}).to_string();
         if let Some(err) = self
             .state
@@ -460,6 +495,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<UnfollowUserMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let result = kernel::engage::unfollow_user(
             self.state.x_client.as_ref(),
             &self.state.authenticated_user_id,
@@ -475,6 +514,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<RetweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let params = serde_json::json!({"tweet_id": &req.tweet_id}).to_string();
         if let Some(err) = self.state.idempotency.check_and_record("retweet", &params) {
             return Ok(CallToolResult::success(vec![Content::text(err)]));
@@ -494,6 +537,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<UnretweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let result = kernel::engage::unretweet(
             self.state.x_client.as_ref(),
             &self.state.authenticated_user_id,
@@ -509,6 +556,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<UnlikeTweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let result = kernel::engage::unlike_tweet(
             self.state.x_client.as_ref(),
             &self.state.authenticated_user_id,
@@ -524,6 +575,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<BookmarkTweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let params = serde_json::json!({"tweet_id": &req.tweet_id}).to_string();
         if let Some(err) = self
             .state
@@ -547,6 +602,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<UnbookmarkTweetMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let result = kernel::engage::unbookmark_tweet(
             self.state.x_client.as_ref(),
             &self.state.authenticated_user_id,
@@ -564,6 +623,10 @@ impl ApiMcpServer {
         &self,
         Parameters(req): Parameters<UploadMediaMcpRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if self.scraper_mutations_blocked() {
+            let result = ToolResponse::scraper_mutation_blocked().to_json();
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
         let result =
             kernel::media::upload_media(self.state.x_client.as_ref(), &req.file_path).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))

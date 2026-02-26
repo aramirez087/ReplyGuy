@@ -81,6 +81,9 @@ pub struct ToolMeta {
     /// Number of automatic retries performed before this response.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retry_count: Option<u32>,
+    /// Which provider backend produced this response.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_backend: Option<String>,
     /// Workflow-specific fields (mode, approval_mode).
     /// Flattened so they appear as top-level keys in JSON.
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
@@ -142,6 +145,16 @@ impl ToolResponse {
         )
     }
 
+    /// Convenience: scraper backend mutation blocked (not retryable).
+    pub fn scraper_mutation_blocked() -> Self {
+        Self::error(
+            ErrorCode::ScraperMutationBlocked,
+            "Mutations are blocked when using the scraper backend. \
+             Set x_api.scraper_allow_mutations = true in config.toml to override, \
+             or switch to provider_backend = \"x_api\".",
+        )
+    }
+
     /// Attach metadata to the response (builder pattern).
     pub fn with_meta(mut self, meta: ToolMeta) -> Self {
         self.meta = Some(meta);
@@ -193,8 +206,15 @@ impl ToolMeta {
             elapsed_ms,
             pagination: None,
             retry_count: None,
+            provider_backend: None,
             workflow: None,
         }
+    }
+
+    /// Attach provider backend info to metadata (builder pattern).
+    pub fn with_provider_backend(mut self, backend: impl Into<String>) -> Self {
+        self.provider_backend = Some(backend.into());
+        self
     }
 
     /// Attach pagination info to metadata (builder pattern).

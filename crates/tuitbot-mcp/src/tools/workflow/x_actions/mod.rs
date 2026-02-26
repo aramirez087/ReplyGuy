@@ -45,6 +45,26 @@ fn error_response(e: &XApiError, start: Instant) -> String {
     provider_error_to_response(&map_x_error(e), start)
 }
 
+/// Check if the scraper backend is active and mutations are blocked.
+///
+/// Returns `Some(error_json)` if the mutation should be rejected,
+/// `None` if the operation may proceed.
+fn scraper_mutation_guard(state: &crate::state::SharedState, start: Instant) -> Option<String> {
+    if crate::provider::parse_backend(&state.config.x_api.provider_backend)
+        == crate::provider::ProviderBackend::Scraper
+        && !state.config.x_api.scraper_allow_mutations
+    {
+        let elapsed = start.elapsed().as_millis() as u64;
+        Some(
+            ToolResponse::scraper_mutation_blocked()
+                .with_meta(ToolMeta::new(elapsed))
+                .to_json(),
+        )
+    } else {
+        None
+    }
+}
+
 /// Return an error response when the authenticated user ID is missing.
 fn no_user_id_response(start: Instant) -> String {
     let elapsed = start.elapsed().as_millis() as u64;

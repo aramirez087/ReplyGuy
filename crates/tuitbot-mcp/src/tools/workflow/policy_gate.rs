@@ -95,6 +95,7 @@ pub async fn check_policy(
                 true,
                 None,
                 Some("route_to_approval"),
+                None,
             )
             .await;
             let json = match enqueue_result {
@@ -132,6 +133,7 @@ pub async fn check_policy(
                 false,
                 Some(code.as_str()),
                 Some("deny"),
+                None,
             )
             .await;
             let mut resp = ToolResponse::error(code, format!("Policy denied: {reason}"))
@@ -170,6 +172,7 @@ pub async fn check_policy(
                 true,
                 None,
                 Some("dry_run"),
+                None,
             )
             .await;
             let json = ToolResponse::success(serde_json::json!({

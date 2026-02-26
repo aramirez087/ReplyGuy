@@ -107,6 +107,21 @@ pub async fn run_stdio_server(config: Config) -> anyhow::Result<()> {
             }
         };
 
+    // Log provider backend selection.
+    let backend = provider::parse_backend(&config.x_api.provider_backend);
+    match backend {
+        provider::ProviderBackend::XApi => {
+            tracing::info!(backend = "x_api", "Provider backend: official X API");
+        }
+        provider::ProviderBackend::Scraper => {
+            tracing::warn!(
+                backend = "scraper",
+                allow_mutations = config.x_api.scraper_allow_mutations,
+                "Provider backend: scraper (elevated risk)"
+            );
+        }
+    }
+
     let state = Arc::new(AppState {
         pool: pool.clone(),
         config,
@@ -168,6 +183,21 @@ pub async fn run_api_server(config: Config) -> anyhow::Result<()> {
         user_id = %user.id,
         "X API client initialized (api profile)"
     );
+
+    // Log provider backend selection.
+    let backend = provider::parse_backend(&config.x_api.provider_backend);
+    match backend {
+        provider::ProviderBackend::XApi => {
+            tracing::info!(backend = "x_api", "Provider backend: official X API");
+        }
+        provider::ProviderBackend::Scraper => {
+            tracing::warn!(
+                backend = "scraper",
+                allow_mutations = config.x_api.scraper_allow_mutations,
+                "Provider backend: scraper (elevated risk)"
+            );
+        }
+    }
 
     let state = Arc::new(ApiState {
         config,

@@ -14,6 +14,9 @@ use crate::tools::response::{ErrorCode, ToolMeta, ToolResponse};
 /// Upload a media file for attachment to tweets.
 pub async fn upload_media(state: &SharedState, file_path: &str) -> String {
     let start = Instant::now();
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
+        return err;
+    }
     let client = match state.x_client.as_ref() {
         Some(c) => c,
         None => return not_configured_response(start),

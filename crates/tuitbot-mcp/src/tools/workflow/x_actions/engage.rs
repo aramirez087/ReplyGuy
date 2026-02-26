@@ -16,6 +16,9 @@ pub async fn like_tweet(state: &SharedState, tweet_id: &str) -> String {
     if let Some(err) = state.idempotency.check_and_record("like_tweet", &params) {
         return err;
     }
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
+        return err;
+    }
     match super::super::policy_gate::check_policy(state, "like_tweet", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
         super::super::policy_gate::GateResult::Proceed => {}
@@ -61,6 +64,9 @@ pub async fn follow_user(state: &SharedState, target_user_id: &str) -> String {
     if let Some(err) = state.idempotency.check_and_record("follow_user", &params) {
         return err;
     }
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
+        return err;
+    }
     match super::super::policy_gate::check_policy(state, "follow_user", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
         super::super::policy_gate::GateResult::Proceed => {}
@@ -102,6 +108,9 @@ pub async fn follow_user(state: &SharedState, target_user_id: &str) -> String {
 /// Unfollow a user.
 pub async fn unfollow_user(state: &SharedState, target_user_id: &str) -> String {
     let start = Instant::now();
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
+        return err;
+    }
     let params = serde_json::json!({"target_user_id": target_user_id}).to_string();
     match super::super::policy_gate::check_policy(state, "unfollow_user", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
@@ -148,6 +157,9 @@ pub async fn retweet(state: &SharedState, tweet_id: &str) -> String {
     if let Some(err) = state.idempotency.check_and_record("retweet", &params) {
         return err;
     }
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
+        return err;
+    }
     match super::super::policy_gate::check_policy(state, "retweet", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
         super::super::policy_gate::GateResult::Proceed => {}
@@ -189,6 +201,9 @@ pub async fn retweet(state: &SharedState, tweet_id: &str) -> String {
 /// Unlike a tweet.
 pub async fn unlike_tweet(state: &SharedState, tweet_id: &str) -> String {
     let start = Instant::now();
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
+        return err;
+    }
     let params = serde_json::json!({"tweet_id": tweet_id}).to_string();
     match super::super::policy_gate::check_policy(state, "unlike_tweet", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
@@ -238,6 +253,9 @@ pub async fn bookmark_tweet(state: &SharedState, tweet_id: &str) -> String {
     {
         return err;
     }
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
+        return err;
+    }
     match super::super::policy_gate::check_policy(state, "bookmark_tweet", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
         super::super::policy_gate::GateResult::Proceed => {}
@@ -279,6 +297,9 @@ pub async fn bookmark_tweet(state: &SharedState, tweet_id: &str) -> String {
 /// Remove a bookmark.
 pub async fn unbookmark_tweet(state: &SharedState, tweet_id: &str) -> String {
     let start = Instant::now();
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
+        return err;
+    }
     let params = serde_json::json!({"tweet_id": tweet_id}).to_string();
     match super::super::policy_gate::check_policy(state, "unbookmark_tweet", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,
@@ -321,6 +342,9 @@ pub async fn unbookmark_tweet(state: &SharedState, tweet_id: &str) -> String {
 /// Undo a retweet.
 pub async fn unretweet(state: &SharedState, tweet_id: &str) -> String {
     let start = Instant::now();
+    if let Some(err) = super::scraper_mutation_guard(state, start) {
+        return err;
+    }
     let params = serde_json::json!({"tweet_id": tweet_id}).to_string();
     match super::super::policy_gate::check_policy(state, "unretweet", &params, start).await {
         super::super::policy_gate::GateResult::EarlyReturn(r) => return r,

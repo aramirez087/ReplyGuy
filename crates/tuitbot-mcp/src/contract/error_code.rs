@@ -30,6 +30,10 @@ pub enum ErrorCode {
     #[serde(rename = "x_api_error")]
     XApiError,
 
+    // ── Provider ────────────────────────────────────────────────────
+    #[serde(rename = "scraper_mutation_blocked")]
+    ScraperMutationBlocked,
+
     // ── Database ────────────────────────────────────────────────────
     #[serde(rename = "db_error")]
     DbError,
@@ -99,6 +103,7 @@ impl ErrorCode {
         Self::XNetworkError,
         Self::XNotConfigured,
         Self::XApiError,
+        Self::ScraperMutationBlocked,
         Self::DbError,
         Self::ValidationError,
         Self::InvalidInput,
@@ -152,6 +157,7 @@ impl ErrorCode {
             Self::XNetworkError => "x_network_error",
             Self::XNotConfigured => "x_not_configured",
             Self::XApiError => "x_api_error",
+            Self::ScraperMutationBlocked => "scraper_mutation_blocked",
             Self::DbError => "db_error",
             Self::ValidationError => "validation_error",
             Self::InvalidInput => "invalid_input",
@@ -188,7 +194,7 @@ mod tests {
 
     #[test]
     fn all_constant_has_correct_count() {
-        assert_eq!(ErrorCode::ALL.len(), 27);
+        assert_eq!(ErrorCode::ALL.len(), 28);
     }
 
     #[test]
