@@ -2,7 +2,6 @@
 //!
 //! Split into submodules by concern: read, write, engage, media, validate.
 
-pub(crate) mod audit;
 mod engage;
 mod media;
 mod read;
@@ -43,22 +42,28 @@ fn toolkit_error_response(e: &tuitbot_core::toolkit::ToolkitError, start: Instan
     }
 }
 
-/// Convert a `ToolkitError` to a JSON error response in an audited context.
+/// Convert a `ToolkitError` to a JSON error response with pre-built metadata.
 ///
-/// Used by write/engage operations with an active audit guard.
-async fn audited_toolkit_error_response(
-    guard: &crate::tools::idempotency::MutationGuard,
-    state: &crate::state::SharedState,
+/// Used by write/engage operations after the gateway has already recorded
+/// the failure in the audit trail and produced a `ToolMeta`.
+fn format_toolkit_error_with_meta(
     e: &tuitbot_core::toolkit::ToolkitError,
-    start: Instant,
+    meta: ToolMeta,
 ) -> String {
     use tuitbot_core::toolkit::ToolkitError;
     match e {
-        ToolkitError::XApi(xe) => audit::audited_x_error_response(guard, state, xe, start).await,
+        ToolkitError::XApi(xe) => {
+            let provider_err = crate::provider::x_api::map_x_error(xe);
+            crate::contract::error::provider_error_to_audited_response(&provider_err, meta)
+        }
         other => {
-            let msg = other.to_string();
-            let meta = audit::complete_audited_failure(guard, state, &msg, start).await;
-            ToolResponse::error(ErrorCode::InvalidInput, &msg)
+            let code = match other {
+                ToolkitError::UnsupportedMediaType { .. } => ErrorCode::UnsupportedMediaType,
+                ToolkitError::MediaTooLarge { .. } => ErrorCode::MediaUploadError,
+                ToolkitError::ThreadPartialFailure { .. } => ErrorCode::ThreadPartialFailure,
+                _ => ErrorCode::InvalidInput,
+            };
+            ToolResponse::error(code, other.to_string())
                 .with_meta(meta)
                 .to_json()
         }
