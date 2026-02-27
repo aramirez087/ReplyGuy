@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { type ThreadBlock } from '$lib/api';
+	import { api, type ThreadBlock } from '$lib/api';
 	import { tweetWeightedLen, MAX_TWEET_CHARS } from '$lib/utils/tweetLength';
 	import { Plus, Trash2, GripVertical, Copy, Scissors, Merge } from 'lucide-svelte';
 	import MediaSlot from './MediaSlot.svelte';
@@ -27,6 +27,7 @@
 	let dropTargetBlockId = $state<string | null>(null);
 	let reorderAnnouncement = $state('');
 	let mergeError = $state<string | null>(null);
+	let assistingBlockId = $state<string | null>(null);
 
 	// Sync when parent provides structurally different blocks (AI assist, recovery).
 	$effect(() => {
@@ -183,6 +184,18 @@
 	// --- Keyboard shortcuts ---
 
 	function handleCardKeydown(e: KeyboardEvent, blockId: string) {
+		// Tab/Shift+Tab: navigate between cards
+		if (e.key === 'Tab' && !e.altKey && !e.metaKey && !e.ctrlKey) {
+			e.preventDefault();
+			const sorted = [...blocks].sort((a, b) => a.order - b.order);
+			const idx = sorted.findIndex((b) => b.id === blockId);
+			if (e.shiftKey) {
+				if (idx > 0) focusBlock(sorted[idx - 1].id);
+			} else {
+				if (idx < sorted.length - 1) focusBlock(sorted[idx + 1].id);
+			}
+			return;
+		}
 		// Alt+ArrowUp: move card up
 		if (e.altKey && e.key === 'ArrowUp') {
 			e.preventDefault();
@@ -343,6 +356,78 @@
 		blocks = newBlocks;
 		emitChange();
 	}
+
+	export async function handleInlineAssist(): Promise<void> {
+		if (!focusedBlockId) return;
+		const block = blocks.find((b) => b.id === focusedBlockId);
+		if (!block) return;
+
+		const textarea = document.querySelector(
+			`[data-block-id="${focusedBlockId}"] textarea`
+		) as HTMLTextAreaElement | null;
+		if (!textarea) return;
+
+		const start = textarea.selectionStart;
+		const end = textarea.selectionEnd;
+		const selectedText = start !== end ? block.text.slice(start, end) : block.text;
+		if (!selectedText.trim()) return;
+
+		assistingBlockId = focusedBlockId;
+		try {
+			const result = await api.assist.improve(selectedText);
+			if (start !== end) {
+				const newText = block.text.slice(0, start) + result.content + block.text.slice(end);
+				updateBlockText(block.id, newText);
+			} else {
+				updateBlockText(block.id, result.content);
+			}
+		} catch {
+			// Error surfaced via parent's submitError
+		} finally {
+			assistingBlockId = null;
+		}
+	}
+
+	export function handlePaletteAction(actionId: string) {
+		if (!focusedBlockId) {
+			const sorted = [...blocks].sort((a, b) => a.order - b.order);
+			if (sorted.length > 0) focusedBlockId = sorted[0].id;
+		}
+		if (!focusedBlockId) return;
+
+		switch (actionId) {
+			case 'add-card':
+				addBlock();
+				break;
+			case 'duplicate':
+				duplicateBlock(focusedBlockId);
+				break;
+			case 'split':
+				splitBlock(focusedBlockId);
+				break;
+			case 'merge':
+				mergeWithNext(focusedBlockId);
+				break;
+			case 'move-up': {
+				const sorted = [...blocks].sort((a, b) => a.order - b.order);
+				const idx = sorted.findIndex((b) => b.id === focusedBlockId);
+				if (idx > 0) {
+					moveBlock(focusedBlockId, idx - 1);
+					focusBlock(focusedBlockId);
+				}
+				break;
+			}
+			case 'move-down': {
+				const sorted = [...blocks].sort((a, b) => a.order - b.order);
+				const idx = sorted.findIndex((b) => b.id === focusedBlockId);
+				if (idx < sorted.length - 1) {
+					moveBlock(focusedBlockId, idx + 1);
+					focusBlock(focusedBlockId);
+				}
+				break;
+			}
+		}
+	}
 </script>
 
 <div class="thread-composer" role="region" aria-label="Thread editor">
@@ -354,6 +439,7 @@
 		<div
 			class="tweet-card"
 			class:focused={focusedBlockId === block.id}
+			class:assisting={assistingBlockId === block.id}
 			class:over-limit={isOverLimit(block.text)}
 			class:dragging={draggingBlockId === block.id}
 			class:drop-target={dropTargetBlockId === block.id}
@@ -509,6 +595,12 @@
 
 	.tweet-card.over-limit {
 		border-color: var(--color-danger);
+	}
+
+	.tweet-card.assisting {
+		border-color: var(--color-accent);
+		opacity: 0.7;
+		pointer-events: none;
 	}
 
 	.tweet-card.dragging {
