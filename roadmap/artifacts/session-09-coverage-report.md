@@ -1,6 +1,6 @@
 # MCP Endpoint Coverage Report
 
-**Generated:** 2026-02-27T02:21:28.670112+00:00
+**Generated:** 2026-02-27T02:51:13.068837+00:00
 
 **MCP Schema:** 1.2 | **X API Spec:** 1.0.0
 
@@ -15,7 +15,7 @@
 | Read-only tools | 71 |
 | Requires X client | 75 |
 | Requires LLM | 5 |
-| Requires DB | 34 |
+| Requires DB | 37 |
 | Requires user auth | 68 |
 | Requires elevated access | 4 |
 
