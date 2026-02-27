@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.11](https://github.com/aramirez087/TuitBot/compare/tuitbot-cli-v0.1.10...tuitbot-cli-v0.1.11) - 2026-02-27
+
+### Added
+
+- Session 3 — DM API tool coverage
+- Session 5 — enterprise admin/compliance API tool coverage (7 tools)
+- Session 2 — enterprise security foundation for universal requests
+- Introduce profile completeness tracking, refactor config modules with new types and validation, and add enterprise API parity documentation.
+- Session 6 — manifest runtime parity and conformance
+- Session 4 — Ads/Campaign API tool coverage (16 tools)
+
+### Other
+
+- Reorganize `x_api` client, update config types, and introduce new evaluation and roadmap artifacts."
+
 ### Added
 
 - **X Enterprise API Parity** — 31 new typed MCP tools across 4 endpoint families:
