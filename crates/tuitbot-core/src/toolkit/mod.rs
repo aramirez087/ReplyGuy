@@ -12,6 +12,9 @@ pub mod media;
 pub mod read;
 pub mod write;
 
+#[cfg(test)]
+mod e2e_tests;
+
 use crate::error::XApiError;
 
 /// Maximum tweet length enforced by the X API.

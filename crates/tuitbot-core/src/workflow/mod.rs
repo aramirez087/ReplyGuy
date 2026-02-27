@@ -17,6 +17,8 @@ pub mod queue;
 pub mod thread_plan;
 
 #[cfg(test)]
+mod e2e_tests;
+#[cfg(test)]
 mod tests;
 
 use std::sync::Arc;
