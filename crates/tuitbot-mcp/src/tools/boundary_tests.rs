@@ -55,6 +55,10 @@ mod tests {
             "x_v2_tweets_unhide_reply",
             "x_v2_users_pin_tweet",
             "x_v2_users_unpin_tweet",
+            // ── Generated Layer 2 DM mutations ──
+            "x_v2_dm_send_in_conversation",
+            "x_v2_dm_send_to_participant",
+            "x_v2_dm_create_group",
         ]
     }
 
@@ -257,7 +261,7 @@ mod tests {
             .iter()
             .filter(|t| t.profiles.contains(&Profile::ApiReadonly))
             .count();
-        assert_eq!(count, 40, "ApiReadonly has {count} tools (expected 40)");
+        assert_eq!(count, 45, "ApiReadonly has {count} tools (expected 45)");
     }
 
     #[test]
@@ -268,8 +272,8 @@ mod tests {
             .iter()
             .filter(|t| t.profiles.contains(&Profile::Write))
             .count();
-        // 68 curated write + 36 generated - 4 admin-only = 104
-        assert_eq!(count, 104, "Write has {count} tools (expected 104)");
+        // 68 curated write + 44 generated - 4 admin-only = 112
+        assert_eq!(count, 112, "Write has {count} tools (expected 112)");
     }
 
     #[test]
@@ -280,8 +284,8 @@ mod tests {
             .iter()
             .filter(|t| t.profiles.contains(&Profile::Admin))
             .count();
-        // 72 curated + 36 generated = 108 (superset of write)
-        assert_eq!(count, 108, "Admin has {count} tools (expected 108)");
+        // 72 curated + 44 generated = 116 (superset of write)
+        assert_eq!(count, 116, "Admin has {count} tools (expected 116)");
     }
 
     // ── Mutation safety ─────────────────────────────────────────────

@@ -188,6 +188,7 @@ fn category_str(cat: ToolCategory) -> &'static str {
         ToolCategory::Meta => "meta",
         ToolCategory::List => "list",
         ToolCategory::Moderation => "moderation",
+        ToolCategory::DirectMessage => "direct_message",
     }
 }
 

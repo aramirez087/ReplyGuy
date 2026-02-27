@@ -1,27 +1,27 @@
 # MCP Endpoint Coverage Report
 
-**Generated:** 2026-02-27T02:51:13.068837+00:00
+**Generated:** 2026-02-27T03:02:37.965201+00:00
 
-**MCP Schema:** 1.2 | **X API Spec:** 1.0.0
+**MCP Schema:** 1.2 | **X API Spec:** 1.1.0
 
 ## Summary
 
 | Metric | Count |
 |--------|-------|
-| Total tools | 109 |
+| Total tools | 117 |
 | Curated (L1) | 73 |
-| Generated (L2) | 36 |
-| Mutation tools | 38 |
-| Read-only tools | 71 |
-| Requires X client | 75 |
+| Generated (L2) | 44 |
+| Mutation tools | 41 |
+| Read-only tools | 76 |
+| Requires X client | 83 |
 | Requires LLM | 5 |
 | Requires DB | 37 |
-| Requires user auth | 68 |
+| Requires user auth | 76 |
 | Requires elevated access | 4 |
 
 ## Test Coverage
 
-**45/109 tools have at least one test (41.3%)**
+**45/117 tools have at least one test (38.5%)**
 
 | Test Type | Count |
 |-----------|-------|
@@ -29,7 +29,7 @@
 | Contract envelope | 18 |
 | Live (sandbox) | 9 |
 | Total test touches | 54 |
-| Untested | 64 |
+| Untested | 72 |
 
 ## By Category
 
@@ -41,6 +41,7 @@
 | config | 2 | 2 | 0 | 0 | 2 |
 | content | 4 | 4 | 0 | 0 | 0 |
 | context | 3 | 3 | 0 | 0 | 1 |
+| direct_message | 8 | 0 | 8 | 3 | 0 |
 | discovery | 3 | 3 | 0 | 0 | 2 |
 | engage | 10 | 8 | 2 | 10 | 8 |
 | health | 1 | 1 | 0 | 0 | 0 |
@@ -59,9 +60,9 @@
 | Profile | Total | Mutations | Read-Only |
 |---------|-------|-----------|-----------|
 | readonly | 14 | 0 | 14 |
-| api_readonly | 40 | 0 | 40 |
-| write | 104 | 35 | 69 |
-| admin | 108 | 38 | 70 |
+| api_readonly | 45 | 0 | 45 |
+| write | 112 | 38 | 74 |
+| admin | 116 | 41 | 75 |
 
 ## Tier-Gated Areas
 
@@ -69,12 +70,12 @@ Tools restricted to specific profiles:
 
 - **admin only**: 4 tools
 - **all tiers**: 14 tools
-- **api_readonly+**: 26 tools
-- **write+**: 65 tools
+- **api_readonly+**: 31 tools
+- **write+**: 68 tools
 
 ## Credential-Gated Areas
 
-68 tools require specific credentials:
+76 tools require specific credentials:
 
 - get_tweet_by_id: [user_auth, scoped]
 - x_bookmark_tweet: [user_auth, scoped]
@@ -96,11 +97,11 @@ Tools restricted to specific profiles:
 - x_get_users_by_ids: [user_auth, scoped]
 - x_like_tweet: [user_auth, scoped]
 - x_post: [user_auth, elevated_access]
-- ... and 48 more
+- ... and 56 more
 
 ## Coverage Gaps (Untested Tools)
 
-64 tools lack any test coverage:
+72 tools lack any test coverage:
 
 - approve_item (approval)
 - compose_tweet (write)
@@ -133,6 +134,14 @@ Tools restricted to specific profiles:
 - x_v2_blocks_create (moderation)
 - x_v2_blocks_delete (moderation)
 - x_v2_blocks_list (moderation)
+- x_v2_dm_conversation_by_id (direct_message)
+- x_v2_dm_conversations (direct_message)
+- x_v2_dm_create_group (direct_message)
+- x_v2_dm_events (direct_message)
+- x_v2_dm_events_by_conversation (direct_message)
+- x_v2_dm_events_by_participant (direct_message)
+- x_v2_dm_send_in_conversation (direct_message)
+- x_v2_dm_send_to_participant (direct_message)
 - x_v2_lists_create (list)
 - x_v2_lists_delete (list)
 - x_v2_lists_follow (list)

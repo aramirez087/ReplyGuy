@@ -25,8 +25,8 @@ fn spec_version_is_valid_semver() {
 fn spec_has_expected_endpoint_count() {
     assert_eq!(
         SPEC_ENDPOINTS.len(),
-        36,
-        "expected 36 spec endpoints (charter defines 36 new tools)"
+        44,
+        "expected 44 spec endpoints (36 original + 8 DM tools)"
     );
 }
 
@@ -221,10 +221,18 @@ fn all_api_versions_are_v2() {
 
 #[test]
 fn groups_match_expected_set() {
-    let valid_groups: HashSet<&str> = ["tweets", "users", "lists", "mutes", "blocks", "spaces"]
-        .iter()
-        .copied()
-        .collect();
+    let valid_groups: HashSet<&str> = [
+        "tweets",
+        "users",
+        "lists",
+        "mutes",
+        "blocks",
+        "spaces",
+        "direct_messages",
+    ]
+    .iter()
+    .copied()
+    .collect();
     for ep in SPEC_ENDPOINTS {
         assert!(
             valid_groups.contains(ep.group),
