@@ -221,7 +221,53 @@ pub async fn check_policy(
 
     match decision {
         tuitbot_core::mcp_policy::PolicyDecision::Allow => GateResult::Proceed,
-        _ => GateResult::EarlyReturn(String::new()),
+        tuitbot_core::mcp_policy::PolicyDecision::Deny { reason, .. } => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let code = match &reason {
+                PolicyDenialReason::ToolBlocked => ErrorCode::PolicyDeniedBlocked,
+                PolicyDenialReason::RateLimited => ErrorCode::PolicyDeniedRateLimited,
+                PolicyDenialReason::HardRule => ErrorCode::PolicyDeniedHardRule,
+                PolicyDenialReason::UserRule => ErrorCode::PolicyDeniedUserRule,
+            };
+            super::telemetry::record(
+                &state.pool,
+                tool_name,
+                "mutation",
+                elapsed,
+                false,
+                Some(code.as_str()),
+                Some("deny"),
+                None,
+            )
+            .await;
+            let json = ToolResponse::error(code, format!("Policy denied: {reason}"))
+                .with_policy_decision("denied")
+                .with_meta(ToolMeta::new(elapsed))
+                .to_json();
+            GateResult::EarlyReturn(json)
+        }
+        tuitbot_core::mcp_policy::PolicyDecision::RouteToApproval { reason, rule_id } => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let json = ToolResponse::success(serde_json::json!({
+                "routed_to_approval": true,
+                "reason": reason,
+                "matched_rule_id": rule_id,
+            }))
+            .with_meta(ToolMeta::new(elapsed))
+            .to_json();
+            GateResult::EarlyReturn(json)
+        }
+        tuitbot_core::mcp_policy::PolicyDecision::DryRun { rule_id } => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            let json = ToolResponse::success(serde_json::json!({
+                "dry_run": true,
+                "would_execute": tool_name,
+                "matched_rule_id": rule_id,
+            }))
+            .with_meta(ToolMeta::new(elapsed))
+            .to_json();
+            GateResult::EarlyReturn(json)
+        }
     }
 }
 

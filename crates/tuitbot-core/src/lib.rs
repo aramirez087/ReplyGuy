@@ -16,6 +16,7 @@ pub mod startup;
 pub mod storage;
 pub mod strategy;
 pub mod toolkit;
+pub mod workflow;
 pub mod x_api;
 
 pub use error::*;
