@@ -16,13 +16,74 @@ Tuitbot discovers relevant conversations, drafts genuinely helpful replies, and 
 
 Built for **founders**, **indie hackers**, and **solo makers** who'd rather build their product than spend hours on X.
 
-[Deployment](#three-deployment-modes) · [Features](#features) · [Getting Started](#getting-started) · [Quick Commands](#quick-commands) · [Release Strategy](#release-strategy-ci) · [Full Docs](https://aramirez087.github.io/TuitBot/)
+[MCP Setup](#mcp-setup) · [Growth Co-Pilot](#growth-co-pilot) · [Features](#features) · [Getting Started](#getting-started) · [Full Docs](https://aramirez087.github.io/TuitBot/)
 
 </div>
 
 ---
 
-## Three Deployment Modes
+## Choose Your Path
+
+| I want… | Start here |
+|---------|------------|
+| **X API tools for my AI assistant** (Claude Code, Cursor, etc.) | [MCP Setup](#mcp-setup) — 2 commands |
+| **An autonomous growth co-pilot** (desktop app, CLI, self-hosted) | [Growth Co-Pilot](#growth-co-pilot) |
+
+---
+
+## MCP Setup
+
+Tuitbot's MCP server exposes up to **140 typed tools** covering the X API v2 public surface plus enterprise APIs (DMs, Ads, Compliance, Stream Rules) — ready for Claude Code, Cursor, or any MCP-compatible agent.
+
+**Install:**
+
+```bash
+cargo install tuitbot-cli --locked   # or grab a binary from Releases
+```
+
+**Interactive setup (recommended — auto-registers with Claude Code):**
+
+```bash
+tuitbot mcp setup
+```
+
+Walks you through config → X API auth → Claude Code registration in one command.
+
+**Non-interactive one-liner:**
+
+```bash
+claude mcp add -s user -e TUITBOT_X_API__CLIENT_ID=your_client_id tuitbot -- tuitbot mcp serve
+```
+
+**Profiles:**
+
+| Profile | Flag | Tools | Use case |
+|---------|------|-------|----------|
+| **Write** (default) | _(none)_ | 112 | Full growth co-pilot: reads, writes, DMs, analytics, content gen |
+| **Admin** | `--profile admin` | 139 | Superset of Write — adds Ads API, Compliance, Stream Rules |
+| **API read-only** | `--profile api-readonly` | 45 | X API reads + DM reads, no mutations |
+| **Read-only** | `--profile readonly` | 14 | Minimal safe surface — config and health tools only |
+
+**Example Claude Code config (Write — default):**
+
+```json
+{
+  "mcpServers": {
+    "tuitbot": {
+      "command": "tuitbot",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+Full tool reference, response envelopes, and enterprise APIs → [MCP Reference](https://aramirez087.github.io/TuitBot/mcp-reference/).
+
+---
+
+## Growth Co-Pilot
+
+### Three Deployment Modes
 
 Tuitbot supports three ways to run — all using the exact same core automation engine:
 
@@ -213,70 +274,7 @@ tuitbot approve --list                     # review queued posts
 tuitbot stats --output json                # analytics snapshot
 tuitbot backup                             # back up database
 tuitbot update                             # check for updates
-
-# AI agent integration (MCP)
-tuitbot mcp serve                          # Write profile (112 tools, default)
-tuitbot mcp serve --profile admin          # Admin profile (139 tools)
-tuitbot mcp serve --profile api-readonly   # API read-only (45 tools)
-tuitbot mcp serve --profile readonly       # Read-only (14 tools)
 ```
-
----
-
-## AI Agent Integration (MCP)
-
-Tuitbot includes an MCP server that exposes up to **140 tools** for AI agents (Claude Code, custom agents, etc.), covering the X API v2 public surface plus enterprise APIs (DMs, Ads, Compliance, Stream Rules). Four profiles serve different use cases:
-
-| Profile | Command | Tools | Use Case |
-|---------|---------|-------|----------|
-| **Write** (default) | `tuitbot mcp serve` | 112 | Full growth co-pilot: reads, writes, DMs, analytics, content gen, approval workflows, generated X API tools |
-| **Admin** | `tuitbot mcp serve --profile admin` | 139 | Superset of Write — adds Ads API, Compliance, Stream Rules, and universal request tools |
-| **API read-only** | `tuitbot mcp serve --profile api-readonly` | 45 | X API reads + DM reads + utility tools, no mutations |
-| **Read-only** | `tuitbot mcp serve --profile readonly` | 14 | Minimal safe surface — utility, config, and health tools only |
-
-Read-only profiles are safe by construction — mutation tools are never registered, not policy-blocked. You get typed schemas, structured errors, rate-limit awareness, retry/backoff, and stable output formats with zero mutation risk.
-
-**Quickest start (interactive — auto-registers with Claude Code):**
-
-```bash
-tuitbot mcp setup
-```
-
-**One-liner with env vars (non-interactive):**
-
-```bash
-claude mcp add -s user -e TUITBOT_X_API__CLIENT_ID=your_client_id tuitbot -- tuitbot mcp serve
-```
-
-**Claude Code config (Write — default, recommended):**
-
-```json
-{
-  "mcpServers": {
-    "tuitbot": {
-      "command": "tuitbot",
-      "args": ["mcp", "serve"]
-    }
-  }
-}
-```
-
-**Claude Code config (Read-only):**
-
-```json
-{
-  "mcpServers": {
-    "tuitbot": {
-      "command": "tuitbot",
-      "args": ["mcp", "serve", "--profile", "readonly"]
-    }
-  }
-}
-```
-
-All tools return structured `{ success, data, error, meta }` envelopes with 28 typed error codes, retryable flags, and per-invocation telemetry. Mutations are policy-gated with approval routing, dry-run mode, and hourly rate limiting.
-
-**Enterprise APIs:** DM tools are available from API-readonly and above. Ads, Compliance, and Stream Rules tools are Admin-only and require separate X API access (Ads API approval, Compliance API access). See the [MCP Reference](https://aramirez087.github.io/TuitBot/mcp-reference/) for profiles, scopes, and safety controls.
 
 ---
 
