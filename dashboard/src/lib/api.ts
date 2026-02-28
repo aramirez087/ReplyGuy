@@ -407,9 +407,12 @@ export interface TuitbotConfig {
 		sources: Array<{
 			source_type: string;
 			path: string | null;
+			folder_id: string | null;
+			service_account_key: string | null;
 			watch: boolean;
 			file_patterns: string[];
 			loop_back_enabled: boolean;
+			poll_interval_seconds: number | null;
 		}>;
 	};
 }

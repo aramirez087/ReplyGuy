@@ -467,13 +467,21 @@ pub struct ContentSourcesConfig {
 /// A single content source entry.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ContentSourceEntry {
-    /// Source type: "local_fs" (v1). Future: "google_drive".
+    /// Source type: `"local_fs"` or `"google_drive"`.
     #[serde(default = "default_source_type")]
     pub source_type: String,
 
     /// Filesystem path (for local_fs sources). Supports ~ expansion.
     #[serde(default)]
     pub path: Option<String>,
+
+    /// Google Drive folder ID (for google_drive sources).
+    #[serde(default)]
+    pub folder_id: Option<String>,
+
+    /// Path to a Google service-account JSON key file (for google_drive sources).
+    #[serde(default)]
+    pub service_account_key: Option<String>,
 
     /// Whether to watch for changes in real-time.
     #[serde(default = "default_watch")]
@@ -486,6 +494,10 @@ pub struct ContentSourceEntry {
     /// Whether to write metadata back to source files.
     #[serde(default = "default_loop_back")]
     pub loop_back_enabled: bool,
+
+    /// Polling interval in seconds for remote sources (default: 300 = 5 min).
+    #[serde(default)]
+    pub poll_interval_seconds: Option<u64>,
 }
 
 fn default_source_type() -> String {

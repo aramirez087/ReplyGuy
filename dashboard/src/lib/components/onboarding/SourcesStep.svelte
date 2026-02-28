@@ -1,11 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { onboardingData } from '$lib/stores/onboarding';
-	import { FolderOpen } from 'lucide-svelte';
+	import { FolderOpen, Cloud } from 'lucide-svelte';
 
+	let sourceType = $state($onboardingData.source_type);
 	let vaultPath = $state($onboardingData.vault_path);
 	let vaultWatch = $state($onboardingData.vault_watch);
 	let vaultLoopBack = $state($onboardingData.vault_loop_back);
+	let folderId = $state($onboardingData.folder_id);
+	let serviceAccountKey = $state($onboardingData.service_account_key);
+	let pollInterval = $state($onboardingData.poll_interval_seconds);
 	let isTauri = $state(false);
 	let browseError = $state('');
 
@@ -19,6 +23,10 @@
 	});
 
 	$effect(() => {
+		onboardingData.updateField('source_type', sourceType);
+	});
+
+	$effect(() => {
 		onboardingData.updateField('vault_path', vaultPath);
 	});
 
@@ -28,6 +36,18 @@
 
 	$effect(() => {
 		onboardingData.updateField('vault_loop_back', vaultLoopBack);
+	});
+
+	$effect(() => {
+		onboardingData.updateField('folder_id', folderId);
+	});
+
+	$effect(() => {
+		onboardingData.updateField('service_account_key', serviceAccountKey);
+	});
+
+	$effect(() => {
+		onboardingData.updateField('poll_interval_seconds', pollInterval);
 	});
 
 	async function browseFolder() {
@@ -50,40 +70,103 @@
 <div class="step">
 	<h2>Content Source (Optional)</h2>
 	<p class="step-description">
-		Connect an Obsidian vault or notes folder so the Watchtower can index your content
+		Connect a content source so the Watchtower can index your content
 		and use it for smarter replies and tweets. You can configure this later in Settings.
 	</p>
 
 	<div class="field-group">
-		<label class="field-label" for="vault_path">
-			<FolderOpen size={14} />
-			Vault / Notes Folder
+		<label class="field-label" for="source_type_select">
+			Source Type
 		</label>
-		<div class="path-row">
-			<input
-				id="vault_path"
-				type="text"
-				class="text-input path-input"
-				bind:value={vaultPath}
-				placeholder="~/Documents/my-vault"
-			/>
-			{#if isTauri}
-				<button type="button" class="browse-btn" onclick={browseFolder}>
-					<FolderOpen size={14} />
-					Browse
-				</button>
+		<select
+			id="source_type_select"
+			class="text-input"
+			bind:value={sourceType}
+		>
+			<option value="local_fs">Local Folder</option>
+			<option value="google_drive">Google Drive</option>
+		</select>
+	</div>
+
+	{#if sourceType === 'local_fs'}
+		<div class="field-group">
+			<label class="field-label" for="vault_path">
+				<FolderOpen size={14} />
+				Vault / Notes Folder
+			</label>
+			<div class="path-row">
+				<input
+					id="vault_path"
+					type="text"
+					class="text-input path-input"
+					bind:value={vaultPath}
+					placeholder="~/Documents/my-vault"
+				/>
+				{#if isTauri}
+					<button type="button" class="browse-btn" onclick={browseFolder}>
+						<FolderOpen size={14} />
+						Browse
+					</button>
+				{/if}
+			</div>
+			{#if browseError}
+				<span class="field-error">{browseError}</span>
 			{/if}
 		</div>
-		{#if browseError}
-			<span class="field-error">{browseError}</span>
-		{/if}
-	</div>
+	{:else}
+		<div class="field-group">
+			<label class="field-label" for="folder_id_input">
+				<Cloud size={14} />
+				Google Drive Folder ID
+			</label>
+			<input
+				id="folder_id_input"
+				type="text"
+				class="text-input"
+				bind:value={folderId}
+				placeholder="1aBcD_eFgHiJkLmNoPqRsTuVwXyZ"
+			/>
+		</div>
+
+		<div class="field-group">
+			<label class="field-label" for="sa_key_input">
+				Service Account Key Path
+			</label>
+			<input
+				id="sa_key_input"
+				type="text"
+				class="text-input"
+				bind:value={serviceAccountKey}
+				placeholder="~/keys/my-project-sa.json"
+			/>
+		</div>
+
+		<div class="field-group">
+			<label class="field-label" for="poll_interval_input">
+				Poll Interval (seconds)
+			</label>
+			<input
+				id="poll_interval_input"
+				type="number"
+				class="text-input poll-input"
+				bind:value={pollInterval}
+				min="60"
+				max="86400"
+			/>
+		</div>
+	{/if}
 
 	<div class="toggle-group">
 		<div class="toggle-row">
 			<div class="toggle-info">
-				<span class="toggle-label">Watch for changes</span>
-				<span class="toggle-hint">Re-index automatically when files change</span>
+				<span class="toggle-label">
+					{sourceType === 'google_drive' ? 'Poll for changes' : 'Watch for changes'}
+				</span>
+				<span class="toggle-hint">
+					{sourceType === 'google_drive'
+						? 'Periodically check for new or modified files'
+						: 'Re-index automatically when files change'}
+				</span>
 			</div>
 			<button
 				type="button"
@@ -100,25 +183,27 @@
 			</button>
 		</div>
 
-		<div class="toggle-row">
-			<div class="toggle-info">
-				<span class="toggle-label">Loop back</span>
-				<span class="toggle-hint">Write performance metadata into file frontmatter</span>
+		{#if sourceType === 'local_fs'}
+			<div class="toggle-row">
+				<div class="toggle-info">
+					<span class="toggle-label">Loop back</span>
+					<span class="toggle-hint">Write performance metadata into file frontmatter</span>
+				</div>
+				<button
+					type="button"
+					class="toggle"
+					class:active={vaultLoopBack}
+					onclick={() => (vaultLoopBack = !vaultLoopBack)}
+					role="switch"
+					aria-checked={vaultLoopBack}
+					aria-label="Toggle loop back"
+				>
+					<span class="toggle-track">
+						<span class="toggle-thumb"></span>
+					</span>
+				</button>
 			</div>
-			<button
-				type="button"
-				class="toggle"
-				class:active={vaultLoopBack}
-				onclick={() => (vaultLoopBack = !vaultLoopBack)}
-				role="switch"
-				aria-checked={vaultLoopBack}
-				aria-label="Toggle loop back"
-			>
-				<span class="toggle-track">
-					<span class="toggle-thumb"></span>
-				</span>
-			</button>
-		</div>
+		{/if}
 	</div>
 </div>
 
@@ -186,6 +271,14 @@
 
 	.path-input {
 		flex: 1;
+	}
+
+	.poll-input {
+		max-width: 160px;
+	}
+
+	select.text-input {
+		cursor: pointer;
 	}
 
 	.browse-btn {

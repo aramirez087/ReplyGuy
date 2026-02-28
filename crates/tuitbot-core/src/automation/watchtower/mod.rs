@@ -1,9 +1,10 @@
-//! Watchtower filesystem watcher and shared ingest pipeline.
+//! Watchtower content source watcher and shared ingest pipeline.
 //!
 //! Watches configured local directories for `.md` and `.txt` changes via
-//! the `notify` crate with debouncing. Filesystem events and manual
-//! `POST /api/ingest` file_hints both funnel through `ingest_file()`,
-//! ensuring identical state transitions.
+//! the `notify` crate with debouncing, and polls remote content sources
+//! (e.g. Google Drive) on a configurable interval.  Both local filesystem
+//! events and remote polls funnel through `ingest_content()`, ensuring
+//! identical state transitions.
 
 pub mod loopback;
 
@@ -22,6 +23,7 @@ use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::config::ContentSourcesConfig;
+use crate::source::ContentSourceProvider;
 use crate::storage::watchtower as store;
 use crate::storage::DbPool;
 
@@ -146,22 +148,19 @@ pub fn matches_patterns(path: &Path, patterns: &[String]) -> bool {
 // Shared ingest pipeline
 // ---------------------------------------------------------------------------
 
-/// Ingest a single file into the Watchtower pipeline.
+/// Ingest raw text content into the Watchtower pipeline.
 ///
-/// This is the shared code path used by both the filesystem watcher and
-/// `POST /api/ingest` file_hints. It reads the file, parses front-matter,
-/// computes a content hash, and upserts the content node in the database.
-pub async fn ingest_file(
+/// This is the provider-agnostic code path that both local file reads and
+/// remote content fetches funnel through. It parses front-matter, computes
+/// a content hash, and upserts the content node in the database.
+pub async fn ingest_content(
     pool: &DbPool,
     source_id: i64,
-    base_path: &Path,
-    relative_path: &str,
+    provider_id: &str,
+    content: &str,
     force: bool,
 ) -> Result<store::UpsertResult, WatchtowerError> {
-    let full_path = base_path.join(relative_path);
-    let content = tokio::fs::read_to_string(&full_path).await?;
-
-    let (fm, body) = parse_front_matter(&content);
+    let (fm, body) = parse_front_matter(content);
 
     let hash = if force {
         let mut hasher = Sha256::new();
@@ -183,7 +182,7 @@ pub async fn ingest_file(
     let result = store::upsert_content_node(
         pool,
         source_id,
-        relative_path,
+        provider_id,
         &hash,
         fm.title.as_deref(),
         body,
@@ -193,6 +192,21 @@ pub async fn ingest_file(
     .await?;
 
     Ok(result)
+}
+
+/// Ingest a single file from the local filesystem into the Watchtower pipeline.
+///
+/// Convenience wrapper that reads the file then delegates to `ingest_content`.
+pub async fn ingest_file(
+    pool: &DbPool,
+    source_id: i64,
+    base_path: &Path,
+    relative_path: &str,
+    force: bool,
+) -> Result<store::UpsertResult, WatchtowerError> {
+    let full_path = base_path.join(relative_path);
+    let content = tokio::fs::read_to_string(&full_path).await?;
+    ingest_content(pool, source_id, relative_path, &content, force).await
 }
 
 /// Ingest multiple files, collecting results into a summary.
@@ -265,7 +279,10 @@ impl CooldownSet {
 // WatchtowerLoop
 // ---------------------------------------------------------------------------
 
-/// The Watchtower filesystem watcher service.
+/// A registered remote source: (db_source_id, provider, file_patterns, poll_interval).
+type RemoteSource = (i64, Box<dyn ContentSourceProvider>, Vec<String>, Duration);
+
+/// The Watchtower content source watcher service.
 ///
 /// Watches configured source directories for file changes, debounces events,
 /// and ingests changed files into the database via the shared pipeline.
@@ -290,22 +307,34 @@ impl WatchtowerLoop {
     }
 
     /// Run the watchtower loop until the cancellation token is triggered.
+    ///
+    /// Registers both local filesystem and remote sources, then runs:
+    /// - `notify` watcher + fallback polling for local sources
+    /// - interval-based polling for remote sources (e.g. Google Drive)
     pub async fn run(&self, cancel: CancellationToken) {
-        let watch_sources: Vec<_> = self
+        // Split config into local (watchable) and remote (pollable) sources.
+        let local_sources: Vec<_> = self
             .config
             .sources
             .iter()
-            .filter(|s| s.watch && s.path.is_some())
+            .filter(|s| s.source_type == "local_fs" && s.watch && s.path.is_some())
             .collect();
 
-        if watch_sources.is_empty() {
+        let remote_sources: Vec<_> = self
+            .config
+            .sources
+            .iter()
+            .filter(|s| s.source_type == "google_drive" && s.folder_id.is_some())
+            .collect();
+
+        if local_sources.is_empty() && remote_sources.is_empty() {
             tracing::info!("Watchtower: no watch sources configured, exiting");
             return;
         }
 
-        // Register source contexts in DB.
+        // Register local source contexts in DB.
         let mut source_map: Vec<(i64, PathBuf, Vec<String>)> = Vec::new();
-        for src in &watch_sources {
+        for src in &local_sources {
             let path_str = src.path.as_deref().unwrap();
             let expanded = PathBuf::from(crate::storage::expand_tilde(path_str));
 
@@ -326,12 +355,48 @@ impl WatchtowerLoop {
             }
         }
 
-        if source_map.is_empty() {
+        // Register remote source contexts and build provider instances.
+        let mut remote_map: Vec<RemoteSource> = Vec::new();
+        for src in &remote_sources {
+            let folder_id = src.folder_id.as_deref().unwrap();
+            let config_json = serde_json::json!({
+                "folder_id": folder_id,
+                "file_patterns": src.file_patterns,
+                "service_account_key": src.service_account_key,
+            })
+            .to_string();
+
+            match store::ensure_google_drive_source(&self.pool, folder_id, &config_json).await {
+                Ok(source_id) => {
+                    let key_path = src.service_account_key.clone().unwrap_or_default();
+                    let provider = crate::source::google_drive::GoogleDriveProvider::new(
+                        folder_id.to_string(),
+                        key_path,
+                    );
+                    let interval = Duration::from_secs(src.poll_interval_seconds.unwrap_or(300));
+                    remote_map.push((
+                        source_id,
+                        Box::new(provider),
+                        src.file_patterns.clone(),
+                        interval,
+                    ));
+                }
+                Err(e) => {
+                    tracing::error!(
+                        folder_id = folder_id,
+                        error = %e,
+                        "Failed to register Google Drive source"
+                    );
+                }
+            }
+        }
+
+        if source_map.is_empty() && remote_map.is_empty() {
             tracing::warn!("Watchtower: no sources registered, exiting");
             return;
         }
 
-        // Initial scan of all directories.
+        // Initial scan of all local directories.
         for (source_id, base_path, patterns) in &source_map {
             if let Err(e) = self.scan_directory(*source_id, base_path, patterns).await {
                 tracing::error!(
@@ -340,6 +405,17 @@ impl WatchtowerLoop {
                     "Initial scan failed"
                 );
             }
+        }
+
+        // Initial poll of remote sources.
+        if !remote_map.is_empty() {
+            self.poll_remote_sources(&remote_map).await;
+        }
+
+        // If there are no local sources, only run remote polling.
+        if source_map.is_empty() {
+            self.remote_only_loop(&remote_map, cancel).await;
+            return;
         }
 
         // Bridge notify's sync callback to an async-friendly tokio channel.
@@ -372,8 +448,9 @@ impl WatchtowerLoop {
         }
 
         tracing::info!(
-            sources = source_map.len(),
-            "Watchtower watching for file changes"
+            local_sources = source_map.len(),
+            remote_sources = remote_map.len(),
+            "Watchtower watching for changes"
         );
 
         let cooldown = Mutex::new(CooldownSet::new(self.cooldown_ttl));
@@ -381,6 +458,15 @@ impl WatchtowerLoop {
         // Main event loop.
         let mut fallback_timer = tokio::time::interval(self.fallback_scan_interval);
         fallback_timer.tick().await; // Consume the immediate first tick.
+
+        // Remote poll interval (use minimum configured or fallback default).
+        let remote_interval = remote_map
+            .iter()
+            .map(|(_, _, _, d)| *d)
+            .min()
+            .unwrap_or(self.fallback_scan_interval);
+        let mut remote_timer = tokio::time::interval(remote_interval);
+        remote_timer.tick().await; // Consume the immediate first tick.
 
         loop {
             tokio::select! {
@@ -402,6 +488,9 @@ impl WatchtowerLoop {
                     if let Ok(mut cd) = cooldown.lock() {
                         cd.cleanup();
                     }
+                }
+                _ = remote_timer.tick(), if !remote_map.is_empty() => {
+                    self.poll_remote_sources(&remote_map).await;
                 }
                 result = async_rx.recv() => {
                     match result {
@@ -538,6 +627,119 @@ impl WatchtowerLoop {
             }
         }
         Ok(())
+    }
+
+    /// Poll all remote sources for changes, ingest new/updated content.
+    async fn poll_remote_sources(&self, remote_sources: &[RemoteSource]) {
+        for (source_id, provider, patterns, _interval) in remote_sources {
+            let cursor = match store::get_source_context(&self.pool, *source_id).await {
+                Ok(Some(ctx)) => ctx.sync_cursor,
+                Ok(None) => None,
+                Err(e) => {
+                    tracing::warn!(source_id, error = %e, "Failed to get source context");
+                    continue;
+                }
+            };
+
+            match provider.scan_for_changes(cursor.as_deref(), patterns).await {
+                Ok(files) => {
+                    let mut ingested = 0u32;
+                    let mut skipped = 0u32;
+                    for file in &files {
+                        match provider.read_content(&file.provider_id).await {
+                            Ok(content) => {
+                                match ingest_content(
+                                    &self.pool,
+                                    *source_id,
+                                    &file.provider_id,
+                                    &content,
+                                    false,
+                                )
+                                .await
+                                {
+                                    Ok(
+                                        store::UpsertResult::Inserted
+                                        | store::UpsertResult::Updated,
+                                    ) => {
+                                        ingested += 1;
+                                    }
+                                    Ok(store::UpsertResult::Skipped) => {
+                                        skipped += 1;
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            provider_id = %file.provider_id,
+                                            error = %e,
+                                            "Remote ingest failed"
+                                        );
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    provider_id = %file.provider_id,
+                                    error = %e,
+                                    "Failed to read remote content"
+                                );
+                            }
+                        }
+                    }
+
+                    tracing::debug!(
+                        source_type = provider.source_type(),
+                        ingested,
+                        skipped,
+                        total = files.len(),
+                        "Remote poll complete"
+                    );
+
+                    // Update sync cursor.
+                    let new_cursor = chrono::Utc::now().to_rfc3339();
+                    if let Err(e) =
+                        store::update_sync_cursor(&self.pool, *source_id, &new_cursor).await
+                    {
+                        tracing::warn!(error = %e, "Failed to update remote sync cursor");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        source_type = provider.source_type(),
+                        error = %e,
+                        "Remote scan failed"
+                    );
+                    let _ = store::update_source_status(
+                        &self.pool,
+                        *source_id,
+                        "error",
+                        Some(&e.to_string()),
+                    )
+                    .await;
+                }
+            }
+        }
+    }
+
+    /// Loop for when only remote sources are configured (no local watchers).
+    async fn remote_only_loop(&self, remote_map: &[RemoteSource], cancel: CancellationToken) {
+        let interval_dur = remote_map
+            .iter()
+            .map(|(_, _, _, d)| *d)
+            .min()
+            .unwrap_or(self.fallback_scan_interval);
+        let mut interval = tokio::time::interval(interval_dur);
+        interval.tick().await;
+
+        loop {
+            tokio::select! {
+                () = cancel.cancelled() => {
+                    tracing::info!("Watchtower remote-only loop cancelled");
+                    break;
+                }
+                _ = interval.tick() => {
+                    self.poll_remote_sources(remote_map).await;
+                }
+            }
+        }
     }
 
     /// Polling-only fallback loop when the notify watcher fails to initialize.

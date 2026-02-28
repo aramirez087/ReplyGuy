@@ -541,3 +541,113 @@ fn content_sources_empty_json_patch() {
     let config: Config = serde_json::from_value(patch).expect("valid JSON");
     assert!(config.content_sources.sources.is_empty());
 }
+
+// --- Google Drive content sources ---
+
+#[test]
+fn content_sources_google_drive_roundtrip() {
+    let toml_str = r#"
+[[content_sources.sources]]
+source_type = "google_drive"
+folder_id = "1aBcD_eFgHiJkLmNoPqRsTuVwXyZ"
+service_account_key = "~/keys/my-project-sa.json"
+watch = true
+file_patterns = ["*.md", "*.txt"]
+loop_back_enabled = false
+poll_interval_seconds = 600
+"#;
+    let config: Config = toml::from_str(toml_str).expect("valid TOML");
+    assert_eq!(config.content_sources.sources.len(), 1);
+    let source = &config.content_sources.sources[0];
+    assert_eq!(source.source_type, "google_drive");
+    assert_eq!(
+        source.folder_id.as_deref(),
+        Some("1aBcD_eFgHiJkLmNoPqRsTuVwXyZ")
+    );
+    assert_eq!(
+        source.service_account_key.as_deref(),
+        Some("~/keys/my-project-sa.json")
+    );
+    assert!(source.path.is_none());
+    assert!(!source.loop_back_enabled);
+    assert_eq!(source.poll_interval_seconds, Some(600));
+
+    // Round-trip to TOML and back.
+    let toml_out = toml::to_string_pretty(&config).expect("serialize");
+    let roundtripped: Config = toml::from_str(&toml_out).expect("re-parse");
+    let rt_src = &roundtripped.content_sources.sources[0];
+    assert_eq!(rt_src.source_type, "google_drive");
+    assert_eq!(
+        rt_src.folder_id.as_deref(),
+        Some("1aBcD_eFgHiJkLmNoPqRsTuVwXyZ")
+    );
+}
+
+#[test]
+fn content_sources_mixed_sources_roundtrip() {
+    let toml_str = r#"
+[[content_sources.sources]]
+source_type = "local_fs"
+path = "~/notes/vault"
+watch = true
+file_patterns = ["*.md"]
+loop_back_enabled = true
+
+[[content_sources.sources]]
+source_type = "google_drive"
+folder_id = "abc123"
+service_account_key = "/etc/keys/sa.json"
+watch = true
+file_patterns = ["*.md", "*.txt"]
+loop_back_enabled = false
+poll_interval_seconds = 300
+"#;
+    let config: Config = toml::from_str(toml_str).expect("valid TOML");
+    assert_eq!(config.content_sources.sources.len(), 2);
+
+    assert_eq!(config.content_sources.sources[0].source_type, "local_fs");
+    assert_eq!(
+        config.content_sources.sources[0].path.as_deref(),
+        Some("~/notes/vault")
+    );
+    assert!(config.content_sources.sources[0].folder_id.is_none());
+
+    assert_eq!(
+        config.content_sources.sources[1].source_type,
+        "google_drive"
+    );
+    assert_eq!(
+        config.content_sources.sources[1].folder_id.as_deref(),
+        Some("abc123")
+    );
+    assert!(config.content_sources.sources[1].path.is_none());
+}
+
+#[test]
+fn content_sources_google_drive_json_patch() {
+    let patch = serde_json::json!({
+        "content_sources": {
+            "sources": [{
+                "source_type": "google_drive",
+                "path": null,
+                "folder_id": "drive_folder_abc",
+                "service_account_key": "/path/to/key.json",
+                "watch": true,
+                "file_patterns": ["*.md", "*.txt"],
+                "loop_back_enabled": false,
+                "poll_interval_seconds": 300
+            }]
+        }
+    });
+    let config: Config = serde_json::from_value(patch).expect("valid JSON");
+    assert_eq!(config.content_sources.sources.len(), 1);
+    let source = &config.content_sources.sources[0];
+    assert_eq!(source.source_type, "google_drive");
+    assert_eq!(source.folder_id.as_deref(), Some("drive_folder_abc"));
+    assert_eq!(
+        source.service_account_key.as_deref(),
+        Some("/path/to/key.json")
+    );
+    assert!(source.path.is_none());
+    assert_eq!(source.poll_interval_seconds, Some(300));
+}

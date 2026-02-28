@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { FolderOpen } from 'lucide-svelte';
+	import { FolderOpen, Cloud } from 'lucide-svelte';
 	import SettingsSection from '$lib/components/settings/SettingsSection.svelte';
 	import { draft, updateDraft } from '$lib/stores/settings';
 
@@ -8,10 +8,16 @@
 	let browseError = $state('');
 
 	const currentSource = $derived($draft?.content_sources?.sources?.[0]);
+	const sourceType = $derived(currentSource?.source_type ?? 'local_fs');
 	const sourcePath = $derived(currentSource?.path ?? '');
+	const folderId = $derived(currentSource?.folder_id ?? '');
+	const serviceAccountKey = $derived(currentSource?.service_account_key ?? '');
 	const sourceWatch = $derived(currentSource?.watch ?? true);
 	const sourceLoopBack = $derived(currentSource?.loop_back_enabled ?? true);
 	const filePatterns = $derived(currentSource?.file_patterns ?? ['*.md', '*.txt']);
+	const pollInterval = $derived(currentSource?.poll_interval_seconds ?? 300);
+
+	const SectionIcon = $derived(sourceType === 'google_drive' ? Cloud : FolderOpen);
 
 	onMount(async () => {
 		try {
@@ -28,18 +34,55 @@
 			sources: [{
 				source_type: current?.source_type ?? 'local_fs',
 				path: current?.path ?? null,
+				folder_id: current?.folder_id ?? null,
+				service_account_key: current?.service_account_key ?? null,
 				watch: current?.watch ?? true,
 				file_patterns: current?.file_patterns ?? ['*.md', '*.txt'],
 				loop_back_enabled: current?.loop_back_enabled ?? true,
+				poll_interval_seconds: current?.poll_interval_seconds ?? null,
 				...updates
 			}]
 		});
 		browseError = '';
 	}
 
+	function handleSourceTypeChange(e: Event) {
+		const value = (e.target as HTMLSelectElement).value;
+		if (value === 'google_drive') {
+			updateSource({
+				source_type: 'google_drive',
+				path: null,
+				loop_back_enabled: false,
+				poll_interval_seconds: 300
+			});
+		} else {
+			updateSource({
+				source_type: 'local_fs',
+				folder_id: null,
+				service_account_key: null,
+				poll_interval_seconds: null
+			});
+		}
+	}
+
 	function handlePathInput(e: Event) {
 		const value = (e.target as HTMLInputElement).value;
 		updateSource({ path: value || null });
+	}
+
+	function handleFolderIdInput(e: Event) {
+		const value = (e.target as HTMLInputElement).value;
+		updateSource({ folder_id: value || null });
+	}
+
+	function handleServiceAccountKeyInput(e: Event) {
+		const value = (e.target as HTMLInputElement).value;
+		updateSource({ service_account_key: value || null });
+	}
+
+	function handlePollIntervalInput(e: Event) {
+		const value = parseInt((e.target as HTMLInputElement).value, 10);
+		updateSource({ poll_interval_seconds: isNaN(value) ? 300 : value });
 	}
 
 	async function browseFolder() {
@@ -71,46 +114,114 @@
 <SettingsSection
 	id="sources"
 	title="Content Sources"
-	description="Connect a local notes folder for the Watchtower to index"
-	icon={FolderOpen}
+	description="Connect a content source for the Watchtower to index"
+	icon={SectionIcon}
 >
 	<div class="field-grid">
 		<div class="field full-width">
-			<label class="field-label" for="source_path">Vault / Notes Folder</label>
-			<div class="path-row">
-				<input
-					id="source_path"
-					type="text"
-					class="text-input path-input"
-					value={sourcePath}
-					oninput={handlePathInput}
-					placeholder="~/Documents/my-vault"
-				/>
-				{#if isTauri}
-					<button type="button" class="browse-btn" onclick={browseFolder}>
-						<FolderOpen size={14} />
-						Browse
-					</button>
+			<label class="field-label" for="source_type">Source Type</label>
+			<select
+				id="source_type"
+				class="text-input"
+				value={sourceType}
+				onchange={handleSourceTypeChange}
+			>
+				<option value="local_fs">Local Folder</option>
+				<option value="google_drive">Google Drive</option>
+			</select>
+			<span class="field-hint">
+				Choose where your content lives
+			</span>
+		</div>
+
+		{#if sourceType === 'local_fs'}
+			<div class="field full-width">
+				<label class="field-label" for="source_path">Vault / Notes Folder</label>
+				<div class="path-row">
+					<input
+						id="source_path"
+						type="text"
+						class="text-input path-input"
+						value={sourcePath}
+						oninput={handlePathInput}
+						placeholder="~/Documents/my-vault"
+					/>
+					{#if isTauri}
+						<button type="button" class="browse-btn" onclick={browseFolder}>
+							<FolderOpen size={14} />
+							Browse
+						</button>
+					{/if}
+				</div>
+				<span class="field-hint">
+					{#if isTauri}
+						Click Browse to select your Obsidian vault or notes folder.
+					{:else}
+						Enter the full path to your Obsidian vault or notes folder.
+					{/if}
+				</span>
+				{#if browseError}
+					<span class="field-error">{browseError}</span>
 				{/if}
 			</div>
-			<span class="field-hint">
-				{#if isTauri}
-					Click Browse to select your Obsidian vault or notes folder.
-				{:else}
-					Enter the full path to your Obsidian vault or notes folder.
-				{/if}
-			</span>
-			{#if browseError}
-				<span class="field-error">{browseError}</span>
-			{/if}
-		</div>
+		{:else}
+			<div class="field full-width">
+				<label class="field-label" for="folder_id">Google Drive Folder ID</label>
+				<input
+					id="folder_id"
+					type="text"
+					class="text-input"
+					value={folderId}
+					oninput={handleFolderIdInput}
+					placeholder="1aBcD_eFgHiJkLmNoPqRsTuVwXyZ"
+				/>
+				<span class="field-hint">
+					The folder ID from your Google Drive URL
+				</span>
+			</div>
+
+			<div class="field full-width">
+				<label class="field-label" for="service_account_key">Service Account Key Path</label>
+				<input
+					id="service_account_key"
+					type="text"
+					class="text-input"
+					value={serviceAccountKey}
+					oninput={handleServiceAccountKeyInput}
+					placeholder="~/keys/my-project-sa.json"
+				/>
+				<span class="field-hint">
+					Path to a Google service account JSON key file with Drive read access
+				</span>
+			</div>
+
+			<div class="field full-width">
+				<label class="field-label" for="poll_interval">Poll Interval (seconds)</label>
+				<input
+					id="poll_interval"
+					type="number"
+					class="text-input poll-input"
+					value={pollInterval}
+					oninput={handlePollIntervalInput}
+					min="60"
+					max="86400"
+				/>
+				<span class="field-hint">
+					How often to check Google Drive for changes (minimum 60s)
+				</span>
+			</div>
+		{/if}
 
 		<div class="field full-width">
 			<div class="toggle-row">
 				<div class="toggle-info">
-					<span class="field-label">Watch for Changes</span>
+					<span class="field-label">
+						{sourceType === 'google_drive' ? 'Poll for Changes' : 'Watch for Changes'}
+					</span>
 					<span class="field-hint">
-						Automatically re-index when files are added or modified
+						{sourceType === 'google_drive'
+							? 'Periodically check for new or modified files'
+							: 'Automatically re-index when files are added or modified'}
 					</span>
 				</div>
 				<button
@@ -129,29 +240,31 @@
 			</div>
 		</div>
 
-		<div class="field full-width">
-			<div class="toggle-row">
-				<div class="toggle-info">
-					<span class="field-label">Loop Back</span>
-					<span class="field-hint">
-						Write performance metadata back into source file frontmatter
-					</span>
+		{#if sourceType === 'local_fs'}
+			<div class="field full-width">
+				<div class="toggle-row">
+					<div class="toggle-info">
+						<span class="field-label">Loop Back</span>
+						<span class="field-hint">
+							Write performance metadata back into source file frontmatter
+						</span>
+					</div>
+					<button
+						type="button"
+						class="toggle"
+						class:active={sourceLoopBack}
+						onclick={toggleLoopBack}
+						role="switch"
+						aria-checked={sourceLoopBack}
+						aria-label="Toggle loop back"
+					>
+						<span class="toggle-track">
+							<span class="toggle-thumb"></span>
+						</span>
+					</button>
 				</div>
-				<button
-					type="button"
-					class="toggle"
-					class:active={sourceLoopBack}
-					onclick={toggleLoopBack}
-					role="switch"
-					aria-checked={sourceLoopBack}
-					aria-label="Toggle loop back"
-				>
-					<span class="toggle-track">
-						<span class="toggle-thumb"></span>
-					</span>
-				</button>
 			</div>
-		</div>
+		{/if}
 
 		<div class="field full-width">
 			<span class="field-label">File Patterns</span>
@@ -224,6 +337,14 @@
 
 	.path-input {
 		flex: 1;
+	}
+
+	.poll-input {
+		max-width: 160px;
+	}
+
+	select.text-input {
+		cursor: pointer;
 	}
 
 	.browse-btn {

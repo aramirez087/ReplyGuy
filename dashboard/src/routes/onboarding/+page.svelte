@@ -90,14 +90,30 @@
 				approval_mode: data.approval_mode,
 			};
 
-			if (data.vault_path) {
+			if (data.source_type === 'google_drive' && data.folder_id) {
+				config.content_sources = {
+					sources: [{
+						source_type: 'google_drive',
+						path: null,
+						folder_id: data.folder_id,
+						service_account_key: data.service_account_key || null,
+						watch: data.vault_watch,
+						file_patterns: ['*.md', '*.txt'],
+						loop_back_enabled: false,
+						poll_interval_seconds: data.poll_interval_seconds || 300,
+					}]
+				};
+			} else if (data.vault_path) {
 				config.content_sources = {
 					sources: [{
 						source_type: 'local_fs',
 						path: data.vault_path,
+						folder_id: null,
+						service_account_key: null,
 						watch: data.vault_watch,
 						file_patterns: ['*.md', '*.txt'],
 						loop_back_enabled: data.vault_loop_back,
+						poll_interval_seconds: null,
 					}]
 				};
 			}

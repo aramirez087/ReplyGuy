@@ -628,6 +628,53 @@ pub async fn get_seeds_for_context(
         .collect())
 }
 
+/// Ensure a "google_drive" source context exists for the given folder ID, returning its ID.
+///
+/// Creates the source if it does not exist. Used by the Watchtower to register
+/// configured Google Drive sources.
+pub async fn ensure_google_drive_source(
+    pool: &DbPool,
+    folder_id: &str,
+    config_json: &str,
+) -> Result<i64, StorageError> {
+    if let Some(ctx) = find_source_by_folder_id(pool, folder_id).await? {
+        return Ok(ctx.id);
+    }
+    insert_source_context(pool, "google_drive", config_json).await
+}
+
+/// Find a source context by Google Drive folder ID in config_json.
+pub async fn find_source_by_folder_id(
+    pool: &DbPool,
+    folder_id: &str,
+) -> Result<Option<SourceContext>, StorageError> {
+    let row: Option<SourceContextRow> = sqlx::query_as(
+        "SELECT id, account_id, source_type, config_json, sync_cursor, \
+                    status, error_message, created_at, updated_at \
+             FROM source_contexts \
+             WHERE account_id = ? AND source_type = 'google_drive' AND status = 'active' \
+               AND config_json LIKE '%' || ? || '%' \
+             LIMIT 1",
+    )
+    .bind(DEFAULT_ACCOUNT_ID)
+    .bind(folder_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(row.map(|r| SourceContext {
+        id: r.0,
+        account_id: r.1,
+        source_type: r.2,
+        config_json: r.3,
+        sync_cursor: r.4,
+        status: r.5,
+        error_message: r.6,
+        created_at: r.7,
+        updated_at: r.8,
+    }))
+}
+
 /// Ensure a "manual" source context exists for inline ingestion, returning its ID.
 ///
 /// Creates the source if it does not exist. This is used by the ingest API
