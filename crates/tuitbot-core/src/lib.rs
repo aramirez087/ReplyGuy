@@ -2,6 +2,7 @@
 ///
 /// This crate contains all business logic including configuration management,
 /// error types, startup helpers, and shared types used by the CLI binary.
+pub mod auth;
 pub mod automation;
 pub mod config;
 pub mod content;
@@ -10,6 +11,7 @@ pub mod error;
 pub mod llm;
 pub mod mcp_policy;
 pub mod mutation_gateway;
+pub mod net;
 pub mod safety;
 pub mod scoring;
 pub mod startup;
