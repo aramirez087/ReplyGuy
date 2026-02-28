@@ -144,6 +144,14 @@ pub fn matches_patterns(path: &Path, patterns: &[String]) -> bool {
     false
 }
 
+/// Convert a relative path into a stable slash-delimited string across platforms.
+fn relative_path_string(path: &Path) -> String {
+    path.iter()
+        .map(|part| part.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 // ---------------------------------------------------------------------------
 // Shared ingest pipeline
 // ---------------------------------------------------------------------------
@@ -545,7 +553,7 @@ impl WatchtowerLoop {
 
                 // Compute relative path.
                 let rel = match path.strip_prefix(base_path) {
-                    Ok(r) => r.to_string_lossy().to_string(),
+                    Ok(r) => relative_path_string(r),
                     Err(_) => return,
                 };
 
@@ -622,7 +630,7 @@ impl WatchtowerLoop {
                 Self::walk_directory(base, &path, patterns, out)?;
             } else if file_type.is_file() && matches_patterns(&path, patterns) {
                 if let Ok(rel) = path.strip_prefix(base) {
-                    out.push(rel.to_string_lossy().to_string());
+                    out.push(relative_path_string(rel));
                 }
             }
         }
