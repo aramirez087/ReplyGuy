@@ -5,15 +5,25 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tuitbot_core::auth::error::AuthError;
+use tuitbot_core::auth::{passphrase, session};
 use tuitbot_core::config::{Config, LlmConfig};
 use tuitbot_core::error::ConfigError;
 use tuitbot_core::llm::factory::create_provider;
 
 use crate::error::ApiError;
 use crate::state::AppState;
+
+/// Request body for the optional claim object within `POST /api/settings/init`.
+#[derive(Deserialize)]
+struct ClaimRequest {
+    passphrase: String,
+}
 
 // ---------------------------------------------------------------------------
 // Request / response types
@@ -112,9 +122,11 @@ fn config_errors_to_response(errors: Vec<ConfigError>) -> Vec<ValidationErrorIte
 /// pages (e.g. onboarding) can adapt their source-type UI.
 pub async fn config_status(State(state): State<Arc<AppState>>) -> Json<Value> {
     let configured = state.config_path.exists();
+    let claimed = passphrase::is_claimed(&state.data_dir);
     let capabilities = state.deployment_mode.capabilities();
     Json(serde_json::json!({
         "configured": configured,
+        "claimed": claimed,
         "deployment_mode": state.deployment_mode,
         "capabilities": capabilities,
     }))
@@ -124,10 +136,13 @@ pub async fn config_status(State(state): State<Arc<AppState>>) -> Json<Value> {
 ///
 /// Accepts the full configuration as JSON, validates it, converts to TOML,
 /// and writes to `config_path`. Returns 409 if config already exists.
+///
+/// Optionally accepts a `claim` object containing a passphrase to establish
+/// the instance passphrase and return a session cookie in one atomic step.
 pub async fn init_settings(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<Value>,
-) -> Result<Json<Value>, ApiError> {
+    Json(mut body): Json<Value>,
+) -> Result<impl IntoResponse, ApiError> {
     if state.config_path.exists() {
         return Err(ApiError::Conflict(
             "configuration already exists; use PATCH /api/settings to update".to_string(),
@@ -138,6 +153,26 @@ pub async fn init_settings(
         return Err(ApiError::BadRequest(
             "request body must be a JSON object".to_string(),
         ));
+    }
+
+    // Extract and remove `claim` before TOML conversion (it's not a config field).
+    let claim: Option<ClaimRequest> = body
+        .as_object_mut()
+        .and_then(|obj| obj.remove("claim"))
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| ApiError::BadRequest(format!("invalid claim object: {e}")))?;
+
+    // Validate claim early — before any file I/O.
+    if let Some(ref claim) = claim {
+        if claim.passphrase.len() < 8 {
+            return Err(ApiError::BadRequest(
+                "passphrase must be at least 8 characters".into(),
+            ));
+        }
+        if passphrase::is_claimed(&state.data_dir) {
+            return Err(ApiError::Conflict("instance already claimed".into()));
+        }
     }
 
     // Convert JSON to TOML.
@@ -153,10 +188,14 @@ pub async fn init_settings(
 
     if let Err(errors) = config.validate() {
         let items = config_errors_to_response(errors);
-        return Ok(Json(serde_json::json!({
-            "status": "validation_failed",
-            "errors": items
-        })));
+        return Ok((
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "status": "validation_failed",
+                "errors": items
+            })),
+        )
+            .into_response());
     }
 
     // Ensure parent directory exists and write.
@@ -180,13 +219,59 @@ pub async fn init_settings(
             std::fs::set_permissions(&state.config_path, std::fs::Permissions::from_mode(0o600));
     }
 
-    let json = serde_json::to_value(config)
+    let json = serde_json::to_value(&config)
         .map_err(|e| ApiError::BadRequest(format!("failed to serialize config: {e}")))?;
 
-    Ok(Json(serde_json::json!({
-        "status": "created",
-        "config": json
-    })))
+    // If claim present, create passphrase hash + session.
+    if let Some(claim) = claim {
+        passphrase::create_passphrase_hash(&state.data_dir, &claim.passphrase).map_err(
+            |e| match e {
+                AuthError::AlreadyClaimed => ApiError::Conflict("instance already claimed".into()),
+                other => ApiError::Internal(format!("failed to create passphrase: {other}")),
+            },
+        )?;
+
+        // Update in-memory hash.
+        let new_hash = passphrase::load_passphrase_hash(&state.data_dir)
+            .map_err(|e| ApiError::Internal(format!("failed to load passphrase hash: {e}")))?;
+        {
+            let mut hash = state.passphrase_hash.write().await;
+            *hash = new_hash;
+        }
+
+        // Create session (same pattern as login route).
+        let new_session = session::create_session(&state.db)
+            .await
+            .map_err(|e| ApiError::Internal(format!("failed to create session: {e}")))?;
+
+        let cookie = format!(
+            "tuitbot_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800",
+            new_session.raw_token,
+        );
+
+        tracing::info!("instance claimed via /settings/init");
+
+        return Ok((
+            StatusCode::OK,
+            [(axum::http::header::SET_COOKIE, cookie)],
+            Json(serde_json::json!({
+                "status": "created",
+                "config": json,
+                "csrf_token": new_session.csrf_token,
+            })),
+        )
+            .into_response());
+    }
+
+    // No claim — return existing response shape (backward compatible).
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "status": "created",
+            "config": json
+        })),
+    )
+        .into_response())
 }
 
 // ---------------------------------------------------------------------------
