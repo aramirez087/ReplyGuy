@@ -31,6 +31,7 @@ Everything else uses defaults. Run `tuitbot init --advanced` for the full 8-step
 | Section | Purpose |
 |---------|---------|
 | `mode` | Operating mode (`autopilot` or `composer`) |
+| `deployment_mode` | Deployment mode (`desktop`, `self_host`, or `cloud`) |
 | `[x_api]` | OAuth credentials for X integration |
 | `[business]` | Product profile, keywords, voice, persona |
 | `[llm]` | LLM provider, model, and API key |
@@ -43,6 +44,7 @@ Everything else uses defaults. Run `tuitbot init --advanced` for the full 8-step
 | `[logging]` | Log level and status interval |
 | `[mcp_policy]` | MCP mutation policy enforcement |
 | `[circuit_breaker]` | X API rate-limit protection |
+| `[content_sources]` | Content source configuration (local folders, Google Drive) |
 
 ## Progressive Enrichment
 
@@ -77,6 +79,30 @@ export TUITBOT_MODE=composer
 
 Setting `mode = "composer"` implies `approval_mode = true`. See the [Composer Mode guide](composer-mode.md) for details.
 
+## Deployment Mode
+
+Controls which content source types and features are available based on where the server runs.
+
+| Mode | Context | Local folder | Google Drive | Manual ingest |
+|------|---------|-------------|-------------|---------------|
+| `desktop` (default) | Tauri native app | Yes | Yes | Yes |
+| `self_host` | Docker/VPS browser | Yes | Yes | Yes |
+| `cloud` | Managed cloud | **No** | Yes | Yes |
+
+```toml
+deployment_mode = "self_host"
+```
+
+```bash
+export TUITBOT_DEPLOYMENT_MODE=self_host
+```
+
+Defaults to `desktop` — existing users need no config changes. The env var accepts `self_host`, `selfhost`, and `self-host` as synonyms for the self-hosted mode.
+
+Deployment mode is orthogonal to operating mode. A cloud user can run in Composer mode; a desktop user can run in Autopilot mode.
+
+In cloud mode, validation rejects `local_fs` content sources on save. Pre-existing `local_fs` entries in the config file are preserved (not deleted) but skipped at runtime with a log warning.
+
 ## Safety Defaults
 
 The default config is intentionally conservative:
@@ -101,6 +127,7 @@ export TUITBOT_X_API__CLIENT_SECRET=your_secret
 export TUITBOT_LLM__API_KEY=sk-your-key
 export TUITBOT_LLM__PROVIDER=openai
 export TUITBOT_MODE=composer
+export TUITBOT_DEPLOYMENT_MODE=self_host
 ```
 
 **Precedence:** CLI flags > environment variables > `config.toml` > built-in defaults.
@@ -182,6 +209,81 @@ After any config change, verify with:
 ```bash
 tuitbot test                    # full diagnostic check
 tuitbot settings --show         # read-only config view
+```
+
+## Content Sources
+
+Configure external content sources for the Watchtower ingest pipeline.
+Content is ingested as notes, processed into draft seeds, and used to
+enrich AI-generated content via Winning DNA retrieval.
+
+> **Deployment mode note:** `local_fs` sources require `local_folder` capability, available only in Desktop and SelfHost modes. Cloud mode supports `google_drive` and manual ingest only. See [Deployment Mode](#deployment-mode) above.
+
+### Local Folder Source
+
+```toml
+[[content_sources.sources]]
+source_type = "local_fs"
+path = "~/Obsidian/my-vault"
+watch = true
+file_patterns = ["*.md", "*.txt"]
+loop_back_enabled = true
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `source_type` | `"local_fs"` | Source type identifier |
+| `path` | — | Path to content directory (supports `~` expansion) |
+| `watch` | `true` | Watch for real-time file changes |
+| `file_patterns` | `["*.md", "*.txt"]` | Glob patterns for files to ingest |
+| `loop_back_enabled` | `true` | Write tweet metadata back to source file front-matter |
+
+### Google Drive Source
+
+```toml
+[[content_sources.sources]]
+source_type = "google_drive"
+folder_id = "1abc..."
+service_account_key = "~/.tuitbot/service-account.json"
+watch = true
+file_patterns = ["*.md", "*.txt"]
+poll_interval_seconds = 300
+loop_back_enabled = false
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `source_type` | — | Must be `"google_drive"` |
+| `folder_id` | — | Google Drive folder ID to monitor |
+| `service_account_key` | — | Path to Google service account JSON key file |
+| `poll_interval_seconds` | `300` | Seconds between Drive API polls |
+| `loop_back_enabled` | `false` | Not supported for Drive (read-only) |
+
+### Operational Limits
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Max file size | Unbounded (content truncated at 2000 chars for seed extraction) | Full content stored in DB |
+| File types | `.md`, `.txt` only | Configurable via `file_patterns` |
+| Dedup | SHA-256 content hash per (source, path) | Unchanged content is skipped |
+| Seed generation | 5 nodes per batch, every 5 minutes | Low-priority background worker |
+| RAG context | Max 5 ancestors or 5 cold-start seeds, 2000 chars | Injected into LLM prompts |
+
+### Manual Ingest API
+
+Content can also be submitted directly via the HTTP API:
+
+```bash
+curl -X POST http://localhost:3001/api/ingest \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "inline_nodes": [{
+      "relative_path": "idea.md",
+      "body_text": "# My Idea\nContent here...",
+      "title": "My Idea"
+    }]
+  }'
 ```
 
 ## Production Guidance

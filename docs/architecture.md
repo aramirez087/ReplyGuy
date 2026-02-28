@@ -91,10 +91,34 @@ Autopilot ──uses──> Workflow ──uses──> Toolkit ──uses──>
 
 | Crate | Role |
 |-------|------|
-| `tuitbot-core` | All business logic: three layers above, plus `x_api`, `storage`, `llm`, `config`, `scoring`, `safety`, `content`, `strategy` |
+| `tuitbot-core` | All business logic: three layers above, plus `x_api`, `storage`, `llm`, `config`, `scoring`, `safety`, `content`, `strategy`, `source`, `context` |
 | `tuitbot-cli` | CLI binary: parsing, logging, dispatch |
 | `tuitbot-mcp` | MCP server: AI agent integration, 140 tools across 4 profiles |
 | `tuitbot-server` | Axum HTTP/WS API: thin layer over core |
+
+### Key Modules
+
+| Module | Notes |
+|--------|-------|
+| `core/source/` | `ContentSourceProvider` trait; `LocalFsProvider`, `GoogleDriveProvider` implementations |
+| `core/automation/watchtower/` | File watcher, remote polling, shared `ingest_content()` pipeline, loop-back metadata |
+| `core/automation/seed_worker.rs` | Background LLM worker extracting draft seeds from content nodes |
+| `core/context/winning_dna.rs` | Archetype classification, engagement scoring, ancestor retrieval, cold-start seeds |
+| `core/storage/watchtower/` | CRUD for `source_contexts`, `content_nodes`, `draft_seeds` tables |
+
+## Deployment Modes
+
+Tuitbot supports three deployment modes controlling which features and source types are available:
+
+| Mode | Context | Capabilities |
+|------|---------|-------------|
+| **Desktop** (default) | Native Tauri app | Full local filesystem + native file picker + remote sources |
+| **SelfHost** | Docker/VPS browser UI | Local filesystem (server-side) + remote sources |
+| **Cloud** | Managed cloud service | Remote sources only (no local filesystem access) |
+
+Deployment mode is set via `TUITBOT_DEPLOYMENT_MODE` env var or `deployment_mode` in config. Default is `Desktop`. Capabilities are derived from mode — they are not individually configurable. See `docs/roadmap/cold-start-watchtower-rag/deployment-capability-matrix.md` for the full matrix.
+
+`DeploymentMode` is orthogonal to `OperatingMode` (Autopilot/Composer). A cloud user can run in Composer mode; a desktop user can run in Autopilot mode.
 
 ## Frontend Stack & Modes
 
@@ -108,6 +132,34 @@ Autopilot ──uses──> Workflow ──uses──> Toolkit ──uses──>
 - Migrations embedded from crate-local migrations directory
 - Single-process lock prevents overlapping run/tick instances
 - 90-day retention, dedup records never deleted
+
+## Content Source Pipeline (Watchtower)
+
+The Watchtower subsystem ingests content from external sources, extracts draft seeds, and enriches the content generation pipeline via Winning DNA retrieval.
+
+### Provider Model
+
+Content sources implement the `ContentSourceProvider` trait (`core::source/`). Source availability is gated by the deployment mode capability matrix — `local_fs` requires `local_folder` capability (Desktop/SelfHost only).
+
+| Provider | Module | Mechanism | Status | Modes |
+|----------|--------|-----------|--------|-------|
+| `local_fs` | `source/local_fs.rs` | `notify` watcher + fallback polling | Stable | Desktop, SelfHost |
+| `google_drive` | `source/google_drive.rs` | Interval polling via Drive API v3 | Stable (read-only) | All |
+| `manual` | (inline via API) | Direct `POST /api/ingest` | Stable | All |
+
+### Pipeline Flow
+
+```
+Source → scan/watch → ingest_content() → content_nodes → SeedWorker → draft_seeds → Winning DNA → draft pipeline
+```
+
+### Storage Tables
+
+| Table | Purpose |
+|-------|---------|
+| `source_contexts` | Registered sources with sync state |
+| `content_nodes` | Ingested content with dedup by (source_id, relative_path, hash) |
+| `draft_seeds` | Pre-computed hooks/angles for cold-start context |
 
 ## Runtime Loops
 
@@ -124,6 +176,8 @@ The runtime spawns concurrent loops whose behavior depends on the operating mode
 | Approval poster | Active | Active |
 | Analytics snapshots | Active | Active |
 | Token refresh | Active | Active |
+| Watchtower (content sources) | Active | Active |
+| Seed worker | Active | Active |
 
 Strategy reports run weekly (and on-demand via API) in both modes.
 

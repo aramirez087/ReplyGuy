@@ -2,6 +2,7 @@
 
 use super::env_overrides::{parse_env_bool, parse_env_u32, split_csv};
 use super::*;
+use crate::config::types::{DeploymentCapabilities, DeploymentMode};
 use std::env;
 
 #[test]
@@ -449,4 +450,431 @@ fn is_enriched_true_with_brand_voice() {
     let mut profile = BusinessProfile::quickstart("App".to_string(), vec!["test".to_string()]);
     profile.brand_voice = Some("Friendly and casual".to_string());
     assert!(profile.is_enriched());
+}
+
+// --- Content sources config tests ---
+
+#[test]
+fn content_sources_config_serde_roundtrip() {
+    let toml_str = r#"
+[[content_sources.sources]]
+source_type = "local_fs"
+path = "~/notes/vault"
+watch = true
+file_patterns = ["*.md", "*.txt"]
+loop_back_enabled = true
+"#;
+    let config: Config = toml::from_str(toml_str).expect("valid TOML");
+    assert_eq!(config.content_sources.sources.len(), 1);
+    let source = &config.content_sources.sources[0];
+    assert_eq!(source.source_type, "local_fs");
+    assert_eq!(source.path.as_deref(), Some("~/notes/vault"));
+    assert!(source.watch);
+    assert_eq!(source.file_patterns, vec!["*.md", "*.txt"]);
+    assert!(source.loop_back_enabled);
+}
+
+#[test]
+fn content_sources_defaults() {
+    let toml_str = r#"
+[[content_sources.sources]]
+path = "~/notes"
+"#;
+    let config: Config = toml::from_str(toml_str).expect("valid TOML");
+    let source = &config.content_sources.sources[0];
+    assert_eq!(source.source_type, "local_fs");
+    assert!(source.watch);
+    assert_eq!(source.file_patterns, vec!["*.md", "*.txt"]);
+    assert!(source.loop_back_enabled);
+}
+
+#[test]
+fn content_sources_optional_in_config() {
+    let toml_str = r#"
+[business]
+product_name = "Test"
+"#;
+    let config: Config = toml::from_str(toml_str).expect("valid TOML");
+    assert!(config.content_sources.sources.is_empty());
+}
+
+#[test]
+fn content_sources_json_patch_roundtrip() {
+    // Simulates the JSON the frontend sends via PATCH /api/settings
+    let patch = serde_json::json!({
+        "content_sources": {
+            "sources": [{
+                "source_type": "local_fs",
+                "path": "~/notes/vault",
+                "watch": true,
+                "file_patterns": ["*.md", "*.txt"],
+                "loop_back_enabled": true
+            }]
+        }
+    });
+    let config: Config = serde_json::from_value(patch).expect("valid JSON");
+    assert_eq!(config.content_sources.sources.len(), 1);
+    let source = &config.content_sources.sources[0];
+    assert_eq!(source.source_type, "local_fs");
+    assert_eq!(source.path.as_deref(), Some("~/notes/vault"));
+    assert!(source.watch);
+    assert_eq!(source.file_patterns, vec!["*.md", "*.txt"]);
+    assert!(source.loop_back_enabled);
+
+    // Round-trip back to TOML and verify
+    let toml_str = toml::to_string_pretty(&config).expect("serialize to TOML");
+    let roundtripped: Config = toml::from_str(&toml_str).expect("re-parse TOML");
+    assert_eq!(roundtripped.content_sources.sources.len(), 1);
+    assert_eq!(
+        roundtripped.content_sources.sources[0].path.as_deref(),
+        Some("~/notes/vault")
+    );
+}
+
+#[test]
+fn content_sources_empty_json_patch() {
+    // Frontend sends empty sources when user hasn't configured one
+    let patch = serde_json::json!({
+        "content_sources": {
+            "sources": []
+        }
+    });
+    let config: Config = serde_json::from_value(patch).expect("valid JSON");
+    assert!(config.content_sources.sources.is_empty());
+}
+
+// --- Google Drive content sources ---
+
+#[test]
+fn content_sources_google_drive_roundtrip() {
+    let toml_str = r#"
+[[content_sources.sources]]
+source_type = "google_drive"
+folder_id = "1aBcD_eFgHiJkLmNoPqRsTuVwXyZ"
+service_account_key = "~/keys/my-project-sa.json"
+watch = true
+file_patterns = ["*.md", "*.txt"]
+loop_back_enabled = false
+poll_interval_seconds = 600
+"#;
+    let config: Config = toml::from_str(toml_str).expect("valid TOML");
+    assert_eq!(config.content_sources.sources.len(), 1);
+    let source = &config.content_sources.sources[0];
+    assert_eq!(source.source_type, "google_drive");
+    assert_eq!(
+        source.folder_id.as_deref(),
+        Some("1aBcD_eFgHiJkLmNoPqRsTuVwXyZ")
+    );
+    assert_eq!(
+        source.service_account_key.as_deref(),
+        Some("~/keys/my-project-sa.json")
+    );
+    assert!(source.path.is_none());
+    assert!(!source.loop_back_enabled);
+    assert_eq!(source.poll_interval_seconds, Some(600));
+
+    // Round-trip to TOML and back.
+    let toml_out = toml::to_string_pretty(&config).expect("serialize");
+    let roundtripped: Config = toml::from_str(&toml_out).expect("re-parse");
+    let rt_src = &roundtripped.content_sources.sources[0];
+    assert_eq!(rt_src.source_type, "google_drive");
+    assert_eq!(
+        rt_src.folder_id.as_deref(),
+        Some("1aBcD_eFgHiJkLmNoPqRsTuVwXyZ")
+    );
+}
+
+#[test]
+fn content_sources_mixed_sources_roundtrip() {
+    let toml_str = r#"
+[[content_sources.sources]]
+source_type = "local_fs"
+path = "~/notes/vault"
+watch = true
+file_patterns = ["*.md"]
+loop_back_enabled = true
+
+[[content_sources.sources]]
+source_type = "google_drive"
+folder_id = "abc123"
+service_account_key = "/etc/keys/sa.json"
+watch = true
+file_patterns = ["*.md", "*.txt"]
+loop_back_enabled = false
+poll_interval_seconds = 300
+"#;
+    let config: Config = toml::from_str(toml_str).expect("valid TOML");
+    assert_eq!(config.content_sources.sources.len(), 2);
+
+    assert_eq!(config.content_sources.sources[0].source_type, "local_fs");
+    assert_eq!(
+        config.content_sources.sources[0].path.as_deref(),
+        Some("~/notes/vault")
+    );
+    assert!(config.content_sources.sources[0].folder_id.is_none());
+
+    assert_eq!(
+        config.content_sources.sources[1].source_type,
+        "google_drive"
+    );
+    assert_eq!(
+        config.content_sources.sources[1].folder_id.as_deref(),
+        Some("abc123")
+    );
+    assert!(config.content_sources.sources[1].path.is_none());
+}
+
+#[test]
+fn content_sources_google_drive_json_patch() {
+    let patch = serde_json::json!({
+        "content_sources": {
+            "sources": [{
+                "source_type": "google_drive",
+                "path": null,
+                "folder_id": "drive_folder_abc",
+                "service_account_key": "/path/to/key.json",
+                "watch": true,
+                "file_patterns": ["*.md", "*.txt"],
+                "loop_back_enabled": false,
+                "poll_interval_seconds": 300
+            }]
+        }
+    });
+    let config: Config = serde_json::from_value(patch).expect("valid JSON");
+    assert_eq!(config.content_sources.sources.len(), 1);
+    let source = &config.content_sources.sources[0];
+    assert_eq!(source.source_type, "google_drive");
+    assert_eq!(source.folder_id.as_deref(), Some("drive_folder_abc"));
+    assert_eq!(
+        source.service_account_key.as_deref(),
+        Some("/path/to/key.json")
+    );
+    assert!(source.path.is_none());
+    assert_eq!(source.poll_interval_seconds, Some(300));
+}
+
+// --- Deployment mode tests ---
+
+#[test]
+fn deployment_mode_desktop_allows_local_fs() {
+    let mode = DeploymentMode::Desktop;
+    assert!(mode.allows_source_type("local_fs"));
+    assert!(mode.allows_source_type("google_drive"));
+    assert!(mode.allows_source_type("manual"));
+}
+
+#[test]
+fn deployment_mode_self_host_allows_local_fs() {
+    let mode = DeploymentMode::SelfHost;
+    assert!(mode.allows_source_type("local_fs"));
+    assert!(mode.allows_source_type("google_drive"));
+    assert!(mode.allows_source_type("manual"));
+}
+
+#[test]
+fn deployment_mode_cloud_rejects_local_fs() {
+    let mode = DeploymentMode::Cloud;
+    assert!(!mode.allows_source_type("local_fs"));
+    assert!(mode.allows_source_type("google_drive"));
+    assert!(mode.allows_source_type("manual"));
+}
+
+#[test]
+fn deployment_mode_unknown_source_type_rejected() {
+    assert!(!DeploymentMode::Desktop.allows_source_type("unknown"));
+    assert!(!DeploymentMode::Cloud.allows_source_type("ftp"));
+}
+
+#[test]
+fn deployment_mode_capabilities_desktop() {
+    let caps = DeploymentMode::Desktop.capabilities();
+    assert!(caps.local_folder);
+    assert!(caps.manual_local_path);
+    assert!(caps.google_drive);
+    assert!(caps.inline_ingest);
+    assert!(caps.file_picker_native);
+}
+
+#[test]
+fn deployment_mode_capabilities_self_host() {
+    let caps = DeploymentMode::SelfHost.capabilities();
+    assert!(caps.local_folder);
+    assert!(caps.manual_local_path);
+    assert!(caps.google_drive);
+    assert!(caps.inline_ingest);
+    assert!(!caps.file_picker_native);
+}
+
+#[test]
+fn deployment_mode_capabilities_cloud() {
+    let caps = DeploymentMode::Cloud.capabilities();
+    assert!(!caps.local_folder);
+    assert!(!caps.manual_local_path);
+    assert!(caps.google_drive);
+    assert!(caps.inline_ingest);
+    assert!(!caps.file_picker_native);
+}
+
+#[test]
+fn deployment_mode_serde_roundtrip_toml() {
+    let toml_str = r#"
+deployment_mode = "self_host"
+
+[business]
+product_name = "Test"
+"#;
+    let config: Config = toml::from_str(toml_str).expect("valid TOML");
+    assert_eq!(config.deployment_mode, DeploymentMode::SelfHost);
+
+    let serialized = toml::to_string_pretty(&config).expect("serialize");
+    let roundtripped: Config = toml::from_str(&serialized).expect("re-parse");
+    assert_eq!(roundtripped.deployment_mode, DeploymentMode::SelfHost);
+}
+
+#[test]
+fn deployment_mode_serde_roundtrip_json() {
+    let json = serde_json::json!({
+        "deployment_mode": "cloud"
+    });
+    let config: Config = serde_json::from_value(json).expect("valid JSON");
+    assert_eq!(config.deployment_mode, DeploymentMode::Cloud);
+
+    let serialized = serde_json::to_value(&config).expect("serialize");
+    let roundtripped: Config = serde_json::from_value(serialized).expect("re-parse");
+    assert_eq!(roundtripped.deployment_mode, DeploymentMode::Cloud);
+}
+
+#[test]
+fn deployment_mode_default_is_desktop() {
+    let config = Config::default();
+    assert_eq!(config.deployment_mode, DeploymentMode::Desktop);
+}
+
+#[test]
+fn deployment_mode_missing_from_config_defaults_to_desktop() {
+    let toml_str = r#"
+[business]
+product_name = "Test"
+product_keywords = ["test"]
+"#;
+    let config: Config = toml::from_str(toml_str).expect("valid TOML");
+    assert_eq!(config.deployment_mode, DeploymentMode::Desktop);
+}
+
+#[test]
+fn deployment_mode_env_var_override() {
+    env::set_var("TUITBOT_DEPLOYMENT_MODE", "cloud");
+    let mut config = Config::default();
+    config.apply_env_overrides().expect("env override");
+    assert_eq!(config.deployment_mode, DeploymentMode::Cloud);
+    env::remove_var("TUITBOT_DEPLOYMENT_MODE");
+}
+
+#[test]
+fn deployment_mode_env_var_self_host_variants() {
+    for variant in &["self_host", "selfhost", "self-host"] {
+        env::set_var("TUITBOT_DEPLOYMENT_MODE", variant);
+        let mut config = Config::default();
+        config.apply_env_overrides().expect("env override");
+        assert_eq!(config.deployment_mode, DeploymentMode::SelfHost);
+        env::remove_var("TUITBOT_DEPLOYMENT_MODE");
+    }
+}
+
+#[test]
+fn deployment_mode_env_var_invalid() {
+    env::set_var("TUITBOT_DEPLOYMENT_MODE", "invalid_mode");
+    let mut config = Config::default();
+    let result = config.apply_env_overrides();
+    assert!(result.is_err());
+    env::remove_var("TUITBOT_DEPLOYMENT_MODE");
+}
+
+#[test]
+fn validate_local_fs_source_rejected_in_cloud_mode() {
+    let mut config = Config::default();
+    config.business.product_name = "Test".to_string();
+    config.business.product_keywords = vec!["test".to_string()];
+    config.llm.provider = "ollama".to_string();
+    config.deployment_mode = DeploymentMode::Cloud;
+    config.content_sources.sources.push(ContentSourceEntry {
+        source_type: "local_fs".to_string(),
+        path: Some("~/notes/vault".to_string()),
+        folder_id: None,
+        service_account_key: None,
+        watch: true,
+        file_patterns: vec!["*.md".to_string()],
+        loop_back_enabled: true,
+        poll_interval_seconds: None,
+    });
+    let errors = config.validate().unwrap_err();
+    assert!(errors.iter().any(|e| matches!(
+        e,
+        ConfigError::InvalidValue { field, message }
+            if field.contains("content_sources.sources[0]")
+            && message.contains("cloud")
+    )));
+}
+
+#[test]
+fn validate_google_drive_source_allowed_in_cloud_mode() {
+    let mut config = Config::default();
+    config.business.product_name = "Test".to_string();
+    config.business.product_keywords = vec!["test".to_string()];
+    config.llm.provider = "ollama".to_string();
+    config.deployment_mode = DeploymentMode::Cloud;
+    config.content_sources.sources.push(ContentSourceEntry {
+        source_type: "google_drive".to_string(),
+        path: None,
+        folder_id: Some("abc123".to_string()),
+        service_account_key: Some("/keys/sa.json".to_string()),
+        watch: true,
+        file_patterns: vec!["*.md".to_string()],
+        loop_back_enabled: false,
+        poll_interval_seconds: Some(300),
+    });
+    assert!(config.validate().is_ok());
+}
+
+#[test]
+fn validate_local_fs_source_allowed_in_desktop_mode() {
+    let mut config = Config::default();
+    config.business.product_name = "Test".to_string();
+    config.business.product_keywords = vec!["test".to_string()];
+    config.llm.provider = "ollama".to_string();
+    config.deployment_mode = DeploymentMode::Desktop;
+    config.content_sources.sources.push(ContentSourceEntry {
+        source_type: "local_fs".to_string(),
+        path: Some("~/notes".to_string()),
+        folder_id: None,
+        service_account_key: None,
+        watch: true,
+        file_patterns: vec!["*.md".to_string()],
+        loop_back_enabled: true,
+        poll_interval_seconds: None,
+    });
+    assert!(config.validate().is_ok());
+}
+
+#[test]
+fn deployment_capabilities_serde_json_roundtrip() {
+    let caps = DeploymentCapabilities {
+        local_folder: true,
+        manual_local_path: false,
+        google_drive: true,
+        inline_ingest: true,
+        file_picker_native: false,
+    };
+    let json = serde_json::to_value(&caps).expect("serialize");
+    assert_eq!(json["local_folder"], true);
+    assert_eq!(json["manual_local_path"], false);
+    let roundtripped: DeploymentCapabilities = serde_json::from_value(json).expect("deserialize");
+    assert_eq!(roundtripped, caps);
+}
+
+#[test]
+fn deployment_mode_display() {
+    assert_eq!(DeploymentMode::Desktop.to_string(), "desktop");
+    assert_eq!(DeploymentMode::SelfHost.to_string(), "self_host");
+    assert_eq!(DeploymentMode::Cloud.to_string(), "cloud");
 }

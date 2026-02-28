@@ -14,6 +14,7 @@ pub mod mutation_gateway;
 pub mod net;
 pub mod safety;
 pub mod scoring;
+pub mod source;
 pub mod startup;
 pub mod storage;
 pub mod strategy;

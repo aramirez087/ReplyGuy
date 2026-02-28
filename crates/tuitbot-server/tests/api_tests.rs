@@ -33,6 +33,9 @@ async fn test_router() -> axum::Router {
         content_generators: Mutex::new(std::collections::HashMap::new()),
         runtimes: Mutex::new(std::collections::HashMap::new()),
         circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: Default::default(),
     });
 
     tuitbot_server::build_router(state)
@@ -244,6 +247,9 @@ async fn approval_stats_returns_counts() {
         content_generators: Mutex::new(std::collections::HashMap::new()),
         runtimes: Mutex::new(std::collections::HashMap::new()),
         circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: Default::default(),
     });
     let router = tuitbot_server::build_router(state);
 
@@ -286,6 +292,9 @@ async fn approval_list_with_status_filter() {
         content_generators: Mutex::new(std::collections::HashMap::new()),
         runtimes: Mutex::new(std::collections::HashMap::new()),
         circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: Default::default(),
     });
     let router = tuitbot_server::build_router(state);
 
@@ -338,6 +347,9 @@ async fn approval_edit_content() {
         content_generators: Mutex::new(std::collections::HashMap::new()),
         runtimes: Mutex::new(std::collections::HashMap::new()),
         circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: Default::default(),
     });
     let router = tuitbot_server::build_router(state);
 
@@ -388,6 +400,9 @@ async fn approval_edit_empty_content() {
         content_generators: Mutex::new(std::collections::HashMap::new()),
         runtimes: Mutex::new(std::collections::HashMap::new()),
         circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: Default::default(),
     });
     let router = tuitbot_server::build_router(state);
 
@@ -524,6 +539,9 @@ async fn add_and_list_target() {
         content_generators: Mutex::new(std::collections::HashMap::new()),
         runtimes: Mutex::new(std::collections::HashMap::new()),
         circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: Default::default(),
     });
     let router = tuitbot_server::build_router(state);
 
@@ -562,6 +580,9 @@ async fn add_duplicate_target_fails() {
         content_generators: Mutex::new(std::collections::HashMap::new()),
         runtimes: Mutex::new(std::collections::HashMap::new()),
         circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: Default::default(),
     });
     let router = tuitbot_server::build_router(state);
 
@@ -601,6 +622,9 @@ async fn remove_target_works() {
         content_generators: Mutex::new(std::collections::HashMap::new()),
         runtimes: Mutex::new(std::collections::HashMap::new()),
         circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: Default::default(),
     });
     let router = tuitbot_server::build_router(state);
 
@@ -660,6 +684,9 @@ async fn runtime_start_and_stop() {
         content_generators: Mutex::new(std::collections::HashMap::new()),
         runtimes: Mutex::new(std::collections::HashMap::new()),
         circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: Default::default(),
     });
     let router = tuitbot_server::build_router(state);
 
@@ -716,6 +743,9 @@ async fn settings_get_returns_json() {
         content_generators: Mutex::new(std::collections::HashMap::new()),
         runtimes: Mutex::new(std::collections::HashMap::new()),
         circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: Default::default(),
     });
     let router = tuitbot_server::build_router(state);
 
@@ -746,6 +776,9 @@ async fn settings_patch_round_trips() {
         content_generators: Mutex::new(std::collections::HashMap::new()),
         runtimes: Mutex::new(std::collections::HashMap::new()),
         circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: Default::default(),
     });
     let router = tuitbot_server::build_router(state);
 
@@ -774,4 +807,187 @@ async fn settings_patch_round_trips() {
     let (status, body) = get_json(router, "/api/settings").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["business"]["product_name"], "NewName");
+}
+
+// ============================================================
+// Ingest
+// ============================================================
+
+#[tokio::test]
+async fn post_ingest_inline_returns_200() {
+    let router = test_router().await;
+    let (status, body) = post_json(
+        router,
+        "/api/ingest",
+        serde_json::json!({
+            "inline_nodes": [{
+                "relative_path": "notes/test.md",
+                "body_text": "Some test content about Rust.",
+                "title": "Test Note"
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["ingested"], 1);
+    assert_eq!(body["skipped"], 0);
+    assert!(body["duration_ms"].is_number());
+}
+
+#[tokio::test]
+async fn post_ingest_requires_auth() {
+    let router = test_router().await;
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/ingest")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({"inline_nodes": []})).unwrap(),
+        ))
+        .expect("build request");
+    let response = router.oneshot(req).await.expect("send request");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn post_ingest_idempotent() {
+    let pool = storage::init_test_db().await.expect("init test db");
+    let (event_tx, _) = tokio::sync::broadcast::channel::<WsEvent>(256);
+    let state = Arc::new(AppState {
+        db: pool,
+        config_path: std::path::PathBuf::from("/tmp/test-config.toml"),
+        data_dir: std::path::PathBuf::from("/tmp"),
+        event_tx,
+        api_token: TEST_TOKEN.to_string(),
+        passphrase_hash: tokio::sync::RwLock::new(None),
+        bind_host: "127.0.0.1".to_string(),
+        bind_port: 3001,
+        login_attempts: Mutex::new(std::collections::HashMap::new()),
+        content_generators: Mutex::new(std::collections::HashMap::new()),
+        runtimes: Mutex::new(std::collections::HashMap::new()),
+        circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: Default::default(),
+    });
+    let router = tuitbot_server::build_router(state);
+
+    let body = serde_json::json!({
+        "inline_nodes": [{
+            "relative_path": "notes/idea.md",
+            "body_text": "Content that won't change."
+        }]
+    });
+
+    // First ingest
+    let (status, resp1) = post_json(router.clone(), "/api/ingest", body.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resp1["ingested"], 1);
+
+    // Second ingest — same content, same hash → skipped
+    let (status, resp2) = post_json(router, "/api/ingest", body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resp2["ingested"], 0);
+    assert_eq!(resp2["skipped"], 1);
+}
+
+#[tokio::test]
+async fn post_ingest_empty_body() {
+    let router = test_router().await;
+    let (status, body) = post_json(router, "/api/ingest", serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["ingested"], 0);
+    assert_eq!(body["skipped"], 0);
+}
+
+#[tokio::test]
+async fn post_ingest_empty_body_text_errors() {
+    let router = test_router().await;
+    let (status, body) = post_json(
+        router,
+        "/api/ingest",
+        serde_json::json!({
+            "inline_nodes": [{
+                "relative_path": "notes/empty.md",
+                "body_text": ""
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["ingested"], 0);
+    assert_eq!(body["errors"].as_array().unwrap().len(), 1);
+}
+
+// ============================================================
+// Config status (unauthenticated, includes capabilities)
+// ============================================================
+
+#[tokio::test]
+async fn config_status_includes_capabilities() {
+    let router = test_router().await;
+    // No auth header — this endpoint is public.
+    let req = Request::builder()
+        .uri("/api/settings/status")
+        .body(Body::empty())
+        .expect("build request");
+
+    let response = router.oneshot(req).await.expect("send request");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let bytes = response.into_body().collect().await.expect("read body");
+    let body: serde_json::Value = serde_json::from_slice(&bytes.to_bytes()).expect("parse JSON");
+
+    // Must include the three expected fields.
+    assert!(body["configured"].is_boolean());
+    assert!(body["deployment_mode"].is_string());
+    assert!(body["capabilities"].is_object());
+
+    // Default mode is desktop.
+    assert_eq!(body["deployment_mode"], "desktop");
+    assert_eq!(body["capabilities"]["local_folder"], true);
+    assert_eq!(body["capabilities"]["file_picker_native"], true);
+}
+
+#[tokio::test]
+async fn config_status_capabilities_match_cloud_mode() {
+    use tuitbot_core::config::DeploymentMode;
+
+    let pool = storage::init_test_db().await.expect("init test db");
+    let (event_tx, _) = tokio::sync::broadcast::channel::<WsEvent>(256);
+    let state = Arc::new(AppState {
+        db: pool,
+        config_path: std::path::PathBuf::from("/tmp/test-config.toml"),
+        data_dir: std::path::PathBuf::from("/tmp"),
+        event_tx,
+        api_token: TEST_TOKEN.to_string(),
+        passphrase_hash: tokio::sync::RwLock::new(None),
+        bind_host: "127.0.0.1".to_string(),
+        bind_port: 3001,
+        login_attempts: Mutex::new(std::collections::HashMap::new()),
+        content_generators: Mutex::new(std::collections::HashMap::new()),
+        runtimes: Mutex::new(std::collections::HashMap::new()),
+        circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: DeploymentMode::Cloud,
+    });
+    let router = tuitbot_server::build_router(state);
+
+    let req = Request::builder()
+        .uri("/api/settings/status")
+        .body(Body::empty())
+        .expect("build request");
+
+    let response = router.oneshot(req).await.expect("send request");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let bytes = response.into_body().collect().await.expect("read body");
+    let body: serde_json::Value = serde_json::from_slice(&bytes.to_bytes()).expect("parse JSON");
+
+    assert_eq!(body["deployment_mode"], "cloud");
+    assert_eq!(body["capabilities"]["local_folder"], false);
+    assert_eq!(body["capabilities"]["manual_local_path"], false);
+    assert_eq!(body["capabilities"]["file_picker_native"], false);
+    assert_eq!(body["capabilities"]["google_drive"], true);
 }

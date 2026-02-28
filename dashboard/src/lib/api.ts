@@ -73,6 +73,25 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 	return res.json();
 }
 
+// --- Deployment types ---
+
+export type DeploymentModeValue = 'desktop' | 'self_host' | 'cloud';
+
+export interface DeploymentCapabilities {
+	local_folder: boolean;
+	manual_local_path: boolean;
+	google_drive: boolean;
+	inline_ingest: boolean;
+	file_picker_native: boolean;
+}
+
+export interface RuntimeStatus {
+	running: boolean;
+	task_count: number;
+	deployment_mode: DeploymentModeValue;
+	capabilities: DeploymentCapabilities;
+}
+
 // --- Shared types ---
 
 export interface HealthResponse {
@@ -403,6 +422,25 @@ export interface TuitbotConfig {
 		thread_preferred_day: string | null;
 		thread_preferred_time: string;
 	};
+	content_sources: {
+		sources: Array<{
+			source_type: string;
+			path: string | null;
+			folder_id: string | null;
+			service_account_key: string | null;
+			watch: boolean;
+			file_patterns: string[];
+			loop_back_enabled: boolean;
+			poll_interval_seconds: number | null;
+		}>;
+	};
+	deployment_mode: DeploymentModeValue;
+}
+
+export interface ConfigStatus {
+	configured: boolean;
+	deployment_mode: DeploymentModeValue;
+	capabilities: DeploymentCapabilities;
 }
 
 export interface SettingsValidationResult {
@@ -697,6 +735,12 @@ export interface Account {
 export const api = {
 	health: () => request<HealthResponse>('/api/health'),
 
+	runtime: {
+		status: () => request<RuntimeStatus>('/api/runtime/status'),
+		start: () => request<{ status: string }>('/api/runtime/start', { method: 'POST' }),
+		stop: () => request<{ status: string }>('/api/runtime/stop', { method: 'POST' })
+	},
+
 	auth: {
 		login: async (passphrase: string): Promise<{ csrf_token: string; expires_at: string }> => {
 			const res = await fetch(`${BASE_URL}/api/auth/login`, {
@@ -820,7 +864,7 @@ export const api = {
 	},
 
 	settings: {
-		configStatus: () => request<{ configured: boolean }>('/api/settings/status'),
+		configStatus: () => request<ConfigStatus>('/api/settings/status'),
 		init: (data: Partial<TuitbotConfig>) =>
 			request<{ status: string; config?: TuitbotConfig; errors?: Array<{ field: string; message: string }> }>(
 				'/api/settings/init',

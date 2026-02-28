@@ -7,11 +7,12 @@
 	import BusinessStep from '$lib/components/onboarding/BusinessStep.svelte';
 	import LlmStep from '$lib/components/onboarding/LlmStep.svelte';
 	import LanguageBrandStep from '$lib/components/onboarding/LanguageBrandStep.svelte';
+	import SourcesStep from '$lib/components/onboarding/SourcesStep.svelte';
 	import ValidationStep from '$lib/components/onboarding/ValidationStep.svelte';
 	import ReviewStep from '$lib/components/onboarding/ReviewStep.svelte';
 	import { Zap, ArrowLeft, ArrowRight, Loader2 } from 'lucide-svelte';
 
-	const STEPS = ['Welcome', 'X API', 'Business', 'LLM', 'Language', 'Validate', 'Review'];
+	const STEPS = ['Welcome', 'X API', 'Business', 'LLM', 'Language', 'Sources', 'Validate', 'Review'];
 	let currentStep = $state(0);
 	let submitting = $state(false);
 	let errorMsg = $state('');
@@ -36,9 +37,11 @@
 				return data.llm_api_key.trim().length > 0 && data.llm_model.trim().length > 0;
 			case 4: // Language & Brand
 				return true;
-			case 5: // Validation
+			case 5: // Sources (optional)
 				return true;
-			case 6: // Review
+			case 6: // Validation
+				return true;
+			case 7: // Review
 				return true;
 			default:
 				return false;
@@ -86,6 +89,34 @@
 				},
 				approval_mode: data.approval_mode,
 			};
+
+			if (data.source_type === 'google_drive' && data.folder_id) {
+				config.content_sources = {
+					sources: [{
+						source_type: 'google_drive',
+						path: null,
+						folder_id: data.folder_id,
+						service_account_key: data.service_account_key || null,
+						watch: data.vault_watch,
+						file_patterns: ['*.md', '*.txt'],
+						loop_back_enabled: false,
+						poll_interval_seconds: data.poll_interval_seconds || 300,
+					}]
+				};
+			} else if (data.vault_path) {
+				config.content_sources = {
+					sources: [{
+						source_type: 'local_fs',
+						path: data.vault_path,
+						folder_id: null,
+						service_account_key: null,
+						watch: data.vault_watch,
+						file_patterns: ['*.md', '*.txt'],
+						loop_back_enabled: data.vault_loop_back,
+						poll_interval_seconds: null,
+					}]
+				};
+			}
 
 			const result = await api.settings.init(config);
 
@@ -143,8 +174,10 @@
 			{:else if currentStep === 4}
 				<LanguageBrandStep />
 			{:else if currentStep === 5}
-				<ValidationStep />
+				<SourcesStep />
 			{:else if currentStep === 6}
+				<ValidationStep />
+			{:else if currentStep === 7}
 				<ReviewStep />
 			{/if}
 		</div>

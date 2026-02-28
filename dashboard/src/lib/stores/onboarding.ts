@@ -19,6 +19,14 @@ export interface OnboardingData {
 	// Language & Brand
 	language: string;
 	brand_voice: string;
+	// Content Sources
+	source_type: string;
+	vault_path: string;
+	vault_watch: boolean;
+	vault_loop_back: boolean;
+	folder_id: string;
+	service_account_key: string;
+	poll_interval_seconds: number;
 	// Settings
 	approval_mode: boolean;
 }
@@ -39,6 +47,13 @@ function createOnboardingStore() {
 		llm_base_url: '',
 		language: 'en',
 		brand_voice: 'balanced',
+		source_type: 'local_fs',
+		vault_path: '',
+		vault_watch: true,
+		vault_loop_back: true,
+		folder_id: '',
+		service_account_key: '',
+		poll_interval_seconds: 300,
 		approval_mode: true,
 	});
 
@@ -64,6 +79,13 @@ function createOnboardingStore() {
 				llm_base_url: '',
 				language: 'en',
 				brand_voice: 'balanced',
+				source_type: 'local_fs',
+				vault_path: '',
+				vault_watch: true,
+				vault_loop_back: true,
+				folder_id: '',
+				service_account_key: '',
+				poll_interval_seconds: 300,
 				approval_mode: true,
 			});
 		},

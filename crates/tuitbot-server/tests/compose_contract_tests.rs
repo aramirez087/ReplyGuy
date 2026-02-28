@@ -32,6 +32,9 @@ async fn test_router() -> axum::Router {
         content_generators: Mutex::new(std::collections::HashMap::new()),
         runtimes: Mutex::new(std::collections::HashMap::new()),
         circuit_breaker: None,
+        watchtower_cancel: None,
+        content_sources: Default::default(),
+        deployment_mode: Default::default(),
     });
 
     tuitbot_server::build_router(state)

@@ -451,3 +451,150 @@ fn default_db_path() -> String {
 fn default_retention_days() -> u32 {
     90
 }
+
+// ---------------------------------------------------------------------------
+// Content Sources
+// ---------------------------------------------------------------------------
+
+/// Content source configuration for the Watchtower.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ContentSourcesConfig {
+    /// Configured content sources.
+    #[serde(default)]
+    pub sources: Vec<ContentSourceEntry>,
+}
+
+/// A single content source entry.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ContentSourceEntry {
+    /// Source type: `"local_fs"` or `"google_drive"`.
+    #[serde(default = "default_source_type")]
+    pub source_type: String,
+
+    /// Filesystem path (for local_fs sources). Supports ~ expansion.
+    #[serde(default)]
+    pub path: Option<String>,
+
+    /// Google Drive folder ID (for google_drive sources).
+    #[serde(default)]
+    pub folder_id: Option<String>,
+
+    /// Path to a Google service-account JSON key file (for google_drive sources).
+    #[serde(default)]
+    pub service_account_key: Option<String>,
+
+    /// Whether to watch for changes in real-time.
+    #[serde(default = "default_watch")]
+    pub watch: bool,
+
+    /// File patterns to include.
+    #[serde(default = "default_file_patterns")]
+    pub file_patterns: Vec<String>,
+
+    /// Whether to write metadata back to source files.
+    #[serde(default = "default_loop_back")]
+    pub loop_back_enabled: bool,
+
+    /// Polling interval in seconds for remote sources (default: 300 = 5 min).
+    #[serde(default)]
+    pub poll_interval_seconds: Option<u64>,
+}
+
+fn default_source_type() -> String {
+    "local_fs".to_string()
+}
+fn default_watch() -> bool {
+    true
+}
+fn default_file_patterns() -> Vec<String> {
+    vec!["*.md".to_string(), "*.txt".to_string()]
+}
+fn default_loop_back() -> bool {
+    true
+}
+
+// ---------------------------------------------------------------------------
+// Deployment Mode
+// ---------------------------------------------------------------------------
+
+/// Deployment environment controlling which features and source types are available.
+///
+/// - **Desktop**: Native Tauri app. Full local filesystem access + native file picker.
+/// - **SelfHost**: Docker/VPS browser UI. Local filesystem access (server-side paths).
+/// - **Cloud**: Managed cloud service. No local filesystem access.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentMode {
+    #[default]
+    Desktop,
+    SelfHost,
+    Cloud,
+}
+
+impl std::fmt::Display for DeploymentMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeploymentMode::Desktop => write!(f, "desktop"),
+            DeploymentMode::SelfHost => write!(f, "self_host"),
+            DeploymentMode::Cloud => write!(f, "cloud"),
+        }
+    }
+}
+
+/// Capabilities available in the current deployment mode.
+///
+/// The frontend uses this to conditionally render source type options
+/// and the backend uses it to validate source configurations.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeploymentCapabilities {
+    /// Server can read from local filesystem paths.
+    pub local_folder: bool,
+    /// User can type a local path (browser text input, not native picker).
+    pub manual_local_path: bool,
+    /// Google Drive remote source is available.
+    pub google_drive: bool,
+    /// Direct content ingest via POST /api/ingest.
+    pub inline_ingest: bool,
+    /// Native file picker dialog (Tauri only).
+    pub file_picker_native: bool,
+}
+
+impl DeploymentMode {
+    /// Returns the set of capabilities for this deployment mode.
+    pub fn capabilities(&self) -> DeploymentCapabilities {
+        match self {
+            DeploymentMode::Desktop => DeploymentCapabilities {
+                local_folder: true,
+                manual_local_path: true,
+                google_drive: true,
+                inline_ingest: true,
+                file_picker_native: true,
+            },
+            DeploymentMode::SelfHost => DeploymentCapabilities {
+                local_folder: true,
+                manual_local_path: true,
+                google_drive: true,
+                inline_ingest: true,
+                file_picker_native: false,
+            },
+            DeploymentMode::Cloud => DeploymentCapabilities {
+                local_folder: false,
+                manual_local_path: false,
+                google_drive: true,
+                inline_ingest: true,
+                file_picker_native: false,
+            },
+        }
+    }
+
+    /// Returns `true` if the given source type is allowed in this mode.
+    pub fn allows_source_type(&self, source_type: &str) -> bool {
+        let caps = self.capabilities();
+        match source_type {
+            "local_fs" => caps.local_folder,
+            "google_drive" => caps.google_drive,
+            "manual" => caps.inline_ingest,
+            _ => false,
+        }
+    }
+}

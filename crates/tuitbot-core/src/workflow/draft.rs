@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use crate::content::frameworks::ReplyArchetype;
+use crate::context::winning_dna;
 use crate::llm::LlmProvider;
 use crate::safety::{contains_banned_phrase, DedupChecker};
 use crate::storage;
@@ -47,6 +48,25 @@ pub async fn execute(
     let dedup = DedupChecker::new(db.clone());
     let banned = &config.limits.banned_phrases;
 
+    // Build RAG context from winning ancestors + content seeds (one DB call, shared)
+    let mut topic_keywords: Vec<String> = config.business.product_keywords.clone();
+    topic_keywords.extend(config.business.competitor_keywords.clone());
+    topic_keywords.extend(config.business.effective_industry_topics().to_vec());
+
+    let rag_context = winning_dna::build_draft_context(
+        db,
+        &topic_keywords,
+        winning_dna::MAX_ANCESTORS,
+        winning_dna::RECENCY_HALF_LIFE_DAYS,
+    )
+    .await
+    .ok();
+
+    let rag_prompt = rag_context
+        .as_ref()
+        .map(|ctx| ctx.prompt_block.as_str())
+        .filter(|s| !s.is_empty());
+
     let mut results = Vec::with_capacity(input.candidate_ids.len());
 
     for candidate_id in &input.candidate_ids {
@@ -71,13 +91,14 @@ pub async fn execute(
             }
         };
 
-        // Generate reply via ContentGenerator
+        // Generate reply via ContentGenerator with optional RAG context
         let gen_result = gen
-            .generate_reply_with_archetype(
+            .generate_reply_with_context(
                 &tweet.content,
                 &tweet.author_username,
                 input.mention_product,
                 archetype_override,
+                rag_prompt,
             )
             .await;
 
