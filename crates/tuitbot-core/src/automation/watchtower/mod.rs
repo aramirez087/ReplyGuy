@@ -17,7 +17,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use notify_debouncer_full::{
-    new_debouncer, notify::RecursiveMode, DebounceEventResult, Debouncer, FileIdMap,
+    new_debouncer, notify::RecursiveMode, DebounceEventResult, Debouncer, RecommendedCache,
 };
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
@@ -426,15 +426,15 @@ impl WatchtowerLoop {
         };
 
         let debouncer_result = new_debouncer(self.debounce_duration, None, handler);
-        let mut debouncer: Debouncer<notify::RecommendedWatcher, FileIdMap> = match debouncer_result
-        {
+        let mut debouncer: Debouncer<notify::RecommendedWatcher, RecommendedCache> =
+            match debouncer_result {
             Ok(d) => d,
             Err(e) => {
                 tracing::error!(error = %e, "Failed to create filesystem watcher, falling back to polling");
                 self.polling_loop(&source_map, cancel).await;
                 return;
             }
-        };
+            };
 
         // Register directories with the watcher.
         for (_, base_path, _) in &source_map {
