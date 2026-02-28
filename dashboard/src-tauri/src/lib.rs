@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::Mutex;
 use tuitbot_core::auth::passphrase;
-use tuitbot_core::config::ContentSourcesConfig;
+use tuitbot_core::config::{ContentSourcesConfig, DeploymentMode};
 use tuitbot_core::startup::data_dir;
 use tuitbot_core::storage;
 use tuitbot_server::auth;
@@ -89,6 +89,7 @@ pub fn run() {
                     circuit_breaker: None,
                     watchtower_cancel: None,
                     content_sources: ContentSourcesConfig::default(),
+                    deployment_mode: DeploymentMode::Desktop,
                 })
             });
 

@@ -159,7 +159,17 @@ async fn main() -> Result<()> {
         let watch_sources: Vec<_> = content_sources
             .sources
             .iter()
-            .filter(|s| s.watch && s.path.is_some())
+            .filter(|s| {
+                if !deployment_mode.allows_source_type(&s.source_type) {
+                    tracing::warn!(
+                        source_type = %s.source_type,
+                        deployment_mode = %deployment_mode,
+                        "skipping content source incompatible with deployment mode"
+                    );
+                    return false;
+                }
+                s.watch && (s.path.is_some() || s.folder_id.is_some())
+            })
             .collect();
 
         if !watch_sources.is_empty() {
