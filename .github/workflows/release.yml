@@ -13,6 +13,7 @@ permissions: {}
 jobs:
   release:
     name: Release (tag + GitHub Release)
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -75,6 +76,7 @@ jobs:
 
   release-pr:
     name: Release PR (next version)
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -114,7 +116,7 @@ jobs:
   build-assets:
     name: Build release asset (${{ matrix.target }})
     needs: release
-    if: needs.release.outputs.cli_released == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.release.outputs.cli_released == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

@@ -4,6 +4,40 @@ use super::env_overrides::{parse_env_bool, parse_env_u32, split_csv};
 use super::*;
 use crate::config::types::{DeploymentCapabilities, DeploymentMode};
 use std::env;
+use std::ffi::OsString;
+use std::sync::{Mutex, OnceLock};
+
+// Environment variables are process-global, so tests that mutate them must not run concurrently.
+fn with_locked_env(test: impl FnOnce()) {
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _guard = ENV_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("env lock poisoned");
+    test();
+}
+
+struct ScopedEnvVar {
+    key: &'static str,
+    previous: Option<OsString>,
+}
+
+impl ScopedEnvVar {
+    fn set(key: &'static str, value: &str) -> Self {
+        let previous = env::var_os(key);
+        env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for ScopedEnvVar {
+    fn drop(&mut self) {
+        match self.previous.take() {
+            Some(previous) => env::set_var(self.key, previous),
+            None => env::remove_var(self.key),
+        }
+    }
+}
 
 #[test]
 fn load_valid_toml() {
@@ -51,33 +85,35 @@ client_id = "test"
 
 #[test]
 fn env_var_override_string() {
-    // Use a unique env var prefix to avoid test interference
-    env::set_var("TUITBOT_LLM__PROVIDER", "anthropic");
-    let mut config = Config::default();
-    config.apply_env_overrides().expect("env override");
-    assert_eq!(config.llm.provider, "anthropic");
-    env::remove_var("TUITBOT_LLM__PROVIDER");
+    with_locked_env(|| {
+        let _provider = ScopedEnvVar::set("TUITBOT_LLM__PROVIDER", "anthropic");
+        let mut config = Config::default();
+        config.apply_env_overrides().expect("env override");
+        assert_eq!(config.llm.provider, "anthropic");
+    });
 }
 
 #[test]
 fn env_var_override_numeric() {
-    env::set_var("TUITBOT_SCORING__THRESHOLD", "85");
-    let mut config = Config::default();
-    config.apply_env_overrides().expect("env override");
-    assert_eq!(config.scoring.threshold, 85);
-    env::remove_var("TUITBOT_SCORING__THRESHOLD");
+    with_locked_env(|| {
+        let _threshold = ScopedEnvVar::set("TUITBOT_SCORING__THRESHOLD", "85");
+        let mut config = Config::default();
+        config.apply_env_overrides().expect("env override");
+        assert_eq!(config.scoring.threshold, 85);
+    });
 }
 
 #[test]
 fn env_var_override_csv() {
-    env::set_var("TUITBOT_BUSINESS__PRODUCT_KEYWORDS", "rust, cli, tools");
-    let mut config = Config::default();
-    config.apply_env_overrides().expect("env override");
-    assert_eq!(
-        config.business.product_keywords,
-        vec!["rust", "cli", "tools"]
-    );
-    env::remove_var("TUITBOT_BUSINESS__PRODUCT_KEYWORDS");
+    with_locked_env(|| {
+        let _keywords = ScopedEnvVar::set("TUITBOT_BUSINESS__PRODUCT_KEYWORDS", "rust, cli, tools");
+        let mut config = Config::default();
+        config.apply_env_overrides().expect("env override");
+        assert_eq!(
+            config.business.product_keywords,
+            vec!["rust", "cli", "tools"]
+        );
+    });
 }
 
 #[test]
@@ -361,42 +397,45 @@ fn parse_env_bool_values() {
 
 #[test]
 fn env_var_override_approval_mode() {
-    env::set_var("TUITBOT_APPROVAL_MODE", "true");
-    let mut config = Config::default();
-    config.approval_mode = false;
-    config.apply_env_overrides().expect("env override");
-    assert!(config.approval_mode);
-    env::remove_var("TUITBOT_APPROVAL_MODE");
+    with_locked_env(|| {
+        let _approval = ScopedEnvVar::set("TUITBOT_APPROVAL_MODE", "true");
+        let mut config = Config::default();
+        config.approval_mode = false;
+        config.apply_env_overrides().expect("env override");
+        assert!(config.approval_mode);
+    });
 }
 
 #[test]
 fn env_var_override_approval_mode_false() {
-    env::set_var("TUITBOT_APPROVAL_MODE", "false");
-    let mut config = Config::default();
-    config.apply_env_overrides().expect("env override");
-    assert!(!config.approval_mode);
-    env::remove_var("TUITBOT_APPROVAL_MODE");
+    with_locked_env(|| {
+        let _approval = ScopedEnvVar::set("TUITBOT_APPROVAL_MODE", "false");
+        let mut config = Config::default();
+        config.apply_env_overrides().expect("env override");
+        assert!(!config.approval_mode);
+    });
 }
 
 #[test]
 fn openclaw_env_enables_approval_mode() {
-    env::set_var("OPENCLAW_AGENT_ID", "test");
-    let mut config = Config::default();
-    config.approval_mode = false;
-    config.apply_env_overrides().expect("env override");
-    assert!(config.approval_mode);
-    env::remove_var("OPENCLAW_AGENT_ID");
+    with_locked_env(|| {
+        let _agent_id = ScopedEnvVar::set("OPENCLAW_AGENT_ID", "test");
+        let mut config = Config::default();
+        config.approval_mode = false;
+        config.apply_env_overrides().expect("env override");
+        assert!(config.approval_mode);
+    });
 }
 
 #[test]
 fn openclaw_env_respects_explicit_override() {
-    env::set_var("OPENCLAW_AGENT_ID", "test");
-    env::set_var("TUITBOT_APPROVAL_MODE", "false");
-    let mut config = Config::default();
-    config.apply_env_overrides().expect("env override");
-    assert!(!config.approval_mode);
-    env::remove_var("OPENCLAW_AGENT_ID");
-    env::remove_var("TUITBOT_APPROVAL_MODE");
+    with_locked_env(|| {
+        let _agent_id = ScopedEnvVar::set("OPENCLAW_AGENT_ID", "test");
+        let _approval = ScopedEnvVar::set("TUITBOT_APPROVAL_MODE", "false");
+        let mut config = Config::default();
+        config.apply_env_overrides().expect("env override");
+        assert!(!config.approval_mode);
+    });
 }
 
 // --- BusinessProfile quickstart/enrichment tests ---
@@ -763,31 +802,34 @@ product_keywords = ["test"]
 
 #[test]
 fn deployment_mode_env_var_override() {
-    env::set_var("TUITBOT_DEPLOYMENT_MODE", "cloud");
-    let mut config = Config::default();
-    config.apply_env_overrides().expect("env override");
-    assert_eq!(config.deployment_mode, DeploymentMode::Cloud);
-    env::remove_var("TUITBOT_DEPLOYMENT_MODE");
+    with_locked_env(|| {
+        let _mode = ScopedEnvVar::set("TUITBOT_DEPLOYMENT_MODE", "cloud");
+        let mut config = Config::default();
+        config.apply_env_overrides().expect("env override");
+        assert_eq!(config.deployment_mode, DeploymentMode::Cloud);
+    });
 }
 
 #[test]
 fn deployment_mode_env_var_self_host_variants() {
-    for variant in &["self_host", "selfhost", "self-host"] {
-        env::set_var("TUITBOT_DEPLOYMENT_MODE", variant);
-        let mut config = Config::default();
-        config.apply_env_overrides().expect("env override");
-        assert_eq!(config.deployment_mode, DeploymentMode::SelfHost);
-        env::remove_var("TUITBOT_DEPLOYMENT_MODE");
-    }
+    with_locked_env(|| {
+        for variant in &["self_host", "selfhost", "self-host"] {
+            let _mode = ScopedEnvVar::set("TUITBOT_DEPLOYMENT_MODE", variant);
+            let mut config = Config::default();
+            config.apply_env_overrides().expect("env override");
+            assert_eq!(config.deployment_mode, DeploymentMode::SelfHost);
+        }
+    });
 }
 
 #[test]
 fn deployment_mode_env_var_invalid() {
-    env::set_var("TUITBOT_DEPLOYMENT_MODE", "invalid_mode");
-    let mut config = Config::default();
-    let result = config.apply_env_overrides();
-    assert!(result.is_err());
-    env::remove_var("TUITBOT_DEPLOYMENT_MODE");
+    with_locked_env(|| {
+        let _mode = ScopedEnvVar::set("TUITBOT_DEPLOYMENT_MODE", "invalid_mode");
+        let mut config = Config::default();
+        let result = config.apply_env_overrides();
+        assert!(result.is_err());
+    });
 }
 
 #[test]

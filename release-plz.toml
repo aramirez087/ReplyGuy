@@ -4,6 +4,9 @@ git_only = false
 publish = false
 release_always = false
 semver_check = false
+# Release jobs generate gitignored dashboard assets before packaging tuitbot-server.
+allow_dirty = true
+publish_allow_dirty = true
 pr_labels = ["release"]
 git_tag_name = "v{{ version }}"
 git_release_name = "v{{ version }}"
