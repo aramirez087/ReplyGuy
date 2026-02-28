@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::Mutex;
 use tuitbot_core::auth::passphrase;
+use tuitbot_core::config::ContentSourcesConfig;
 use tuitbot_core::startup::data_dir;
 use tuitbot_core::storage;
 use tuitbot_server::auth;
@@ -34,6 +35,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -85,6 +87,8 @@ pub fn run() {
                     runtimes: Mutex::new(HashMap::new()),
                     content_generators: Mutex::new(HashMap::new()),
                     circuit_breaker: None,
+                    watchtower_cancel: None,
+                    content_sources: ContentSourcesConfig::default(),
                 })
             });
 

@@ -496,3 +496,48 @@ product_name = "Test"
     let config: Config = toml::from_str(toml_str).expect("valid TOML");
     assert!(config.content_sources.sources.is_empty());
 }
+
+#[test]
+fn content_sources_json_patch_roundtrip() {
+    // Simulates the JSON the frontend sends via PATCH /api/settings
+    let patch = serde_json::json!({
+        "content_sources": {
+            "sources": [{
+                "source_type": "local_fs",
+                "path": "~/notes/vault",
+                "watch": true,
+                "file_patterns": ["*.md", "*.txt"],
+                "loop_back_enabled": true
+            }]
+        }
+    });
+    let config: Config = serde_json::from_value(patch).expect("valid JSON");
+    assert_eq!(config.content_sources.sources.len(), 1);
+    let source = &config.content_sources.sources[0];
+    assert_eq!(source.source_type, "local_fs");
+    assert_eq!(source.path.as_deref(), Some("~/notes/vault"));
+    assert!(source.watch);
+    assert_eq!(source.file_patterns, vec!["*.md", "*.txt"]);
+    assert!(source.loop_back_enabled);
+
+    // Round-trip back to TOML and verify
+    let toml_str = toml::to_string_pretty(&config).expect("serialize to TOML");
+    let roundtripped: Config = toml::from_str(&toml_str).expect("re-parse TOML");
+    assert_eq!(roundtripped.content_sources.sources.len(), 1);
+    assert_eq!(
+        roundtripped.content_sources.sources[0].path.as_deref(),
+        Some("~/notes/vault")
+    );
+}
+
+#[test]
+fn content_sources_empty_json_patch() {
+    // Frontend sends empty sources when user hasn't configured one
+    let patch = serde_json::json!({
+        "content_sources": {
+            "sources": []
+        }
+    });
+    let config: Config = serde_json::from_value(patch).expect("valid JSON");
+    assert!(config.content_sources.sources.is_empty());
+}

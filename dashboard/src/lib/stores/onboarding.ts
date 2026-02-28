@@ -19,6 +19,10 @@ export interface OnboardingData {
 	// Language & Brand
 	language: string;
 	brand_voice: string;
+	// Content Sources
+	vault_path: string;
+	vault_watch: boolean;
+	vault_loop_back: boolean;
 	// Settings
 	approval_mode: boolean;
 }
@@ -39,6 +43,9 @@ function createOnboardingStore() {
 		llm_base_url: '',
 		language: 'en',
 		brand_voice: 'balanced',
+		vault_path: '',
+		vault_watch: true,
+		vault_loop_back: true,
 		approval_mode: true,
 	});
 
@@ -64,6 +71,9 @@ function createOnboardingStore() {
 				llm_base_url: '',
 				language: 'en',
 				brand_voice: 'balanced',
+				vault_path: '',
+				vault_watch: true,
+				vault_loop_back: true,
 				approval_mode: true,
 			});
 		},

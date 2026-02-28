@@ -403,6 +403,15 @@ export interface TuitbotConfig {
 		thread_preferred_day: string | null;
 		thread_preferred_time: string;
 	};
+	content_sources: {
+		sources: Array<{
+			source_type: string;
+			path: string | null;
+			watch: boolean;
+			file_patterns: string[];
+			loop_back_enabled: boolean;
+		}>;
+	};
 }
 
 export interface SettingsValidationResult {

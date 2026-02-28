@@ -9,6 +9,7 @@
 		Brain,
 		Key,
 		Database,
+		FolderOpen,
 		Wifi
 	} from 'lucide-svelte';
 	import {
@@ -31,6 +32,7 @@
 	import LlmProviderSection from './LlmProviderSection.svelte';
 	import XApiSection from './XApiSection.svelte';
 	import StorageSection from './StorageSection.svelte';
+	import ContentSourcesSection from './ContentSourcesSection.svelte';
 	import LanAccessSection from './LanAccessSection.svelte';
 	import SaveBar from './SaveBar.svelte';
 	import ConfirmModal from './ConfirmModal.svelte';
@@ -46,6 +48,7 @@
 		{ id: 'llm', label: 'LLM', icon: Brain },
 		{ id: 'xapi', label: 'X API', icon: Key },
 		{ id: 'storage', label: 'Storage', icon: Database },
+		{ id: 'sources', label: 'Sources', icon: FolderOpen },
 		{ id: 'lan', label: 'LAN', icon: Wifi }
 	];
 
@@ -180,6 +183,7 @@
 				<LlmProviderSection />
 				<XApiSection />
 				<StorageSection />
+				<ContentSourcesSection />
 				<LanAccessSection />
 			</div>
 		</div>

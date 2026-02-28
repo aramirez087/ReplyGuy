@@ -30,6 +30,7 @@ axum = "0.8"
 
 # Tauri plugins
 tauri-plugin-autostart = "2.0.0-rc"
+tauri-plugin-dialog = "2.0.0-rc"
 tauri-plugin-notification = "2.0.0-rc"
 tauri-plugin-store = "2.0.0-rc"
 tauri-plugin-updater = "2.0.0-rc"
