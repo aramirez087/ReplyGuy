@@ -69,6 +69,29 @@ impl ContentGenerator {
             .await
     }
 
+    /// Generate a reply with optional RAG context injected into the prompt.
+    ///
+    /// The `rag_context` block is inserted between the persona/voice section
+    /// and the rules section of the system prompt. If `None`, behaves
+    /// identically to `generate_reply_with_archetype`.
+    pub async fn generate_reply_with_context(
+        &self,
+        tweet_text: &str,
+        tweet_author: &str,
+        mention_product: bool,
+        archetype: Option<ReplyArchetype>,
+        rag_context: Option<&str>,
+    ) -> Result<GenerationOutput, LlmError> {
+        self.generate_reply_inner(
+            tweet_text,
+            tweet_author,
+            mention_product,
+            archetype,
+            rag_context,
+        )
+        .await
+    }
+
     /// Generate a reply using a specific archetype for varied output.
     pub async fn generate_reply_with_archetype(
         &self,
@@ -77,10 +100,24 @@ impl ContentGenerator {
         mention_product: bool,
         archetype: Option<ReplyArchetype>,
     ) -> Result<GenerationOutput, LlmError> {
+        self.generate_reply_inner(tweet_text, tweet_author, mention_product, archetype, None)
+            .await
+    }
+
+    /// Internal reply generation with optional RAG context.
+    async fn generate_reply_inner(
+        &self,
+        tweet_text: &str,
+        tweet_author: &str,
+        mention_product: bool,
+        archetype: Option<ReplyArchetype>,
+        rag_context: Option<&str>,
+    ) -> Result<GenerationOutput, LlmError> {
         tracing::debug!(
             author = %tweet_author,
             archetype = ?archetype,
             mention_product = mention_product,
+            has_rag_context = rag_context.is_some(),
             "Generating reply",
         );
         let voice_section = match &self.business.brand_voice {
@@ -98,6 +135,11 @@ impl ContentGenerator {
         };
 
         let persona_section = self.format_persona_context();
+
+        let rag_section = match rag_context {
+            Some(ctx) if !ctx.is_empty() => format!("\n{ctx}"),
+            _ => String::new(),
+        };
 
         let audience_section = if self.business.target_audience.is_empty() {
             String::new()
@@ -117,7 +159,8 @@ impl ContentGenerator {
                  {voice_section}\
                  {reply_section}\
                  {archetype_section}\
-                 {persona_section}\n\n\
+                 {persona_section}\
+                 {rag_section}\n\n\
                  Rules:\n\
                  - Write a reply to the tweet below.\n\
                  - Maximum 3 sentences.\n\
@@ -136,7 +179,8 @@ impl ContentGenerator {
                  {voice_section}\
                  {reply_section}\
                  {archetype_section}\
-                 {persona_section}\n\n\
+                 {persona_section}\
+                 {rag_section}\n\n\
                  Rules:\n\
                  - Write a reply to the tweet below.\n\
                  - Maximum 3 sentences.\n\
@@ -726,6 +770,36 @@ mod tests {
 
         let err = gen.generate_thread("topic").await.unwrap_err();
         assert!(matches!(err, LlmError::GenerationFailed(_)));
+    }
+
+    // --- generate_reply_with_context tests ---
+
+    #[tokio::test]
+    async fn generate_reply_with_context_injects_rag() {
+        let provider = MockProvider::single("Great insight about testing patterns!");
+        let gen = ContentGenerator::new(Box::new(provider), test_business());
+
+        let rag_block = "Winning patterns:\n1. [tip] (tweet): \"Great advice\"";
+        let output = gen
+            .generate_reply_with_context("Test tweet", "user", false, None, Some(rag_block))
+            .await
+            .expect("reply");
+
+        assert!(!output.text.is_empty());
+        assert!(output.text.len() <= MAX_TWEET_CHARS);
+    }
+
+    #[tokio::test]
+    async fn generate_reply_with_context_none_matches_archetype() {
+        // With rag_context=None, should behave like generate_reply_with_archetype
+        let provider = MockProvider::single("Agreed, great point!");
+        let gen = ContentGenerator::new(Box::new(provider), test_business());
+
+        let output = gen
+            .generate_reply_with_context("Test tweet", "user", false, None, None)
+            .await
+            .expect("reply");
+        assert!(!output.text.is_empty());
     }
 
     // --- GenerationParams tests ---

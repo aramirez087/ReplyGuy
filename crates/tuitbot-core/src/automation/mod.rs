@@ -25,6 +25,7 @@ pub mod mentions_loop;
 pub mod posting_queue;
 pub mod schedule;
 pub mod scheduler;
+pub mod seed_worker;
 pub mod status_reporter;
 pub mod target_loop;
 pub mod thread_loop;
@@ -49,6 +50,7 @@ pub use posting_queue::{
 };
 pub use schedule::{schedule_gate, ActiveSchedule};
 pub use scheduler::{scheduler_from_config, LoopScheduler};
+pub use seed_worker::SeedWorker;
 pub use status_reporter::{ActionCounts, StatusQuerier};
 pub use target_loop::{
     TargetLoop, TargetLoopConfig, TargetResult, TargetStorage, TargetTweetFetcher,

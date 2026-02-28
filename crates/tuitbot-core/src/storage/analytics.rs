@@ -645,6 +645,231 @@ pub async fn get_optimal_posting_times(
     get_optimal_posting_times_for(pool, DEFAULT_ACCOUNT_ID).await
 }
 
+// ============================================================================
+// Archetype & engagement score updates (Winning DNA pipeline)
+// ============================================================================
+
+/// Update the archetype_vibe classification for a tweet performance record.
+pub async fn update_tweet_archetype(
+    pool: &DbPool,
+    tweet_id: &str,
+    archetype_vibe: &str,
+) -> Result<(), StorageError> {
+    sqlx::query("UPDATE tweet_performance SET archetype_vibe = ? WHERE tweet_id = ?")
+        .bind(archetype_vibe)
+        .bind(tweet_id)
+        .execute(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })?;
+    Ok(())
+}
+
+/// Update the archetype_vibe classification for a reply performance record.
+pub async fn update_reply_archetype(
+    pool: &DbPool,
+    reply_id: &str,
+    archetype_vibe: &str,
+) -> Result<(), StorageError> {
+    sqlx::query("UPDATE reply_performance SET archetype_vibe = ? WHERE reply_id = ?")
+        .bind(archetype_vibe)
+        .bind(reply_id)
+        .execute(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })?;
+    Ok(())
+}
+
+/// Update the engagement_score for a tweet performance record.
+pub async fn update_tweet_engagement_score(
+    pool: &DbPool,
+    tweet_id: &str,
+    score: f64,
+) -> Result<(), StorageError> {
+    sqlx::query("UPDATE tweet_performance SET engagement_score = ? WHERE tweet_id = ?")
+        .bind(score)
+        .bind(tweet_id)
+        .execute(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })?;
+    Ok(())
+}
+
+/// Update the engagement_score for a reply performance record.
+pub async fn update_reply_engagement_score(
+    pool: &DbPool,
+    reply_id: &str,
+    score: f64,
+) -> Result<(), StorageError> {
+    sqlx::query("UPDATE reply_performance SET engagement_score = ? WHERE reply_id = ?")
+        .bind(score)
+        .bind(reply_id)
+        .execute(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })?;
+    Ok(())
+}
+
+/// Get the maximum performance_score across all tweets and replies.
+///
+/// Returns 0.0 if no performance data exists. Used to normalize engagement scores.
+pub async fn get_max_performance_score(pool: &DbPool) -> Result<f64, StorageError> {
+    let row: (f64,) = sqlx::query_as(
+        "SELECT COALESCE(MAX(max_score), 0.0) FROM (\
+             SELECT MAX(performance_score) as max_score FROM tweet_performance \
+             UNION ALL \
+             SELECT MAX(performance_score) as max_score FROM reply_performance\
+         )",
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(row.0)
+}
+
+/// Row type returned by the ancestor retrieval query.
+#[derive(Debug, Clone)]
+pub struct AncestorRow {
+    /// "tweet" or "reply"
+    pub content_type: String,
+    /// The tweet or reply ID.
+    pub id: String,
+    /// Truncated content preview (up to 120 chars).
+    pub content_preview: String,
+    /// Archetype classification (may be None if not yet classified).
+    pub archetype_vibe: Option<String>,
+    /// Normalized engagement score (0.0-1.0).
+    pub engagement_score: Option<f64>,
+    /// Raw performance score.
+    pub performance_score: f64,
+    /// When the content was posted (ISO-8601).
+    pub posted_at: String,
+}
+
+/// Row type returned by the ancestor retrieval UNION query.
+type AncestorQueryRow = (
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<f64>,
+    f64,
+    String,
+);
+
+/// Convert an ancestor query row tuple into an `AncestorRow` struct.
+fn ancestor_row_from_tuple(r: AncestorQueryRow) -> AncestorRow {
+    AncestorRow {
+        content_type: r.0,
+        id: r.1,
+        content_preview: r.2,
+        archetype_vibe: r.3,
+        engagement_score: r.4,
+        performance_score: r.5,
+        posted_at: r.6,
+    }
+}
+
+/// Query scored ancestors with engagement_score populated.
+///
+/// Returns ancestors where `engagement_score >= min_score`, ordered by
+/// engagement_score DESC. For topic matching, uses the `topic` column on
+/// original_tweets and LIKE-based content matching on replies.
+pub async fn get_scored_ancestors(
+    pool: &DbPool,
+    topic_keywords: &[String],
+    min_score: f64,
+    limit: u32,
+) -> Result<Vec<AncestorRow>, StorageError> {
+    if topic_keywords.is_empty() {
+        // No keywords: return top ancestors regardless of topic
+        let rows: Vec<AncestorQueryRow> = sqlx::query_as(
+            "SELECT 'tweet' as content_type, tp.tweet_id, \
+                        SUBSTR(ot.content, 1, 120), \
+                        tp.archetype_vibe, tp.engagement_score, tp.performance_score, \
+                        ot.created_at \
+                 FROM tweet_performance tp \
+                 JOIN original_tweets ot ON ot.tweet_id = tp.tweet_id \
+                 WHERE tp.engagement_score IS NOT NULL \
+                   AND tp.engagement_score >= ? \
+                 UNION ALL \
+                 SELECT 'reply', rp.reply_id, SUBSTR(rs.reply_content, 1, 120), \
+                        rp.archetype_vibe, rp.engagement_score, rp.performance_score, \
+                        rs.created_at \
+                 FROM reply_performance rp \
+                 JOIN replies_sent rs ON rs.reply_tweet_id = rp.reply_id \
+                 WHERE rp.engagement_score IS NOT NULL \
+                   AND rp.engagement_score >= ? \
+                 ORDER BY engagement_score DESC \
+                 LIMIT ?",
+        )
+        .bind(min_score)
+        .bind(min_score)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })?;
+
+        return Ok(rows.into_iter().map(ancestor_row_from_tuple).collect());
+    }
+
+    // Build parameterized IN clause for tweet topics and LIKE clauses for replies.
+    // SQLx uses sequential `?` placeholders for SQLite.
+    let topic_placeholders: String = (0..topic_keywords.len())
+        .map(|_| "?".to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let like_conditions: Vec<String> = (0..topic_keywords.len())
+        .map(|_| "rs.reply_content LIKE '%' || ? || '%'".to_string())
+        .collect();
+    let like_clause = like_conditions.join(" OR ");
+
+    let query_str = format!(
+        "SELECT 'tweet' as content_type, tp.tweet_id, \
+                SUBSTR(ot.content, 1, 120), \
+                tp.archetype_vibe, tp.engagement_score, tp.performance_score, \
+                ot.created_at \
+         FROM tweet_performance tp \
+         JOIN original_tweets ot ON ot.tweet_id = tp.tweet_id \
+         WHERE tp.engagement_score IS NOT NULL \
+           AND tp.engagement_score >= ? \
+           AND (ot.topic IN ({topic_placeholders})) \
+         UNION ALL \
+         SELECT 'reply', rp.reply_id, SUBSTR(rs.reply_content, 1, 120), \
+                rp.archetype_vibe, rp.engagement_score, rp.performance_score, \
+                rs.created_at \
+         FROM reply_performance rp \
+         JOIN replies_sent rs ON rs.reply_tweet_id = rp.reply_id \
+         WHERE rp.engagement_score IS NOT NULL \
+           AND rp.engagement_score >= ? \
+           AND ({like_clause}) \
+         ORDER BY engagement_score DESC \
+         LIMIT ?"
+    );
+
+    let mut query = sqlx::query_as::<_, AncestorQueryRow>(&query_str);
+
+    // Bind: min_score for tweets, then topic keywords for IN clause
+    query = query.bind(min_score);
+    for kw in topic_keywords {
+        query = query.bind(kw);
+    }
+    // Bind: min_score for replies, then keywords for LIKE clauses, then limit
+    query = query.bind(min_score);
+    for kw in topic_keywords {
+        query = query.bind(kw);
+    }
+    query = query.bind(limit);
+
+    let rows = query
+        .fetch_all(pool)
+        .await
+        .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(rows.into_iter().map(ancestor_row_from_tuple).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -883,5 +1108,158 @@ mod tests {
         assert_eq!(items[0].content_type, "reply");
         assert!(items[0].content_preview.contains("testing"));
         assert_eq!(items[0].likes, 10);
+    }
+
+    // ============================================================================
+    // Winning DNA storage tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn update_and_get_tweet_archetype() {
+        let pool = init_test_db().await.expect("init db");
+
+        upsert_tweet_performance(&pool, "tw1", 10, 5, 3, 500, 82.0)
+            .await
+            .expect("upsert");
+
+        update_tweet_archetype(&pool, "tw1", "list")
+            .await
+            .expect("update");
+
+        let row: (Option<String>,) =
+            sqlx::query_as("SELECT archetype_vibe FROM tweet_performance WHERE tweet_id = ?")
+                .bind("tw1")
+                .fetch_one(&pool)
+                .await
+                .expect("query");
+        assert_eq!(row.0.as_deref(), Some("list"));
+    }
+
+    #[tokio::test]
+    async fn update_and_get_reply_archetype() {
+        let pool = init_test_db().await.expect("init db");
+
+        upsert_reply_performance(&pool, "r1", 10, 5, 1000, 67.0)
+            .await
+            .expect("upsert");
+
+        update_reply_archetype(&pool, "r1", "ask_question")
+            .await
+            .expect("update");
+
+        let row: (Option<String>,) =
+            sqlx::query_as("SELECT archetype_vibe FROM reply_performance WHERE reply_id = ?")
+                .bind("r1")
+                .fetch_one(&pool)
+                .await
+                .expect("query");
+        assert_eq!(row.0.as_deref(), Some("ask_question"));
+    }
+
+    #[tokio::test]
+    async fn update_and_get_engagement_score() {
+        let pool = init_test_db().await.expect("init db");
+
+        upsert_tweet_performance(&pool, "tw1", 10, 5, 3, 500, 82.0)
+            .await
+            .expect("upsert");
+
+        update_tweet_engagement_score(&pool, "tw1", 0.85)
+            .await
+            .expect("update");
+
+        let row: (Option<f64>,) =
+            sqlx::query_as("SELECT engagement_score FROM tweet_performance WHERE tweet_id = ?")
+                .bind("tw1")
+                .fetch_one(&pool)
+                .await
+                .expect("query");
+        assert!((row.0.unwrap() - 0.85).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn get_max_performance_score_empty() {
+        let pool = init_test_db().await.expect("init db");
+        let max = get_max_performance_score(&pool).await.expect("max");
+        assert!((max - 0.0).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn get_max_performance_score_with_data() {
+        let pool = init_test_db().await.expect("init db");
+
+        upsert_tweet_performance(&pool, "tw1", 10, 5, 3, 500, 82.0)
+            .await
+            .expect("upsert");
+        upsert_reply_performance(&pool, "r1", 20, 10, 2000, 95.0)
+            .await
+            .expect("upsert");
+
+        let max = get_max_performance_score(&pool).await.expect("max");
+        assert!((max - 95.0).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn get_scored_ancestors_empty() {
+        let pool = init_test_db().await.expect("init db");
+        let ancestors = get_scored_ancestors(&pool, &[], 0.1, 10)
+            .await
+            .expect("query");
+        assert!(ancestors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_scored_ancestors_returns_scored_items() {
+        let pool = init_test_db().await.expect("init db");
+
+        // Insert a tweet with performance + engagement_score
+        sqlx::query(
+            "INSERT INTO original_tweets (account_id, tweet_id, content, topic, status, created_at) \
+             VALUES ('00000000-0000-0000-0000-000000000000', 'tw1', 'Great Rust testing tips', 'rust', 'sent', '2026-02-27T10:00:00Z')",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert tweet");
+
+        upsert_tweet_performance(&pool, "tw1", 10, 5, 3, 500, 82.0)
+            .await
+            .expect("upsert perf");
+        update_tweet_engagement_score(&pool, "tw1", 0.85)
+            .await
+            .expect("update score");
+
+        let ancestors = get_scored_ancestors(&pool, &[], 0.1, 10)
+            .await
+            .expect("query");
+        assert_eq!(ancestors.len(), 1);
+        assert_eq!(ancestors[0].content_type, "tweet");
+        assert_eq!(ancestors[0].id, "tw1");
+        assert!((ancestors[0].engagement_score.unwrap() - 0.85).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn get_scored_ancestors_filters_low_engagement() {
+        let pool = init_test_db().await.expect("init db");
+
+        sqlx::query(
+            "INSERT INTO original_tweets (account_id, tweet_id, content, topic, status, created_at) \
+             VALUES ('00000000-0000-0000-0000-000000000000', 'tw1', 'Low performer', 'rust', 'sent', '2026-02-27T10:00:00Z')",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert tweet");
+
+        upsert_tweet_performance(&pool, "tw1", 1, 0, 0, 500, 5.0)
+            .await
+            .expect("upsert perf");
+        update_tweet_engagement_score(&pool, "tw1", 0.05)
+            .await
+            .expect("update score");
+
+        // min_score = 0.1, so this ancestor should be filtered out
+        let ancestors = get_scored_ancestors(&pool, &[], 0.1, 10)
+            .await
+            .expect("query");
+        assert!(ancestors.is_empty());
     }
 }

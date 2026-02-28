@@ -504,6 +504,130 @@ pub async fn ensure_local_fs_source(
     insert_source_context(pool, "local_fs", config_json).await
 }
 
+// ============================================================================
+// Winning DNA: pending nodes and seed management
+// ============================================================================
+
+/// Get content nodes with status='pending' that need seed generation.
+pub async fn get_pending_content_nodes(
+    pool: &DbPool,
+    limit: u32,
+) -> Result<Vec<ContentNode>, StorageError> {
+    let rows: Vec<ContentNodeRow> = sqlx::query_as(
+        "SELECT id, account_id, source_id, relative_path, content_hash, \
+                    title, body_text, front_matter_json, tags, status, \
+                    ingested_at, updated_at \
+             FROM content_nodes \
+             WHERE status = 'pending' \
+             ORDER BY ingested_at ASC \
+             LIMIT ?",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| ContentNode {
+            id: r.0,
+            account_id: r.1,
+            source_id: r.2,
+            relative_path: r.3,
+            content_hash: r.4,
+            title: r.5,
+            body_text: r.6,
+            front_matter_json: r.7,
+            tags: r.8,
+            status: r.9,
+            ingested_at: r.10,
+            updated_at: r.11,
+        })
+        .collect())
+}
+
+/// Mark a content node as 'processed' after seed generation.
+pub async fn mark_node_processed(pool: &DbPool, node_id: i64) -> Result<(), StorageError> {
+    sqlx::query(
+        "UPDATE content_nodes SET status = 'processed', updated_at = datetime('now') WHERE id = ?",
+    )
+    .bind(node_id)
+    .execute(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+    Ok(())
+}
+
+/// Insert a draft seed with an explicit engagement weight.
+pub async fn insert_draft_seed_with_weight(
+    pool: &DbPool,
+    node_id: i64,
+    seed_text: &str,
+    archetype_suggestion: Option<&str>,
+    weight: f64,
+) -> Result<i64, StorageError> {
+    let row: (i64,) = sqlx::query_as(
+        "INSERT INTO draft_seeds (account_id, node_id, seed_text, archetype_suggestion, engagement_weight) \
+         VALUES (?, ?, ?, ?, ?) \
+         RETURNING id",
+    )
+    .bind(DEFAULT_ACCOUNT_ID)
+    .bind(node_id)
+    .bind(seed_text)
+    .bind(archetype_suggestion)
+    .bind(weight)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(row.0)
+}
+
+/// Row type for seeds with their parent node context.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SeedWithContext {
+    /// The seed hook text.
+    pub seed_text: String,
+    /// Title from the parent content node.
+    pub source_title: Option<String>,
+    /// Suggested archetype for the seed.
+    pub archetype_suggestion: Option<String>,
+    /// Engagement weight for retrieval ranking.
+    pub engagement_weight: f64,
+}
+
+/// Retrieve draft seeds suitable for cold-start context injection.
+///
+/// Returns pending seeds joined with their parent content node's title,
+/// ordered by engagement_weight DESC.
+pub async fn get_seeds_for_context(
+    pool: &DbPool,
+    limit: u32,
+) -> Result<Vec<SeedWithContext>, StorageError> {
+    let rows: Vec<(String, Option<String>, Option<String>, f64)> = sqlx::query_as(
+        "SELECT ds.seed_text, cn.title, ds.archetype_suggestion, ds.engagement_weight \
+         FROM draft_seeds ds \
+         JOIN content_nodes cn ON cn.id = ds.node_id \
+         WHERE ds.status = 'pending' \
+         ORDER BY ds.engagement_weight DESC \
+         LIMIT ?",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| StorageError::Query { source: e })?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| SeedWithContext {
+            seed_text: r.0,
+            source_title: r.1,
+            archetype_suggestion: r.2,
+            engagement_weight: r.3,
+        })
+        .collect())
+}
+
 /// Ensure a "manual" source context exists for inline ingestion, returning its ID.
 ///
 /// Creates the source if it does not exist. This is used by the ingest API

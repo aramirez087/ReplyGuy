@@ -382,3 +382,129 @@ async fn ensure_manual_source_creates_once() {
         .expect("should exist");
     assert_eq!(ctx.source_type, "manual");
 }
+
+// ============================================================================
+// Winning DNA storage tests
+// ============================================================================
+
+#[tokio::test]
+async fn get_pending_content_nodes_returns_pending_only() {
+    let pool = init_test_db().await.expect("init db");
+
+    let source_id = insert_source_context(&pool, "local_fs", "{}")
+        .await
+        .expect("insert source");
+
+    // Insert two nodes (both start as 'pending')
+    upsert_content_node(
+        &pool,
+        source_id,
+        "a.md",
+        "h1",
+        Some("Note A"),
+        "Body A",
+        None,
+        None,
+    )
+    .await
+    .expect("upsert");
+    upsert_content_node(
+        &pool,
+        source_id,
+        "b.md",
+        "h2",
+        Some("Note B"),
+        "Body B",
+        None,
+        None,
+    )
+    .await
+    .expect("upsert");
+
+    // Mark one as processed
+    mark_node_processed(&pool, 1).await.expect("mark");
+
+    let pending = get_pending_content_nodes(&pool, 10).await.expect("get");
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].relative_path, "b.md");
+}
+
+#[tokio::test]
+async fn mark_node_processed_changes_status() {
+    let pool = init_test_db().await.expect("init db");
+
+    let source_id = insert_source_context(&pool, "local_fs", "{}")
+        .await
+        .expect("insert source");
+
+    upsert_content_node(&pool, source_id, "a.md", "h1", None, "Body", None, None)
+        .await
+        .expect("upsert");
+
+    mark_node_processed(&pool, 1).await.expect("mark");
+
+    let node = get_content_node(&pool, 1)
+        .await
+        .expect("get")
+        .expect("should exist");
+    assert_eq!(node.status, "processed");
+}
+
+#[tokio::test]
+async fn insert_seed_with_weight_persists() {
+    let pool = init_test_db().await.expect("init db");
+
+    let source_id = insert_source_context(&pool, "local_fs", "{}")
+        .await
+        .expect("insert source");
+    upsert_content_node(&pool, source_id, "n.md", "h", None, "Body", None, None)
+        .await
+        .expect("upsert");
+
+    let seed_id = insert_draft_seed_with_weight(&pool, 1, "A hook about Rust", Some("tip"), 0.75)
+        .await
+        .expect("insert seed");
+
+    let row: (f64,) = sqlx::query_as("SELECT engagement_weight FROM draft_seeds WHERE id = ?")
+        .bind(seed_id)
+        .fetch_one(&pool)
+        .await
+        .expect("query");
+    assert!((row.0 - 0.75).abs() < 0.001);
+}
+
+#[tokio::test]
+async fn get_seeds_for_context_joins_with_nodes() {
+    let pool = init_test_db().await.expect("init db");
+
+    let source_id = insert_source_context(&pool, "local_fs", "{}")
+        .await
+        .expect("insert source");
+    upsert_content_node(
+        &pool,
+        source_id,
+        "rust-tips.md",
+        "h1",
+        Some("Rust Tips"),
+        "Body text",
+        None,
+        None,
+    )
+    .await
+    .expect("upsert");
+
+    insert_draft_seed_with_weight(&pool, 1, "Hook about ownership", Some("tip"), 0.8)
+        .await
+        .expect("insert seed");
+    insert_draft_seed_with_weight(&pool, 1, "Hook about async", Some("question"), 0.6)
+        .await
+        .expect("insert seed");
+
+    let seeds = get_seeds_for_context(&pool, 10).await.expect("get");
+    assert_eq!(seeds.len(), 2);
+    // Ordered by weight DESC
+    assert_eq!(seeds[0].seed_text, "Hook about ownership");
+    assert_eq!(seeds[0].source_title.as_deref(), Some("Rust Tips"));
+    assert!((seeds[0].engagement_weight - 0.8).abs() < 0.001);
+    assert_eq!(seeds[1].seed_text, "Hook about async");
+}

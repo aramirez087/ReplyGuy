@@ -7,6 +7,7 @@
 pub mod author;
 pub mod engagement;
 pub mod topics;
+pub mod winning_dna;
 
 #[cfg(test)]
 mod tests;
