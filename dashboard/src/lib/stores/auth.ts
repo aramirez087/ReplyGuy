@@ -35,6 +35,13 @@ export function claimSession(csrfToken: string): void {
 	isAuthenticated.set(true);
 }
 
+/** Clear local session state without an API call (used after factory reset). */
+export function clearSession(): void {
+	setCsrfToken('');
+	authMode.set('none');
+	isAuthenticated.set(false);
+}
+
 /** Check if there's an existing valid session (cookie-based). */
 export async function checkAuth(): Promise<boolean> {
 	try {

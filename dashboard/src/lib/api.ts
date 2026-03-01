@@ -912,7 +912,15 @@ export const api = {
 			request<SettingsTestResult>('/api/settings/test-llm', {
 				method: 'POST',
 				body: JSON.stringify(data)
-			})
+			}),
+		factoryReset: (confirmation: string) =>
+			request<{ status: string; cleared: Record<string, unknown> }>(
+				'/api/settings/factory-reset',
+				{
+					method: 'POST',
+					body: JSON.stringify({ confirmation })
+				}
+			)
 	},
 
 	targets: {
