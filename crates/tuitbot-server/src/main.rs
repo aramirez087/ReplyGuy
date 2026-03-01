@@ -76,11 +76,13 @@ async fn main() -> Result<()> {
 
     // Handle passphrase for web/LAN auth.
     let passphrase_hash = if cli.reset_passphrase {
+        // --reset-passphrase: always reset, regardless of host.
         let new_passphrase = passphrase::reset_passphrase(db_dir)?;
         println!("\n  Web login passphrase (reset): {new_passphrase}\n");
         tracing::info!("Passphrase has been reset");
         passphrase::load_passphrase_hash(db_dir)?
-    } else {
+    } else if cli.host == "0.0.0.0" {
+        // LAN mode: auto-generate passphrase if none exists (backward compatible).
         match passphrase::ensure_passphrase(db_dir)? {
             Some(new_passphrase) => {
                 println!("\n  Web login passphrase: {new_passphrase}");
@@ -91,6 +93,19 @@ async fn main() -> Result<()> {
             }
         }
         passphrase::load_passphrase_hash(db_dir)?
+    } else {
+        // Localhost mode: load existing hash if present, skip generation.
+        // The browser claim flow will handle passphrase creation.
+        match passphrase::load_passphrase_hash(db_dir)? {
+            Some(hash) => {
+                tracing::info!("Passphrase loaded from disk");
+                Some(hash)
+            }
+            None => {
+                tracing::info!("No passphrase configured — awaiting browser claim");
+                None
+            }
+        }
     };
 
     // Create the broadcast channel for WebSocket events.
