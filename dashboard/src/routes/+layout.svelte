@@ -50,7 +50,10 @@
 				if (!status.configured) {
 					// Fresh or unconfigured instance — onboarding (skip login).
 					if (!path.startsWith("/onboarding")) {
-						goto("/onboarding");
+						const target = status.claimed
+							? "/onboarding?claimed=1"
+							: "/onboarding";
+						goto(target);
 					}
 					ready = true;
 					return;

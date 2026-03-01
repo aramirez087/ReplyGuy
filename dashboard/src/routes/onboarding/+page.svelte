@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { api } from '$lib/api';
 	import { onboardingData } from '$lib/stores/onboarding';
 	import { authMode as authModeStore, claimSession } from '$lib/stores/auth';
@@ -24,11 +25,14 @@
 	let claimPassphrase = $state('');
 	let passphraseSaved = $state(false);
 
-	// Tauri/bearer mode skips the claim step.
+	// Tauri/bearer mode skips the claim step. Also skip if instance is already claimed
+	// (e.g., config.toml deleted but passphrase_hash still exists).
 	let isTauri = $derived($authModeStore === 'tauri');
-	let steps = $derived(isTauri ? BASE_STEPS : [...BASE_STEPS, 'Secure']);
+	let alreadyClaimed = $derived($page.url.searchParams.get('claimed') === '1');
+	let showClaimStep = $derived(!isTauri && !alreadyClaimed);
+	let steps = $derived(showClaimStep ? [...BASE_STEPS, 'Secure'] : BASE_STEPS);
 	let isLastStep = $derived(currentStep === steps.length - 1);
-	let isClaimStep = $derived(!isTauri && currentStep === steps.length - 1);
+	let isClaimStep = $derived(showClaimStep && currentStep === steps.length - 1);
 
 	// Prevent navigation away during claim step if passphrase is generated but not submitted.
 	$effect(() => {
@@ -89,10 +93,11 @@
 	async function submit() {
 		submitting = true;
 		errorMsg = '';
+		let config: Record<string, unknown> = {};
 
 		try {
 			const data = $onboardingData;
-			const config: Record<string, unknown> = {
+			config = {
 				x_api: {
 					client_id: data.client_id,
 					...(data.client_secret ? { client_secret: data.client_secret } : {}),
@@ -142,8 +147,8 @@
 				};
 			}
 
-			// Include claim for web mode.
-			if (!isTauri && claimPassphrase.trim()) {
+			// Include claim for web mode (skip if instance already claimed).
+			if (showClaimStep && claimPassphrase.trim()) {
 				config.claim = { passphrase: claimPassphrase.trim() };
 			}
 
@@ -163,7 +168,21 @@
 			onboardingData.reset();
 			goto('/content?compose=true');
 		} catch (e) {
-			errorMsg = e instanceof Error ? e.message : 'Failed to create configuration';
+			const msg = e instanceof Error ? e.message : '';
+			if (msg.toLowerCase().includes('already claimed') && config.claim) {
+				// Instance was claimed between page load and submit (race condition).
+				// Retry without claim so the config is still created.
+				try {
+					delete config.claim;
+					await api.settings.init(config);
+					onboardingData.reset();
+					goto('/login');
+					return;
+				} catch {
+					// Retry also failed — show original error.
+				}
+			}
+			errorMsg = msg || 'Failed to create configuration';
 		} finally {
 			submitting = false;
 		}
@@ -214,7 +233,7 @@
 				<ValidationStep />
 			{:else if currentStep === 7}
 				<ReviewStep />
-			{:else if currentStep === 8 && !isTauri}
+			{:else if currentStep === 8 && showClaimStep}
 				<ClaimStep bind:passphrase={claimPassphrase} bind:saved={passphraseSaved} />
 			{/if}
 		</div>
