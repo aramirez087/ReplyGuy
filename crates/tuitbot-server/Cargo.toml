@@ -26,7 +26,7 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 rand = "0.9"
 hex = "0.4"
-sha2 = "0.10"
+sha2 = "0.11"
 base64 = "0.22"
 chrono = "0.4"
 uuid = { version = "1", features = ["v4"] }
@@ -39,4 +39,4 @@ tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 tempfile = "3"
 async-trait = "0.1"
-sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio"] }
+sqlx = { version = "0.9", default-features = false, features = ["sqlite", "runtime-tokio"] }
